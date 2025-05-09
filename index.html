@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game Design Brain Dump</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+        color: #333;
+      }
+      h1 {
+        text-align: center;
+        color: #2c3e50;
+      }
+      .intro {
+        text-align: center;
+        margin-bottom: 30px;
+        font-style: italic;
+        color: #7f8c8d;
+      }
+      .entry-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        justify-content: center;
+      }
+      .entry {
+        background: white;
+        border-radius: 8px;
+        padding: 15px;
+        width: 280px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+      }
+      .entry:hover {
+        transform: translateY(-5px);
+      }
+      .entry h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+        color: #2980b9;
+      }
+      .entry-meta {
+        font-size: 12px;
+        color: #7f8c8d;
+        margin-bottom: 10px;
+      }
+      .entry-tags {
+        margin-top: 10px;
+      }
+      .tag {
+        display: inline-block;
+        background: #ecf0f1;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        margin: 2px;
+        color: #2c3e50;
+      }
+      .tag:hover {
+        background: #3498db;
+        color: white;
+      }
+      a {
+        color: #2980b9;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Game Design Brain Dump</h1>
+    <p class="intro">
+      A chaotic collection of ideas, bugs, and lore for game development
+      projects
+    </p>
+
+    <div class="entry-list">
+      <!-- Entry 1: LateUpdate Method -->
+      <div class="entry">
+        <h2><a href="lateupdate-method.html">LateUpdate Method</a></h2>
+        <div class="entry-meta">
+          Date: 2024-02-25 | Status: Bug | Project: N/A
+        </div>
+        <p>
+          Fixing camera stuttering in Unity using LateUpdate for smoother
+          gameplay.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">unity</span>
+          <span class="tag">stuttering</span>
+          <span class="tag">camera</span>
+          <span class="tag">lag</span>
+          <span class="tag">scripting</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <h2><a href="smite-charon-redesign.html">SMITE Charon Redesign</a></h2>
+        <div class="entry-meta">
+          Date: 2025-03-25 | Status: Concept | Project: N/A | 60% Complete
+        </div>
+        <p>
+          Critique of Charon’s water mage design with a proposed skeletal
+          ferryman rework featuring boat-based mechanics.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">smite</span>
+          <span class="tag">charon</span>
+          <span class="tag">game-mechanics</span>
+          <span class="tag">ferryman</span>
+          <span class="tag">mythology</span>
+          <span class="tag">redesign</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <h2><a href="thebausffs-playstyle.html">TheBausFFS Playstyle</a></h2>
+        <div class="entry-meta">
+          Date: 2024-11-24 | Status: Analysis | Project: N/A | 90% Complete
+        </div>
+        <p>
+          Analysis of TheBausFFS’s unorthodox League of Legends strategy of
+          intentional deaths.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">league-of-legends</span>
+          <span class="tag">game-mechanics</span>
+          <span class="tag">strategy</span>
+          <span class="tag">moba</span>
+          <span class="tag">thebausffs</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <h2>
+          <a href="level-design-experience-analysis.html"
+            >Level Design Experience Analysis</a
+          >
+        </h2>
+        <div class="entry-meta">
+          Date: 2024-11-25 | Status: Draft | Project: Sol Eremus | 85% Complete
+        </div>
+        <p>
+          Reflections on level design from Minecraft experiments to professional
+          game analysis.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">level-design</span>
+          <span class="tag">vertical-progression</span>
+          <span class="tag">combat-mechanics</span>
+          <span class="tag">environmental-storytelling</span>
+          <span class="tag">minecraft</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <h2>
+          <a href="vermintide-2-fire-mage.html"
+            >Vermintide 2 Fire Mage Analysis</a
+          >
+        </h2>
+        <div class="entry-meta">
+          Date: 2025-03-25 | Status: Draft | Project: N/A | 70% Complete
+        </div>
+        <p>
+          Reflections on choosing the Fuegonasus fire mage, with proposed
+          changes to the Unshackled career for a riskier playstyle.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">vermintide-2</span>
+          <span class="tag">fire-mage</span>
+          <span class="tag">game-mechanics</span>
+          <span class="tag">playstyle</span>
+          <span class="tag">unshackled</span>
+          <span class="tag">magical-knight</span>
+        </div>
+      </div>
+
+      <!-- Entry 2: Freewrite (Monkey & Snake) -->
+      <div class="entry">
+        <h2>
+          <a href="monkey-snake-freewrite.html">Freewrite: Monkey & Snake</a>
+        </h2>
+        <div class="entry-meta">
+          Date: 2024-11-11 | Status: Freewrite | Project: Sol Eremus | 65%
+          Complete
+        </div>
+        <p>
+          Philosophical reflection on consciousness and behavior inspired by a
+          monkey and snake encounter.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">consciousness</span>
+          <span class="tag">game-design</span>
+          <span class="tag">animal-behavior</span>
+          <span class="tag">dimensionality</span>
+          <span class="tag">bakawaii</span>
+        </div>
+      </div>
+
+      <!-- Entry 3: Types of Death -->
+      <div class="entry">
+        <h2><a href="types-of-death.html">Types of Death in Games</a></h2>
+        <div class="entry-meta">
+          Date: 2024-11-09 | Status: Draft | Project: Sol Eremus | 85% Complete
+        </div>
+        <p>
+          Game design ideas blending arcade-style permadeath with modern
+          monetization.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">game-mechanics</span>
+          <span class="tag">permadeath</span>
+          <span class="tag">monetization</span>
+          <span class="tag">dark-souls</span>
+          <span class="tag">economics</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <h2><a href="types-of-writing.html">Types of Writing</a></h2>
+        <div class="entry-meta">
+          Date: 2025-03-25 | Status: Draft | Project: N/A | 80% Complete
+        </div>
+        <p>
+          Exploration of fiction, nonfiction, persuasive, dialectic,
+          worldbuilding, and narrative writing styles with examples.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">writing-styles</span>
+          <span class="tag">fiction</span>
+          <span class="tag">nonfiction</span>
+          <span class="tag">persuasive</span>
+          <span class="tag">dialectic</span>
+          <span class="tag">worldbuilding</span>
+        </div>
+      </div>
+
+      <!-- Entry 4: Worldbuilding (Stacked Disks) -->
+      <div class="entry">
+        <h2><a href="stacked-disks-world.html">Stacked Disks World</a></h2>
+        <div class="entry-meta">
+          Date: 2025-03-24 | Status: Concept | Project: N/A | 75% Complete
+        </div>
+        <p>
+          Lore about a multi-layered world with gods, monsters, and a solar
+          deity pilgrimage.
+        </p>
+        <div class="entry-tags">
+          <span class="tag">worldbuilding</span>
+          <span class="tag">mythology</span>
+          <span class="tag">nature-vs-technology</span>
+          <span class="tag">dark-fantasy</span>
+          <span class="tag">pilgrimage</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
