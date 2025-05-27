@@ -1,0 +1,15 @@
+{
+	"nodes":[
+		{"id":"6c522f47495f270b","type":"file","file":"loom try/experiential convergence with data.md","x":-240,"y":-1250,"width":540,"height":420,"color":"4"},
+		{"id":"e962a58b40cae8af","type":"file","file":"loom try/framing of the strategy.md","x":-1120,"y":-1250,"width":560,"height":870,"color":"#000000"},
+		{"id":"4305b650259d915c","type":"file","file":"loom try/KeyLogger discussion/KeyLogger.md","x":160,"y":-640,"width":480,"height":600,"color":"#000000"},
+		{"id":"2c70dd26ea78a836","type":"file","file":"loom try/logservice.md","x":-440,"y":-640,"width":400,"height":600,"color":"#000000"},
+		{"id":"2e2d355c5597b165","x":160,"y":320,"width":480,"height":760,"type":"file","file":"loom try/KeyLogger discussion/KeyLogger v2.md"}
+	],
+	"edges":[
+		{"id":"d941197612e213e8","fromNode":"6c522f47495f270b","fromSide":"left","toNode":"e962a58b40cae8af","toSide":"right"},
+		{"id":"95ce90fe56e853e8","fromNode":"6c522f47495f270b","fromSide":"bottom","toNode":"2c70dd26ea78a836","toSide":"top"},
+		{"id":"3f500fb28efb5882","fromNode":"6c522f47495f270b","fromSide":"bottom","toNode":"4305b650259d915c","toSide":"top"},
+		{"id":"bef58245480e1cf0","fromNode":"4305b650259d915c","fromSide":"bottom","toNode":"2e2d355c5597b165","toSide":"top"}
+	]
+}
