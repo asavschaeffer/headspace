@@ -1,1 +1,0 @@
-setup_macos_service_instructions.md: A Markdown file explaining how to create a Quick Action (formerly Service) using Automator on macOS to run the script. Automating this fully is tricky, so instructions are often better.
