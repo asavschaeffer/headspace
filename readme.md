@@ -10,3 +10,8 @@ source .venv/Scripts/activate
 pip install -r requirements.txt
 ollama serve
 go run main.go
+```
+### Usage
+1) put .md files in input folder
+2) run `go run main.go`
+3) ...?
