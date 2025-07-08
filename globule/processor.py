@@ -162,7 +162,12 @@ class ProcessingManager:
             cls._config = None
 
 
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
 # Convenience functions for the CLI
+@tracer.start_as_current_span("process_thought")
 async def process_thought(text: str, config: Optional[Config] = None) -> str:
     """Process a thought and return the globule ID."""
     processor = await ProcessingManager.get_processor(config)

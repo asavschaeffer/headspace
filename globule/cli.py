@@ -11,6 +11,8 @@ from .storage import SQLiteStorage
 from .embedding_engine import create_embedder
 from .query_engine import QueryEngine, parse_query
 from .synthesis import SynthesisEngine
+from .instrumentation import setup_opentelemetry
+import os
 
 console = Console()
 
@@ -30,6 +32,8 @@ class AppContext:
 @click.pass_context
 def cli(ctx: click.Context):
     """Globule: A semantic thought processor for capturing and retrieving thoughts intelligently."""
+    if os.getenv("GLASS_ENGINE_ENABLED", "false").lower() == "true":
+        setup_opentelemetry()
     ctx.obj = AppContext()
 
 @cli.command()
