@@ -38,7 +38,7 @@ Globule operates as a multi-stage processing pipeline that transforms chaotic, u
 
 ## 4. System Architecture Diagram
 
-```
+```mermaid
 graph TB
     subgraph "User Interface Layer (MVP)"
         CLI[CLI: `globule add`]
