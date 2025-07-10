@@ -41,7 +41,7 @@ Globule operates as a multi-stage processing pipeline that transforms chaotic, u
 ```mermaid
 graph TB
     subgraph "User Interface Layer (MVP)"
-        CLI[CLI: `globule add`]
+        CLI[CLI: \`globule add`]
         TUI[TUI: `globule draft`]
     end
 
