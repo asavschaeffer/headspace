@@ -19,40 +19,11 @@ The project is guided by several foundational principles:
 *   **Privacy-First, Hybrid-by-Choice:** Local processing by default; cloud features are opt-in.
 *   **Modular and Pluggable Pipeline:** Components are abstract interfaces for future extension.
 
-## 3. Wiki Structure & Navigation
-
 This wiki is organized to mirror the architectural components of the Globule system itself, grouping related documents by subject matter. Files are numbered to ensure consistent ordering, and a clear naming convention is used for clarity.
 
-*   **`00_Home.md`**: You are here. The main entry point and overview of the wiki.
+For navigation, please use the sidebar on the right (or left, depending on your GitHub Wiki configuration). It contains links to all documents.
 
-*   **`1_Foundations/`**: Documents outlining the highest-level vision, guiding principles, and strategic roadmap for the entire project.
-    *   `10_Cathedral-of-Recursive-Understanding.md`
-    *   `11_Vision-and-Strategy.md`
-    *   `12_Project-Roadmap.md`
-    *   `13_Architectural-Philosophy_Narrative.md`
-
-*   **`2_System_Architecture/`**: Documents describing the overall system architecture, how major components interact, and the technical blueprint.
-    *   `20_High-Level-Design.md`
-    *   `21_Technical-Architecture.md`
-    *   `22_Component-Shopping-List.md`
-
-*   **`3_Core_Components/`**: Detailed design and research documents for the fundamental building blocks of Globule. Each major component has its own subdirectory.
-    *   **`Configuration_System/`**: Focuses on the three-tier configuration cascade and management.
-        *   `30_LLD_Configuration-System.md`
-        *   `31_Research_Configuration-System.md`
-    *   **`Schema_Engine/`**: Details the architecture for user-defined workflows and data structures.
-        *   `30_LLD_Schema-Engine.md`
-        *   `31_Research_Schema-Engine.md`
-    *   *(Other core components like Orchestration Engine, Storage Manager, Synthesis Engine will have their own directories here as they are designed.)*
-
-*   **`_Archive/`**: Contains historical, superseded, or non-core documents.
-    *   **`old/`**: Older versions of design documents.
-        *   `ARCHIVE_Low-Level-Design_Old.md`
-        *   `ARCHIVE_Technical-Specification_Old.md`
-    *   **`roleplays/`**: Transcripts or documents from conceptual role-playing sessions.
-        *   `ARCHIVE_Roleplay_Steve-Jobs.md`
-
-## 4. Key Concepts
+## 3. Key Concepts
 
 *   **Globule:** The atomic unit of information in the system, representing a captured thought or input.
 *   **Semantic Understanding:** The ability of the system to grasp the meaning, context, and relationships between globules using AI.
@@ -60,4 +31,4 @@ This wiki is organized to mirror the architectural components of the Globule sys
 *   **Progressive Discovery:** The system's ability to surface relevant information as the user explores their knowledge base.
 *   **Schema:** User-defined YAML files that encode specific workflows and data structures for different types of information.
 
-This `Home` page provides a high-level map. Dive into the numbered directories to explore the project's details.
+This `Home` page provides a high-level overview. For detailed navigation, please use the sidebar.
