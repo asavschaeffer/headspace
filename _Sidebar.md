@@ -1,46 +1,92 @@
-*   [Home](home)
+\*   \[Home](home)
 
-**1. Foundations**
-*   [10_Cathedral-of-Recursive-Understanding](1_Foundations/10_Cathedral-of-Recursive-Understanding)
-*   [11_Vision-and-Strategy](1_Foundations/11_Vision-and-Strategy)
-*   [12_Project-Roadmap](1_Foundations/12_Project-Roadmap)
-*   [13_Architectural-Philosophy_Narrative](1_Foundations/13_Architectural-Philosophy_Narrative)
 
-**2. System Architecture**
-*   [20_High-Level-Design](2_System_Architecture/20_High-Level-Design)
-*   [21_Technical-Architecture](2_System_Architecture/21_Technical-Architecture)
-*   [22_Component-Shopping-List](2_System_Architecture/22_Component-Shopping-List)
-*   [23_Component_Interaction_Flows](2_System_Architecture/23_Component_Interaction_Flows)
 
-**3. Core Components**
-**Configuration System**
-*   [30_LLD_Configuration-System](3_Core_Components/Configuration_System/30_LLD_Configuration-System)
-*   [31_Research_Configuration-System](3_Core_Components/Configuration_System/31_Research_Configuration-System)
-**Schema Engine**
-*   [30_LLD_Schema-Engine](3_Core_Components/Schema_Engine/30_LLD_Schema-Engine)
-*   [31_Research_Schema-Engine](3_Core_Components/Schema_Engine/31_Research_Schema-Engine)
-**Adaptive Input Module**
-*   [30_LLD_Adaptive_Input_Module](3_Core_Components/Adaptive_Input_Module/30_LLD_Adaptive_Input_Module)
-*   [31_Research_Adaptive_Input_Module](3_Core_Components/Adaptive_Input_Module/31_Research_Adaptive_Input_Module)
-**Semantic Embedding Service**
-*   [30_LLD_Semantic_Embedding_Service](3_Core_Components/Semantic_Embedding_Service/30_LLD_Semantic_Embedding_Service)
-*   [31_Research_Semantic_Embedding_Service](3_Core_Components/Semantic_Embedding_Service/31_Research_Semantic_Embedding_Service)
-**Structural Parsing Service**
-*   [30_LLD_Structural_Parsing_Service](3_Core_Components/Structural_Parsing_Service/30_LLD_Structural_Parsing_Service)
-*   [31_Research_Structural_Parsing_Service](3_Core_Components/Structural_Parsing_Service/31_Research_Structural_Parsing_Service)
-**Orchestration Engine**
-*   [30_LLD_Orchestration_Engine](3_Core_Components/Orchestration_Engine/30_LLD_Orchestration_Engine)
-*   [31_Research_Orchestration_Engine](3_Core_Components/Orchestration_Engine/31_Research_Orchestration_Engine)
-**Intelligent Storage Manager**
-*   [30_LLD_Intelligent_Storage_Manager](3_Core_Components/Intelligent_Storage_Manager/30_LLD_Intelligent_Storage_Manager)
-*   [31_Research_Intelligent_Storage_Manager](3_Core_Components/Intelligent_Storage_Manager/31_Research_Intelligent_Storage_Manager)
-**Interactive Synthesis Engine**
-*   [30_LLD_Interactive_Synthesis_Engine](3_Core_Components/Interactive_Synthesis_Engine/30_LLD_Interactive_Synthesis_Engine)
-*   [31_Research_Interactive_Synthesis_Engine](3_Core_Components/Interactive_Synthesis_Engine/31_Research_Interactive_Synthesis_Engine)
+\*\*1. Foundations\*\*
 
-**Archive**
-**Old**
-*   [ARCHIVE_Low-Level-Design_Old](_Archive/old/ARCHIVE_Low-Level-Design_Old)
-*   [ARCHIVE_Technical-Specification_Old](_Archive/old/ARCHIVE_Technical-Specification_Old)
-**Roleplays**
-*   [ARCHIVE_Roleplay_Steve-Jobs](_Archive/roleplays/ARCHIVE_Roleplay_Steve-Jobs)
+\*   \[10\_Cathedral-of-Recursive-Understanding](1\_Foundations/10\_Cathedral-of-Recursive-Understanding)
+
+\*   \[11\_Vision-and-Strategy](1\_Foundations/11\_Vision-and-Strategy)
+
+\*   \[12\_Project-Roadmap](1\_Foundations/12\_Project-Roadmap)
+
+\*   \[13\_Architectural-Philosophy\_Narrative](1\_Foundations/13\_Architectural-Philosophy\_Narrative)
+
+
+
+\*\*2. System Architecture\*\*
+
+\*   \[20\_High-Level-Design](2\_System\_Architecture/20\_High-Level-Design)
+
+\*   \[21\_Technical-Architecture](2\_System\_Architecture/21\_Technical-Architecture)
+
+\*   \[22\_Component-Shopping-List](2\_System\_Architecture/22\_Component-Shopping-List)
+
+\*   \[23\_Component\_Interaction\_Flows](2\_System\_Architecture/23\_Component\_Interaction\_Flows)
+
+
+
+\*\*3. Core Components\*\*
+
+\*\*30\_Configuration\_System\*\*
+
+\*   \[30\_LLD\_Configuration-System](3\_Core\_Components/30\_Configuration\_System/30\_LLD\_Configuration-System)
+
+\*   \[31\_Research\_Configuration-System](3\_Core\_Components/30\_Configuration\_System/31\_Research\_Configuration-System)
+
+\*\*31\_Schema\_Engine\*\*
+
+\*   \[30\_LLD\_Schema-Engine](3\_Core\_Components/31\_Schema\_Engine/30\_LLD\_Schema-Engine)
+
+\*   \[31\_Research\_Schema-Engine](3\_Core\_Components/31\_Schema\_Engine/31\_Research\_Schema-Engine)
+
+\*\*32\_Adaptive\_Input\_Module\*\*
+
+\*   \[30\_LLD\_Adaptive\_Input\_Module](3\_Core\_Components/32\_Adaptive\_Input\_Module/30\_LLD\_Adaptive\_Input\_Module)
+
+\*   \[31\_Research\_Adaptive\_Input\_Module](3\_Core\_Components/32\_Adaptive\_Input\_Module/31\_Research\_Adaptive\_Input\_Module)
+
+\*\*33\_Semantic\_Embedding\_Service\*\*
+
+\*   \[30\_LLD\_Semantic\_Embedding\_Service](3\_Core\_Components/33\_Semantic\_Embedding\_Service/30\_LLD\_Semantic\_Embedding\_Service)
+
+\*   \[31\_Research\_Semantic\_Embedding\_Service](3\_Core\_Components/33\_Semantic\_Embedding\_Service/31\_Research\_Semantic\_Embedding\_Service)
+
+\*\*34\_Structural\_Parsing\_Service\*\*
+
+\*   \[30\_LLD\_Structural\_Parsing\_Service](3\_Core\_Components/34\_Structural\_Parsing\_Service/30\_LLD\_Structural\_Parsing\_Service)
+
+\*   \[31\_Research\_Structural\_Parsing\_Service](3\_Core\_Components/34\_Structural\_Parsing\_Service/31\_Research\_Structural\_Parsing\_Service)
+
+\*\*35\_Orchestration\_Engine\*\*
+
+\*   \[30\_LLD\_Orchestration\_Engine](3\_Core\_Components/35\_Orchestration\_Engine/30\_LLD\_Orchestration\_Engine)
+
+\*   \[31\_Research\_Orchestration\_Engine](3\_Core\_Components/35\_Orchestration\_Engine/31\_Research\_Orchestration\_Engine)
+
+\*\*36\_Intelligent\_Storage\_Manager\*\*
+
+\*   \[30\_LLD\_Intelligent\_Storage\_Manager](3\_Core\_Components/36\_Intelligent\_Storage\_Manager/30\_LLD\_Intelligent\_Storage\_Manager)
+
+\*   \[31\_Research\_Intelligent\_Storage\_Manager](3\_Core\_Components/36\_Intelligent\_Storage\_Manager/31\_Research\_Intelligent\_Storage\_Manager)
+
+\*\*37\_Interactive\_Synthesis\_Engine\*\*
+
+\*   \[30\_LLD\_Interactive\_Synthesis\_Engine](3\_Core\_Components/37\_Interactive\_Synthesis\_Engine/30\_LLD\_Interactive\_Synthesis\_Engine)
+
+\*   \[31\_Research\_Interactive\_Synthesis\_Engine](3\_Core\_Components/37\_Interactive\_Synthesis\_Engine/31\_Research\_Interactive\_Synthesis\_Engine)
+
+
+
+\*\*Archive\*\*
+
+\*\*Old\*\*
+
+\*   \[ARCHIVE\_Low-Level-Design\_Old](\_Archive/old/ARCHIVE\_Low-Level-Design\_Old)
+
+\*   \[ARCHIVE\_Technical-Specification\_Old](\_Archive/old/ARCHIVE\_Technical-Specification\_Old)
+
+\*\*Roleplays\*\*
+
+\*   \[ARCHIVE\_Roleplay\_Steve-Jobs](\_Archive/roleplays/ARCHIVE\_Roleplay\_Steve-Jobs)
+
