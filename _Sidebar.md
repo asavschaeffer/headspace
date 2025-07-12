@@ -18,6 +18,24 @@
 **Schema Engine**
 *   [30_LLD_Schema-Engine](3_Core_Components/Schema_Engine/30_LLD_Schema-Engine)
 *   [31_Research_Schema-Engine](3_Core_Components/Schema_Engine/31_Research_Schema-Engine)
+**Adaptive Input Module**
+*   [30_LLD_Adaptive_Input_Module](3_Core_Components/Adaptive_Input_Module/30_LLD_Adaptive_Input_Module)
+*   [31_Research_Adaptive_Input_Module](3_Core_Components/Adaptive_Input_Module/31_Research_Adaptive_Input_Module)
+**Semantic Embedding Service**
+*   [30_LLD_Semantic_Embedding_Service](3_Core_Components/Semantic_Embedding_Service/30_LLD_Semantic_Embedding_Service)
+*   [31_Research_Semantic_Embedding_Service](3_Core_Components/Semantic_Embedding_Service/31_Research_Semantic_Embedding_Service)
+**Structural Parsing Service**
+*   [30_LLD_Structural_Parsing_Service](3_Core_Components/Structural_Parsing_Service/30_LLD_Structural_Parsing_Service)
+*   [31_Research_Structural_Parsing_Service](3_Core_Components/Structural_Parsing_Service/31_Research_Structural_Parsing_Service)
+**Orchestration Engine**
+*   [30_LLD_Orchestration_Engine](3_Core_Components/Orchestration_Engine/30_LLD_Orchestration_Engine)
+*   [31_Research_Orchestration_Engine](3_Core_Components/Orchestration_Engine/31_Research_Orchestration_Engine)
+**Intelligent Storage Manager**
+*   [30_LLD_Intelligent_Storage_Manager](3_Core_Components/Intelligent_Storage_Manager/30_LLD_Intelligent_Storage_Manager)
+*   [31_Research_Intelligent_Storage_Manager](3_Core_Components/Intelligent_Storage_Manager/31_Research_Intelligent_Storage_Manager)
+**Interactive Synthesis Engine**
+*   [30_LLD_Interactive_Synthesis_Engine](3_Core_Components/Interactive_Synthesis_Engine/30_LLD_Interactive_Synthesis_Engine)
+*   [31_Research_Interactive_Synthesis_Engine](3_Core_Components/Interactive_Synthesis_Engine/31_Research_Interactive_Synthesis_Engine)
 
 **Archive**
 **Old**
