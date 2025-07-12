@@ -10,6 +10,7 @@
 *   [20_High-Level-Design](2_System_Architecture/20_High-Level-Design)
 *   [21_Technical-Architecture](2_System_Architecture/21_Technical-Architecture)
 *   [22_Component-Shopping-List](2_System_Architecture/22_Component-Shopping-List)
+*   [23_Component_Interaction_Flows](2_System_Architecture/23_Component_Interaction_Flows)
 
 **3. Core Components**
 **Configuration System**
