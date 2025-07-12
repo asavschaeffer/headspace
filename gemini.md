@@ -1,49 +1,59 @@
-# Summary of Globule Wiki Reorganization and Naming Convention
+# Gemini's Understanding of the Globule Project
 
-This document outlines the process and decisions made during the reorganization and renaming of the `globule.wiki` directory, aiming for a more structured, semantically organized, and GitHub-wiki-friendly layout.
+This document reflects my current understanding of the Globule project based on the information available in this wiki. My purpose is to provide a comprehensive summary that can serve as a quick onboarding guide for new contributors and as a reference for the development team.
 
-## 1. Initial State
+## 1. Core Vision: A Semantic Operating System
 
-The project wiki began with a flat structure containing various markdown files and a few top-level directories (`.git`, `LLD_research`, `LLD-modules`, `old`, `roleplays`).
+Globule is not just a note-taking application; it is an ambitious project to create a **semantic operating system layer**. The fundamental goal is to change how humans interact with computers by moving away from rigid, hierarchical file systems towards a more fluid, context-aware paradigm.
 
-## 2. Problem Statement
+The system is designed to understand the **meaning and connections** between user inputs, rather than just storing raw data. It aims to create a personalized knowledge graph that mirrors the user's thought processes, making information retrieval intuitive and discovery-oriented.
 
-The user sought assistance in organizing the project wiki directory to improve clarity and navigability.
+## 2. Key Concepts
 
-## 3. Iterative Organization Proposals
+*   **Globule**: The atomic unit of information. A "globule" can be any piece of input—a thought, a note, a link, a voice memo, etc.
+*   **Semantic Understanding**: The system's ability to grasp the context, meaning, and relationships of globules using AI technologies like embeddings and Large Language Models (LLMs).
+*   **Dual-Track Processing**: A core architectural pattern where each globule is processed simultaneously by two AI systems:
+    *   An **Embedding Engine** to capture semantic meaning and relationships.
+    *   A **Parsing Engine** to extract structured data, entities, and facts.
+*   **Progressive Discovery**: An intelligent retrieval mechanism that surfaces relevant information as the user explores their knowledge base, creating a "ripple effect" of discovery.
+*   **Schema Definition Engine**: A powerful feature that allows users to define their own custom workflows and data structures using simple YAML files, transforming Globule into a personalized knowledge processing system.
 
-Several organizational structures were proposed and refined:
+## 3. System Architecture
 
-*   **Initial Proposal (Generic):** `Design/`, `Engineering/`, `Archive/` with sub-levels for HLD/LLD.
-*   **Revised Proposal (Spiral-inspired):** `Vision/`, `Design/`, `Code/`, `Understanding/`, `Archive/`.
-*   **Simplified Proposal (Form/Texture):** `Form/`, `Texture/`, `Archive/`.
-*   **Final Adopted Proposal (Component-Oriented):** This structure was chosen to mirror the internal architecture of the Globule system itself, grouping documents by the specific component they describe.
+Globule's architecture is designed as a multi-stage pipeline, ensuring modularity and progressive enhancement. The main layers are:
 
-    *   `00_Home.md` (at root)
-    *   `1_Foundations/`
-    *   `2_System_Architecture/`
-    *   `3_Core_Components/`
-        *   `Configuration_System/`
-        *   `Schema_Engine/`
-    *   `_Archive/`
-        *   `old/`
-        *   `roleplays/`
+1.  **Input Layer**: Handles various forms of user input, starting with a CLI and TUI. It includes an **Adaptive Input Module** that can engage in a dialogue with the user to clarify intent.
+2.  **Processing Pipeline**: The heart of the system, where the **Orchestration Engine** coordinates the dual-track processing of globules.
+3.  **Storage Layer**: A local-first storage solution, using SQLite with vector support in the MVP. The **Intelligent Storage Manager** automatically organizes information into a semantic file structure.
+4.  **Synthesis & Retrieval Layer**: The user-facing part of the system, where the **Query Engine** allows for natural language queries and the **Interactive Synthesis Engine** helps users weave their thoughts into polished documents.
 
-## 4. Key Decisions and Actions
+## 4. Core Components
 
-*   **Creation of `home.md`:** A central `home.md` file was created at the root to serve as the main entry point and to document the directory structure.
-*   **Comprehensive File Reading:** All existing markdown files were read to gain a deep understanding of the project's vision, design, and technical details. This understanding informed subsequent decisions.
-*   **Naming Convention Rules:** Strict rules were established for file naming:
-    1.  **Explicit Numbering:** Files are numbered (e.g., `10_`, `20_`) to ensure correct ordering in GitHub wikis, allowing for future insertions.
-    2.  **Separator Usage:** `-` (hyphen) is used between related conceptual words (e.g., `High-Level-Design`), and `_` (underscore) is used to separate distinct ideas or metadata (e.g., `LLD_Configuration-System`).
-    3.  **Clarity & No Redundancy:** Filenames are clear and self-describing without repeating information already conveyed by the directory structure (e.g., `LLD_` prefix for Low-Level Design documents, `Research_` for research documents).
-*   **Execution of Reorganization:**
-    *   The new directory structure was created.
-    *   Files were moved into their respective new directories.
-    *   Files were systematically renamed according to the agreed-upon naming conventions.
-    *   Empty original directories (`LLD-modules`, `LLD_research`) were removed.
-*   **GitHub Wiki Validation:** The user confirmed that the new numbering and naming scheme effectively organized the wiki on GitHub, despite the platform's flattening of folder structures.
+*   **Orchestration Engine**: The "conductor" of the AI services, ensuring that embedding and parsing work in harmony.
+*   **Adaptive Input Module**: A conversational gateway that validates input and applies the correct schema.
+*   **Dual Intelligence Services**: The Semantic Embedding Service and the Structural Parsing Service.
+*   **Intelligent Storage Manager**: Creates a semantic filesystem, automatically organizing information.
+*   **Interactive Synthesis Engine**: Powers the interactive drafting experience.
+*   **Configuration System**: A three-tier cascade system (System -> User -> Context) that allows for deep customization.
+*   **Schema Definition Engine**: Enables users to define custom workflows and data structures.
 
-## 5. Current State
+## 5. Development Roadmap
 
-The `globule.wiki` directory is now organized according to the component-oriented structure, with all files renamed to follow the established numbering and naming conventions. The `00_Home.md` file exists at the root, containing the initial directory map.
+The project follows a staged development plan, with each stage building on the previous one:
+
+*   **Stage 1: The Ollie (MVP)**: Focuses on the core capture, processing, storage, and retrieval loop.
+*   **Stage 2: The Kickflip**: Enhances the platform with specialized processors for different input types (URLs, images, etc.) and introduces graph relationships.
+*   **Stage 3: The Tre Flip**: Moves towards ambient intelligence with passive monitoring and event correlation.
+*   **Stage 4: The 360 Flip**: The full realization of the semantic OS vision, with deep OS-level integration.
+
+## 6. Design Philosophy
+
+*   **Capture First, Organize Never**: The user should focus on capturing thoughts; the AI handles organization.
+*   **Semantic > Hierarchical**: Meaning and context are more important than rigid folder structures.
+*   **AI as a Collaborative Partner**: The AI assists, but the user is always in control.
+*   **Privacy-First, Hybrid-by-Choice**: Local-first by default, with optional, secure cloud features.
+*   **Modular and Pluggable**: The system is designed for extensibility.
+
+## 7. Wiki Organization
+
+This wiki is structured to mirror the component-oriented architecture of the Globule system. The documents are organized into categories like "Foundations," "System Architecture," and "Core Components," with a numerical prefix to ensure a logical reading order. This structure is intended to make the project's documentation as clear and navigable as the system it describes.
