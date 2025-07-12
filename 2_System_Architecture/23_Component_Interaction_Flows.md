@@ -5,6 +5,71 @@
 
 This document provides a step-by-step description of how the core components of Globule interact during the primary user flows. It illustrates the dynamic behavior of the system, complementing the static diagrams in the other architecture documents.
 
+## Diagrams
+
+### Ingestion Flow
+
+```mermaid
+graph TD
+    subgraph User
+        A[User Input: `globule add ...`]
+    end
+
+    subgraph Pipeline
+        B[Adaptive Input Module]
+        C[Schema Engine]
+        D[Orchestration Engine]
+        E[Semantic Embedding Service]
+        F[Structural Parsing Service]
+        G[Intelligent Storage Manager]
+    end
+    
+    subgraph Storage
+        H[(Database & Filesystem)]
+    end
+
+    A --> B
+    B -- 1. Get Schema --> C
+    C -- 2. Return Schema --> B
+    B -- 3. EnrichedInput --> D
+    D -- 4a. Process Text --> E
+    D -- 4b. Process Text --> F
+    E -- 5a. Embedding Vector --> D
+    F -- 5b. Structured Data --> D
+    D -- 6. ProcessedGlobule --> G
+    G -- 7. Store Data & File --> H
+```
+
+### Synthesis Flow
+
+```mermaid
+graph TD
+    subgraph User
+        A[User Query: `globule draft ...`]
+    end
+
+    subgraph Pipeline
+        B[Interactive Synthesis Engine]
+        C[Semantic Embedding Service]
+        D[Intelligent Storage Manager]
+    end
+    
+    subgraph Storage
+        E[(Database & Filesystem)]
+    end
+
+    A --> B
+    B -- 1. Get Query Embedding --> C
+    C -- 2. Return Vector --> B
+    B -- 3. Semantic Search --> D
+    D -- 4. Query Vector Index --> E
+    E -- 5. Return Globules --> D
+    D -- 6. Return Globules --> B
+    B -- 7. Display in TUI --> A
+```
+
+---
+
 ## Flow 1: The Ingestion Pipeline
 
 This flow is triggered when a user adds a new "globule" to the system (e.g., `globule add "Note to self: research CRDTs for the real-time collaboration feature."`).
@@ -30,7 +95,7 @@ This flow is triggered when a user adds a new "globule" to the system (e.g., `gl
 *   **Component:** `Intelligent Storage Manager`
 *   **Input:** The `ProcessedGlobule` object from the `Orchestration Engine`.
 *   **Action:** It performs two critical storage operations:
-    1.  **Database Storage:** It saves the structured parts of the globule—the text, entities, creation date, and the embedding vector—into the SQLite database. This makes the data queryable.
+    1.  **Database Storage:** It saves the structured parts of the globule��the text, entities, creation date, and the embedding vector—into the SQLite database. This makes the data queryable.
     2.  **Semantic Filesystem Storage:** It uses the information in the `ProcessedGlobule` to generate a meaningful path and filename (e.g., `.../technical-research/crdt-real-time-collaboration.md`) and writes the original note text into it.
 *   **Output:** The process is complete. The user's thought is now stored, indexed, and semantically organized.
 
