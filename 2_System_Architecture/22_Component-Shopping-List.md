@@ -9,16 +9,37 @@ This document provides a structured breakdown of the components required to buil
 
 ## Component Dependency Graph
 
+This graph shows the direct dependencies for each component. The system is best understood as a set of services that call each other, rather than a single strict hierarchy. The graph is organized from foundational services to user-facing applications to provide a clear, navigable map of the architecture.
+
+**Foundational Services (No internal dependencies on other core components)**
+*   [Configuration System](../3_Core_Components/30_Configuration_System/30_LLD_Configuration-System.md)
+*   [Intelligent Storage Manager](../3_Core_Components/36_Intelligent_Storage_Manager/30_LLD_Intelligent_Storage_Manager.md)
+*   [Semantic Embedding Service](../3_Core_Components/33_Semantic_Embedding_Service/30_LLD_Semantic_Embedding_Service.md)
+*   [Structural Parsing Service](../3_Core_Components/34_Structural_Parsing_Service/30_LLD_Structural_Parsing_Service.md)
+
+**Core Logic Components**
 ```
-[Orchestration Engine]
-    ├── [Adaptive Input Module]
-    ├── [Dual Intelligence Services]
-    │   ├── [Semantic Embedding Service]
-    │   └── [Structural Parsing Service]
-    └── [Intelligent Storage Manager]
-        └── [Interactive Synthesis Engine]
-            └── [Configuration System]
-                └── [Schema Definition Engine]
+[Schema Definition Engine](../3_Core_Components/31_Schema_Engine/30_LLD_Schema-Engine.md)
+└─> [Configuration System](../3_Core_Components/30_Configuration_System/30_LLD_Configuration-System.md)
+
+[Orchestration Engine](../3_Core_Components/35_Orchestration_Engine/30_LLD_Orchestration_Engine.md)
+├─> [Semantic Embedding Service](../3_Core_Components/33_Semantic_Embedding_Service/30_LLD_Semantic_Embedding_Service.md)
+├─> [Structural Parsing Service](../3_Core_Components/34_Structural_Parsing_Service/30_LLD_Structural_Parsing_Service.md)
+└─> [Intelligent Storage Manager](../3_Core_Components/36_Intelligent_Storage_Manager/30_LLD_Intelligent_Storage_Manager.md)
+```
+
+**User-Facing Application Components**
+```
+[Adaptive Input Module](../3_Core_Components/32_Adaptive_Input_Module/30_LLD_Adaptive_Input_Module.md)
+├─> [Orchestration Engine](../3_Core_Components/35_Orchestration_Engine/30_LLD_Orchestration_Engine.md)
+├─> [Schema Definition Engine](../3_Core_Components/31_Schema_Engine/30_LLD_Schema-Engine.md)
+└─> [Configuration System](../3_Core_Components/30_Configuration_System/30_LLD_Configuration-System.md)
+
+[Interactive Synthesis Engine](../3_Core_Components/37_Interactive_Synthesis_Engine/30_LLD_Interactive_Synthesis_Engine.md)
+├─> [Intelligent Storage Manager](../3_Core_Components/36_Intelligent_Storage_Manager/30_LLD_Intelligent_Storage_Manager.md)
+├─> [Semantic Embedding Service](../3_Core_Components/33_Semantic_Embedding_Service/30_LLD_Semantic_Embedding_Service.md)
+├─> [Structural Parsing Service](../3_Core_Components/34_Structural_Parsing_Service/30_LLD_Structural_Parsing_Service.md)
+└─> [Configuration System](../3_Core_Components/30_Configuration_System/30_LLD_Configuration-System.md)
 ```
 
 ## Core Components
