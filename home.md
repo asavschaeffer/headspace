@@ -51,4 +51,12 @@ This wiki is organized to reflect the project's architecture.
 *   **2_System_Architecture**: Architectural diagrams and design documents that describe how the system fits together.
 *   **3_Core_Components**: Detailed Low-Level Design (LLD) and research documents for each specific component.
 
+To get a feel for the project, we recommend reading the following documents in order:
+
+   1. 11_Vision-and-Strategy.md: Understand the "why" behind Globule.
+   2. 20_High-Level-Design.md: Get a bird's-eye view of the system architecture.
+   3. 23_Component_Interaction_Flows.md: See how the components work together in practice.
+   4. Browse the 3_Core_Components directory to dive into the specifics of any component that interests you.
+
+
 You can navigate through the documents using the sidebar. The numbering is intended to provide a logical reading order, from abstract concepts to concrete implementations.
