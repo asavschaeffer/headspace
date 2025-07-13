@@ -1,148 +1,161 @@
 # Component Interaction Flows
 
-_Version: 1.2_
+_Version: 1.5_  
 _Status: Draft_
 
-This document provides a step-by-step description of how the core components of Globule interact during the primary user flows. It illustrates the dynamic behavior of the system, complementing the static diagrams in the other architecture documents.
-
+This document describes how Globule’s core components interact during primary user flows, complementing the static architecture in `HLD.txt`, `21_Technical-Architecture.md`, and `architectural-philosophy_component-narrative.txt`.
 ## Flow 1: The Ingestion Pipeline
 
-This flow is triggered when a user adds a new "globule" to the system (e.g., `globule add "Note to self: research CRDTs for the real-time collaboration feature."`).
+Triggered when a user adds a new globule (e.g., `globule add "Note to self: research CRDTs for the real-time collaboration feature."`). See `HLD.txt` Section 6.1.
 
 ```mermaid
 graph TD
-subgraph User
-A[**User Input**: *globule add ...*]
-end
+    subgraph User
+        A(User Input: globule add ...)
+    end
 
     subgraph Pipeline
-        B[**Adaptive Input Module**: *Conversational gateway with schema validation*]
-        C[**Schema Engine**: *Encodes user-defined workflows*]
-        D[**Orchestration Engine**: *Coordinates embedding & parsing<br>Makes intelligent decisions*]
-        E[**Semantic Embedding Service**: *Generates meaning vectors*]
-        F[**Structural Parsing Service**: *Extracts entities & facts*]
-        G[**Intelligent Storage Manager**: *Organizes thoughts semantically*]
+        B[Adaptive Input Module: Conversational gateway with schema validation]
+        C[Schema Engine: Encodes user-defined workflows]
+        D[Configuration System: Provides settings and context]
+        E[Orchestration Engine: Coordinates embedding and parsing]
+        F[Semantic Embedding Service: Generates meaning vectors]
+        G[Structural Parsing Service: Extracts entities and facts]
+        H[Intelligent Storage Manager: Organizes thoughts semantically]
     end
 
     subgraph Storage
-        H[(Database & Filesystem)]
+        I[(Database and Filesystem: SQLite + Semantic FS)]
     end
 
-    A --> B
-    B -- (1) Get Schema --> C
-    C -- (2) Return Schema --> B
-    B -- (3) EnrichedInput --> D
-    D -- (4a) Process Text --> E
-    D -- (4b) Process Text --> F
-    E -- (5a) Embedding Vector --> D
-    F -- (5b) Structured Data --> D
-    D -- (6) ProcessedGlobule --> G
-    G -- (7) Store Data & File --> H
+    A -->|Raw Text| B
+    B -->|1 Detect Schema| C
+    C -->|2 Schema and Triggers| B
+    B -->|3 Check Settings| D
+    D -->|4 Config Data| B
+    B -->|5 EnrichedInput| E
+    E -->|6a Text and Context| F
+    E -->|6b Text and Schema| G
+    F -->|7a Embedding Vector| E
+    G -->|7b Structured Data| E
+    E -->|8 ProcessedGlobule| H
+    H -->|9 Store Data and File| I
 
-    style A fill:#f0e8d0,stroke:#a09060,stroke-width:2px,color:#333,border-radius:10px
-    style B fill:#d0e8f0,stroke:#6090a0,stroke-width:2px,color:#333,border-radius:10px
-    style C fill:#d0e8f0,stroke:#6090a0,stroke-width:2px,color:#333,border-radius:10px
-    style D fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333,border-radius:10px
-    style E fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333,border-radius:10px
-    style F fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333,border-radius:10px
-    style G fill:#a0e0b0,stroke:#409060,stroke-width:2px,color:#333,border-radius:10px
-    style H fill:#90d0a0,stroke:#307050,stroke-width:2px,color:#333,border-radius:10px
+    style A fill:#f0e8d0,stroke:#a09060,stroke-width:2px,color:#333
+    style B fill:#d0e8f0,stroke:#6090a0,stroke-width:2px,color:#333
+    style C fill:#d0e8f0,stroke:#6090a0,stroke-width:2px,color:#333
+    style D fill:#d0e8f0,stroke:#6090a0,stroke-width:2px,color:#333
+    style E fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333
+    style F fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333
+    style G fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333
+    style H fill:#a0e0b0,stroke:#409060,stroke-width:2px,color:#333
+    style I fill:#90d0a0,stroke:#307050,stroke-width:2px,color:#333
+
+    %% Legend:
+    %% • Yellow (Rounded): Start/end points (user interactions)
+    %% • Blue (Rectangle): Processing pipeline
+    %% • Green (Cylinder): Storage layer
 ```
 
-**Step 1: Entry & Initial Validation**
+**Step 1: Entry and Initial Validation**
 
-- **Component:** `Adaptive Input Module`
-- **Input:** The raw text string from the user.
+- **Component:** `Adaptive Input Module` (`input_adapter.py`)
+- **Input:** Raw text via CLI.
 - **Action:**
-  1.  It consults the **`Schema Engine`** to determine the input's type, passing the text to the engine's detection function.
-  2.  The `Schema Engine` checks its library of triggers. In this case, no specific trigger matches, so it returns the default `free_text` schema.
-  3.  If the schema required more information (e.g., a `link_curation` schema needing context), the `Adaptive Input Module` would prompt the user. Here, it does not.
-- **Output:** It packages the raw text and the determined schema ID (`free_text`) into an `EnrichedInput` object and passes it to the central coordinator.
+  • Consults `Schema Engine` to detect input type (`22_Component-Shopping-List.md` Section 8).
+  • Queries `Configuration System` for settings (e.g., verbosity; `20_High-Level-Design.md` Section 5.6).
+  • Applies `free_text` schema if no specific triggers match, optionally prompting for context.
+- **Output:** `EnrichedInput` object passed to `Orchestration Engine`.
 
 **Step 2: The Conductor Orchestrates Intelligence**
 
-- **Component:** `Orchestration Engine`
-- **Input:** The `EnrichedInput` object.
-- **Action:** This is the heart of the processing. It initiates two tasks in parallel:
-  1.  It calls the **`Semantic Embedding Service`**, passing it the raw text. The service returns a high-dimensional vector embedding.
-  2.  It calls the **`Structural Parsing Service`**, passing it the raw text and the schema hint (`free_text`). The service uses an LLM to extract entities (like "CRDTs", "real-time collaboration"), categories (e.g., "technical-research"), and other metadata.
-- **Output:** Once both tasks are complete, the `Orchestration Engine` combines the original text, the schema ID, the new embedding vector, and the structured data into a single, comprehensive `ProcessedGlobule` object.
+- **Component:** `Orchestration Engine` (`orchestration.py`)
+- **Input:** `EnrichedInput` object.
+- **Action:**
+  • Runs parallel tasks:
+    - `Semantic Embedding Service` generates vector embedding (`mxbai-embed-large`; `21_Technical-Architecture.md` Section 5.3.1).
+    - `Structural Parsing Service` extracts entities and metadata (`llama3.2:3b`; `21_Technical-Architecture.md` Section 5.3.2).
+  • Resolves disagreements (e.g., sarcasm; `HLD.txt` Section 7.1).
+- **Output:** `ProcessedGlobule` object.
 
 **Step 3: Intelligent Persistence**
 
-- **Component:** `Intelligent Storage Manager`
-- **Input:** The `ProcessedGlobule` object from the `Orchestration Engine`.
-- **Action:** It performs two critical storage operations:
-  1.  **Database Storage:** It saves the structured parts of the globule��the text, entities, creation date, and the embedding vector—into the SQLite database. This makes the data queryable.
-  2.  **Semantic Filesystem Storage:** It uses the information in the `ProcessedGlobule` to generate a meaningful path and filename (e.g., `.../technical-research/crdt-real-time-collaboration.md`) and writes the original note text into it.
-- **Output:** The process is complete. The user's thought is now stored, indexed, and semantically organized.
+- **Component:** `Intelligent Storage Manager` (`storage_manager.py`)
+- **Input:** `ProcessedGlobule` object.
+- **Action:**
+  • Stores data in SQLite database (`22_Component-Shopping-List.md` Section 5).
+  • Generates semantic path (e.g., `.../technical-research/crdt-real-time-collaboration.md`) and saves as Markdown with metadata (`architectural-philosophy_component-narrative.txt`).
+- **Output:** Stored and indexed thought.
 
----
+## Flow 2: The Synthesis and Retrieval Flow
 
-## Flow 2: The Synthesis & Retrieval Flow
-
-This flow is initiated when the user wants to create something new from their existing thoughts (e.g., `globule draft "real-time features"`).
+Triggered when a user creates a document (e.g., `globule draft "real-time features"`). See `HLD.txt` Section 6.1.
 
 ```mermaid
 graph TD
-subgraph User
-A[**User Query**: *globule draft ...*]
-end
+    subgraph User
+        A(User Query: globule draft ...)
+        Z(Display in TUI)
+    end
 
     subgraph Pipeline
-        B[**Interactive Synthesis Engine**: *Powers drafting with Palette & Canvas*]
-        C[**Semantic Embedding Service**: *Generates meaning vectors*]
-        D[**Intelligent Storage Manager**: *Organizes thoughts semantically*]
+        B[Interactive Synthesis Engine: Powers Palette and Canvas via TUI]
+        C[Semantic Embedding Service: Generates meaning vectors]
+        D[Intelligent Storage Manager: Queries semantic index]
+        E[Configuration System: Provides settings and context]
     end
 
     subgraph Storage
-        E[(Database & Filesystem)]
+        F[(Database and Filesystem: SQLite + Semantic FS)]
     end
 
-    A --> B
-    B -- (1) Get Query Embedding --> C
-    C -- (2) Return Vector --> B
-    B -- (3) Semantic Search --> D
-    D -- (4) Query Vector Index --> E
-    E -- (5) Return Globules --> D
-    D -- (6) Return Globules --> B
-    B -- (7) Display in TUI --> A
+    A -->|Query Text| B
+    B -->|1 Check Settings| E
+    E -->|2 Config Data| B
+    B -->|3 Query Text| C
+    C -->|4 Query Vector| B
+    B -->|5 Semantic Search| D
+    D -->|6 Query Vector Index| F
+    F -->|7 Globules| D
+    D -->|8 Clustered Globules| B
+    B -->|9 Output| Z
 
-    style A fill:#f0e8d0,stroke:#a09060,stroke-width:2px,color:#333,border-radius:10px
-    style B fill:#e0b0d0,stroke:#804090,stroke-width:2px,color:#333,border-radius:10px
-    style C fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333,border-radius:10px
-    style D fill:#a0e0b0,stroke:#409060,stroke-width:2px,color:#333,border-radius:10px
-    style E fill:#90d0a0,stroke:#307050,stroke-width:2px,color:#333,border-radius:10px
+    style A fill:#f0e8d0,stroke:#a09060,stroke-width:2px,color:#333
+    style Z fill:#f0e8d0,stroke:#a09060,stroke-width:2px,color:#333
+    style B fill:#e0b0d0,stroke:#804090,stroke-width:2px,color:#333
+    style C fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333
+    style D fill:#a0e0b0,stroke:#409060,stroke-width:2px,color:#333
+    style E fill:#b0d0e0,stroke:#5080a0,stroke-width:2px,color:#333
+    style F fill:#90d0a0,stroke:#307050,stroke-width:2px,color:#333
+
+    %% Legend:
+    %% • Yellow (Rounded): Start/end points (user interactions)
+    %% • Blue/Purple (Rectangle): Processing pipeline
+    %% • Green (Cylinder): Storage layer
 ```
 
-**Step 1: Query & Retrieval**
+**Step 1: Query and Retrieval**
 
-- **Component:** `Interactive Synthesis Engine`
-- **Input:** The user's query string, "real-time features".
+- **Component:** `Interactive Synthesis Engine` (`synthesis_engine.py`)
+- **Input:** Query string (e.g., “real-time features”).
 - **Action:**
-  1.  It first needs to understand the _meaning_ of the query, so it calls the **`Semantic Embedding Service`** to get a vector embedding for "real-time features".
-  2.  It then passes this query vector to the **`Intelligent Storage Manager`**'s semantic search function.
-- **Output:** The `Intelligent Storage Manager` queries its vector index to find the most similar globules and returns a list of `Globule` objects.
+  • Queries `Configuration System` for Palette settings (`20_High-Level-Design.md` Section 5.6).
+  • Calls `Semantic Embedding Service` for query vector (`21_Technical-Architecture.md` Section 5.3.1).
+  • Passes vector to `Intelligent Storage Manager` for semantic search.
+- **Output:** List of `Globule` objects.
 
 **Step 2: Display and Interaction**
 
 - **Component:** `Interactive Synthesis Engine`
-- **Input:** The list of relevant `Globule` objects.
+- **Input:** `Globule` objects.
 - **Action:**
-  1.  It populates its "Palette" pane with these globules, perhaps clustering them for clarity.
-  2.  The user interacts with the TUI, selecting globules, writing on the "Canvas", and potentially triggering new actions.
-  3.  If the user wants to "explore" a specific globule, the engine might repeat Step 1 using that globule's embedding to find even more related thoughts ("Progressive Discovery").
-- **Output:** A finished, polished document created by the user.
-
----
+  • Clusters globules for Palette pane (`architectural-philosophy_component-narrative.txt`).
+  • Displays TUI with Palette and Canvas (`HLD.txt` Section 5.5).
+  • Supports “Explore Mode” via repeated semantic searches (`21_Technical-Architecture.md` Section 5.5.3).
+- **Output:** Polished document displayed in TUI.
 
 ## Supporting Roles of Foundational Components
 
-The **`Configuration System`** and **`Schema Engine`** are not typically in the direct data pipeline but are constantly consulted by all other components.
+- `Configuration System`: Provides settings for all components (`22_Component-Shopping-List.md` Section 7).
+- `Schema Engine`: Validates inputs and builds prompts for `Adaptive Input Module` and `Structural Parsing Service` (`22_Component-Shopping-List.md` Section 8).
 
-- The `Orchestration Engine` asks the `Configuration System` which LLM model to use.
-- The `Storage Manager` asks the `Configuration System` for the database path.
-- The `Adaptive Input Module` asks the `Schema Engine` to validate an input.
-- The `Structural Parsing Service` might ask the `Schema Engine` for the detailed field list of a specific schema to construct a better prompt.
-
-This makes them foundational dependencies for the entire system, providing the essential "rules of the road" for all other components.
