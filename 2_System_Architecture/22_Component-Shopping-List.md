@@ -20,7 +20,7 @@ This graph shows the direct dependencies for each component. The system is best 
 **Core Logic Components**  
 - [Schema Definition Engine](../3_Core_Components/31_Schema_Engine/30_LLD_Schema-Engine.md)  
   └─ [Configuration System](../3_Core_Components/30_Configuration_System/30_LLD_Configuration-System.md)  
-<br>
+
 - [Orchestration Engine](../3_Core_Components/35_Orchestration_Engine/30_LLD_Orchestration_Engine.md)  
   ├─ [Semantic Embedding Service](../3_Core_Components/33_Semantic_Embedding_Service/30_LLD_Semantic_Embedding_Service.md)  
   ├─ [Structural Parsing Service](../3_Core_Components/34_Structural_Parsing_Service/30_LLD_Structural_Parsing_Service.md)  
