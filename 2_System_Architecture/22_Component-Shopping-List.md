@@ -11,14 +11,16 @@ This document provides a structured breakdown of the components required to buil
 
 This table of contents lists the 8 core components, ordered by their architectural layer. This ordering represents the dependency flow of the system, from foundational services to user-facing applications.
 
-[Adaptive Input Module](../3_Core_Components/32_Adaptive_Input_Module/30_LLD_Adaptive_Input_Module.md)
-├─ [Orchestration Engine](../3_Core_Components/35_Orchestration_Engine/30_LLD_Orchestration_Engine.md)
-│  ├─ [Semantic Embedding Service](../3_Core_Components/33_Semantic_Embedding_Service/30_LLD_Semantic_Embedding_Service.md)
-│  ├─ [Structural Parsing Service](../3_Core_Components/34_Structural_Parsing_Service/30_LLD_Structural_Parsing_Service.md)
-│  └─ [Intelligent Storage Manager](../3_Core_Components/36_Intelligent_Storage_Manager/30_LLD_Intelligent_Storage_Manager.md)
-├─ [Schema Definition Engine](../3_Core_Components/31_Schema_Engine/30_LLD_Schema-Engine.md)
-│  └─ [Configuration System](../3_Core_Components/30_Configuration_System/30_LLD_Configuration-System.md)
-└─ [Interactive Synthesis Engine](../3_Core_Components/37_Interactive_Synthesis_Engine/30_LLD_Interactive_Synthesis_Engine.md)
+<pre>
+<a href="../3_Core_Components/32_Adaptive_Input_Module/30_LLD_Adaptive_Input_Module.md">Adaptive Input Module</a>
+├─ <a href="../3_Core_Components/35_Orchestration_Engine/30_LLD_Orchestration_Engine.md">Orchestration Engine</a>
+│  ├─ <a href="../3_Core_Components/33_Semantic_Embedding_Service/30_LLD_Semantic_Embedding_Service.md">Semantic Embedding Service</a>
+│  ├─ <a href="../3_Core_Components/34_Structural_Parsing_Service/30_LLD_Structural_Parsing_Service.md">Structural Parsing Service</a>
+│  └─ <a href="../3_Core_Components/36_Intelligent_Storage_Manager/30_LLD_Intelligent_Storage_Manager.md">Intelligent Storage Manager</a>
+├─ <a href="../3_Core_Components/31_Schema_Engine/30_LLD_Schema-Engine.md">Schema Definition Engine</a>
+│  └─ <a href="../3_Core_Components/30_Configuration_System/30_LLD_Configuration-System.md">Configuration System</a>
+└─ <a href="../3_Core_Components/37_Interactive_Synthesis_Engine/30_LLD_Interactive_Synthesis_Engine.md">Interactive Synthesis Engine</a>
+</pre>
 
 
 ### 1. Orchestration Engine
