@@ -304,7 +304,6 @@ func findNoteByPath(notes []NoteMetadata, path string) NoteMetadata {
 }
 
 func main() {
-    func main() {
     if len(os.Args) < 2 {
         fmt.Println("Usage: go run main.go <directory_path>")
         return
