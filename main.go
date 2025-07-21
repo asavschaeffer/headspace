@@ -304,8 +304,15 @@ func findNoteByPath(notes []NoteMetadata, path string) NoteMetadata {
 }
 
 func main() {
+    func main() {
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: go run main.go <directory_path>")
+        return
+    }
+    inputDir := os.Args[1]
+
     agent := NewAnalysisAgent(
-        "input",
+        inputDir,
         "output",
         "http://localhost:11434/api/generate",
         "llama3.2:3b",
