@@ -1,0 +1,185 @@
+# Second Brain OS Assistant Configuration
+
+system_config:
+  name: "JARVIS Enhanced"
+  version: "2.0"
+  base_model: "llama3.2:3b"  # Your current setup
+  ollama_url: "http://localhost:11434/api/generate"
+
+# Core Capabilities
+capabilities:
+  file_management:
+    directory_structure:
+      rules_file: "rules/directory_rules.yaml"
+      auto_organize: true
+      watch_directories: ["~/Downloads", "~/Documents", "~/Desktop"]
+    
+    file_naming:
+      rules_file: "rules/naming_rules.yaml"
+      conventions:
+        - "snake_case for code files"
+        - "kebab-case for documents"
+        - "PascalCase for components"
+        - "SCREAMING_SNAKE_CASE for constants"
+    
+    file_operations:
+      - "rename based on content analysis"
+      - "move to appropriate directories"
+      - "create directory structure from templates"
+
+  document_formatting:
+    markdown:
+      rules_file: "rules/markdown_rules.yaml" 
+      features:
+        - "auto_table_generation"
+        - "footnote_management"
+        - "cross_reference_linking"
+        - "toc_generation"
+    
+    docx_to_html:
+      rules_file: "rules/docx_styling_rules.yaml"
+      output_format: "html_with_css"
+      style_templates: "templates/document_styles/"
+    
+    pdf_generation:
+      engine: "wkhtmltopdf"
+      templates: "templates/pdf_layouts/"
+
+  code_management:
+    commit_messages:
+      rules_file: "rules/commit_rules.yaml"  # Your existing one!
+      auto_stage: false
+      auto_push: false
+    
+    code_generation:
+      rules_file: "rules/coding_rules.yaml"
+      supported_languages: ["go", "python", "javascript", "yaml"]
+      style_guides: "rules/style_guides/"
+    
+    project_structure:
+      templates: "templates/project_templates/"
+      auto_setup: ["git", "gitignore", "readme", "license"]
+
+  knowledge_management:
+    note_processing:
+      current_system: "your existing embed.py + main.go"
+      enhancements:
+        - "auto_tagging based on content"
+        - "relationship_mapping between notes"
+        - "concept_extraction and indexing"
+    
+    search_and_retrieval:
+      embedding_model: "mixedbread-ai/mxbai-embed-large-v1"  # Your current
+      similarity_threshold: 0.7
+      max_results: 10
+
+# Rule Files Structure
+rule_files:
+  commit_rules:
+    path: "rules/commit_rules.yaml"
+    description: "Git commit message generation rules"
+    
+  directory_rules:
+    path: "rules/directory_rules.yaml"
+    description: "File organization and directory structure rules"
+    
+  naming_rules:
+    path: "rules/naming_rules.yaml" 
+    description: "File and variable naming conventions"
+    
+  markdown_rules:
+    path: "rules/markdown_rules.yaml"
+    description: "Document formatting and structure rules"
+    
+  coding_rules:
+    path: "rules/coding_rules.yaml"
+    description: "Code generation and style rules"
+
+# Integration Points
+integrations:
+  command_line:
+    main_command: "jarvis"
+    subcommands:
+      - "organize [directory]"
+      - "commit [message_type]" 
+      - "format [file_type] [input_file]"
+      - "search [query]"
+      - "create [template_type] [name]"
+  
+  file_watchers:
+    enabled: true
+    directories:
+      - path: "~/Downloads"
+        action: "auto_organize"
+      - path: "~/Documents"
+        action: "index_and_tag"
+      - path: "~/Code"
+        action: "analyze_structure"
+  
+  git_hooks:
+    pre_commit: "jarvis commit --validate"
+    post_commit: "jarvis index --update"
+
+# Workflow Examples
+workflows:
+  new_project:
+    steps:
+      - "create directory structure from template"
+      - "initialize git repository"
+      - "generate appropriate .gitignore"
+      - "create initial README.md"
+      - "set up development environment"
+  
+  document_processing:
+    steps:
+      - "analyze document content"
+      - "extract key concepts and entities"
+      - "suggest appropriate directory"
+      - "format using markdown rules"
+      - "generate cross-references"
+      - "update knowledge index"
+  
+  code_commit:
+    steps:
+      - "analyze changed files"
+      - "determine commit type and scope"
+      - "generate commit message using rules"
+      - "validate against style guide"
+      - "update project documentation if needed"
+
+# Extension Points
+extensions:
+  custom_rules:
+    directory: "custom_rules/"
+    format: "yaml"
+    auto_load: true
+  
+  custom_templates:
+    directory: "custom_templates/"
+    types: ["project", "document", "code"]
+  
+  plugins:
+    directory: "plugins/"
+    supported_languages: ["go", "python"]
+    api_version: "v1"
+
+# Configuration for Your Current System
+current_system_integration:
+  embed_py:
+    enhancements:
+      - "add rule-based preprocessing"
+      - "context-aware embedding generation"
+      - "multi-model embedding support"
+  
+  main_go:
+    enhancements:
+      - "add rule loading system"
+      - "implement file watching"
+      - "add command-line interface"
+      - "integrate with system file operations"
+  
+  parse_py:
+    enhancements:
+      - "rule-based metadata extraction"
+      - "content analysis and categorization"
+      - "automatic tag suggestion"
