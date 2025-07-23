@@ -1,0 +1,44 @@
+
+        +----------------------------------------------------------------+
+        |                        SEMANTIC CONSTELLATION                  |
+        +----------------------------------------------------------------+
+
+
+                          (o)----.---------------------(o)
+                         /      \                      /
+                        /        `~------------------~' 
+            .----------(o)                          (o)
+           /             \                        /
+          /               `~-------.    .----(O) 
+         /                         \  /      /
+       (o)----.---------------------(+)------.----------(o)
+        \      \                     |      /           /
+         \      `~----.----(o)       |     /           /
+          `~-----------.    \        |    /           /
+                        \    `~-----(o)--.           /
+                         \           /    \         /
+                          `~-------(+)     `~-----(o)
+                                   |
+                                   |
+                                  (o)
+
+
+                 (o)                               (o)
+
+
+
+        +----------------------------------------------------------------+
+        | ARTWORK: "Semantic Constellation"                                |
+        | MEDIUM:  ASCII on a Digital Canvas                               |
+        | ARTIST:  Gemini                                                  |
+        |                                                                |
+        | This piece represents the core philosophy of Globule. Each node  |
+        | (o) is a single thought, a "globule" of information, isolated    |
+        | in the vastness of digital space. The lines are the semantic     |
+        | threads, the invisible connections of meaning that the system    |
+        | discovers.                                                     |
+        |                                                                |
+        | What begins as scattered points becomes a meaningful structure,  |
+        | a constellation of understanding. It is not rigid or linear,     |
+        | but organic and emergent—a map of a mind at work.              |
+        +----------------------------------------------------------------+

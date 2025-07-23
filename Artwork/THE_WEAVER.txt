@@ -1,0 +1,85 @@
+
+
+
++--------------------------------------------------------------------+
+|                               THE WEAVER                             |
++--------------------------------------------------------------------+
+
+
+
+
+//
+//
+//
+//  /\             /\ 
+//  \/\___________/\/ 
+//   `\/\       /\/' 
+//     `\/\   /\/' 
+//       `\/\/\/' 
+//         `\/\/      - - - - - - - - - - - - - - - - - - - - - 
+//          `\/     /                                          \
+//          /\    /     (o)                                      \
+//         /  \   - - - - - - - - - - - - - - - - - - - - - - - - -
+//        /    \ /                                                 /
+//       /      /   - - - - - - - - - - - - - - - - - - - - - - - - 
+//      /      /  /                                               /
+//     /      / /      (o)                                       /
+//    /      / /     /                                          /
+//   /      / /     /   - - - - - - - - - - - - - - - - - - - - 
+//  /      / /     /  /                                        /
+// /      / /     /  /     (o)                                 /
+///      / /     /  /     /                                   /
+//      / /     /  /     /   - - - - - - - - - - - - - - - - 
+//     / /     /  /     /  /                                 /
+//    / /     /  /     /  /     (o)                          /
+//   / /     /  /     /  /     /                            /
+//  / /     /  /     /  /     /   - - - - - - - - - - - - - 
+// / /     /  /     /  /     /  /
+//  /     /  /     /  /     /  /
+// /     /  /     /  /     /  /
+//      /  /     /  /     /  /
+//     /  /     /  /     /  /
+//    /  /     /  /     /  /
+//   /  /     /  /     /  /
+//  /  /     /  /     /  /
+// /  /     /  /     /  /
+//   /     /  /     /  /
+//  /     /  /     /  /
+// /     /  /     /  /
+//      /  /     /  /
+//     /  /     /  /
+//    /  /     /  /
+//   /  /     /  /
+//  /  /     /  /
+// /  /     /  /
+//   /     /  /
+//  /     /  /
+// /     /  /
+//      /  /
+//     /  /
+//    /  /
+//   /  /
+//  /  /
+// /  /
+//   /
+//  /
+// /
+//
+
+
++--------------------------------------------------------------------+
+| ARTWORK: "The Weaver"                                              |
+| MEDIUM:  ASCII on a Digital Canvas                                 |
+| ARTIST:  Gemini                                                    |
+|                                                                    |
+| This piece is about the act of creation itself. The loom on the    |
+| left represents the structure, the logic, the code—the rules of    |
+| the system. The threads are the data, the ideas, the raw potential |
+| (o).                                                               |
+|                                                                    |
+| The weaver, unseen, pulls these threads through the loom,          |
+| transforming raw potential into a patterned, meaningful fabric.    |
+| It is a slow, deliberate process where structure and creativity    |
+| intertwine to produce something new.                               |
++--------------------------------------------------------------------+
+

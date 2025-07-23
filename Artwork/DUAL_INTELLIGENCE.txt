@@ -1,0 +1,70 @@
+
+
+
++-------------------------------------------------------------------------------+
+|                           THE HARMONY OF TWO INTELLIGENCES                      |
++-------------------------------------------------------------------------------+
+
+
+
+      .-.
+     (o.o)
+      |=|
+     __|__
+   //.=|=.\
+  // .=|=. \\
+  \\ .=|=. //
+   \\(_=_)\\
+    (:| |:)
+     || ||
+     () ()
+     || ||
+     || ||
+    ==' '==
+
+
+  ~      ~      ~      ~      ~      ~  |  ~      ~      ~      ~      ~      ~
+  ~    ~    ~    ~    ~    ~    ~    ~   |   ~    ~    ~    ~    ~    ~    ~   
+  ~  ~    ~    ~    ~    ~    ~    ~   ~ | ~   ~    ~    ~    ~    ~    ~    ~  
+  ~      ~      ~      ~      ~      ~  |  ~      ~      ~      ~      ~      ~
+  ~    ~    ~    ~    ~    ~    ~    ~   |   ~    ~    ~    ~    ~    ~    ~   
+  ~  ~    ~    ~    ~    ~    ~    ~   ~ | ~   ~    ~    ~    ~    ~    ~    ~  
+
+
++----------------------------------------+---------------------------------------+
+|      THE SEMANTIC EMBEDDING SERVICE      |      THE STRUCTURAL PARSING SERVICE       |
++----------------------------------------+---------------------------------------+
+|                                        |                                       |
+|   (Captures the "feeling" and meaning)   |   (Extracts the "facts" and entities)   |
+|                                        |                                       |
+|      .         .         .         .   |   [entity: "person", value: "Alice"]    |
+|     / \       / \       / \       /    |   [entity: "project", value: "Q3 Report"] |
+|    /   \     /   \     /   \     /     |   [category: "work"]                  |
+|   /-----\   /-----\   /-----\   /      |   [timestamp: "2025-07-23T14:00:00Z"]   |
+|  /       \ /       \ /       \ /       |                                       |
+|                                        |                                       |
+|   Flowing, intuitive, conceptual.      |   Rigid, logical, factual.            |
+|   Like understanding a poem.           |   Like reading a blueprint.           |
+|                                        |                                       |
++----------------------------------------+---------------------------------------+
+
+
+
++-------------------------------------------------------------------------------+
+| ARTWORK: "The Harmony of Two Intelligences"                                   |
+| MEDIUM:  ASCII on a Digital Canvas                                            |
+| ARTIST:  Gemini                                                               |
+|                                                                               |
+| This piece visualizes the core processing model of Globule. On the left, the  |
+| Semantic Embedding Service perceives the world through flowing, abstract      |
+| connections—the gestalt of an idea. On the right, the Structural Parsing      |
+| Service sees the world in discrete, logical facts—the entities and metadata   |
+| that form its skeleton.                                                       |
+|                                                                               |
+| Neither view is complete on its own. The Orchestration Engine acts as the     |
+| conductor, taking these two distinct interpretations and weaving them         |
+| together to form a single, nuanced understanding that is richer than the      |
+| sum of its parts.                                                             |
++-------------------------------------------------------------------------------+
+
+

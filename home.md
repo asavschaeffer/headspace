@@ -4,15 +4,15 @@ This wiki serves as the central knowledge base for the Globule project. It's des
 
 ## 1. What is Globule?
 
-At its core, Globule is a system designed to reduce the friction between thought and digital organization. We currently spend significant mental overhead naming files, organizing folders, and trying to recall where we stored information. Globule proposes a different approach: a local-first, semantic layer for your personal information.
+At its core, Globule is a system designed to reduce the friction between thought and digital organization. We currently spend significant mental overhead naming files, organizing folders, and trying to recall where we stored information. Globule proposes a different approach: a **local-first, semantic layer for your personal information.**
 
-The name itself hints at the core function: to **glob** (globally search) for **blob**s (Binary Large Objects, in this case, the vector embeddings that represent meaning). It's a system for finding the meaning in your data, not just the data itself.
+The name itself hints at the core function: to **glob** (globally search) for **blob**s (in this case, the vector embeddings that represent meaning). It's a system for finding the meaning in your data, not just the data itself.
 
 The goal is to create a tool that understands the context and connections within your thoughts, allowing you to focus on creating while the system handles the organization.
 
 ## 2. Core Principles
 
-The project is guided by several foundational principles:
+The project is guided by several foundational principles that inform every architectural decision:
 
 *   **Capture First, Organize Never:** Optimize for frictionless input; AI handles the organizational complexity.
 *   **Semantic Understanding Over Hierarchical Storage:** Information is connected by intrinsic meaning, not rigid folder structures.
@@ -53,10 +53,13 @@ This wiki is organized to reflect the project's architecture.
 
 To get a feel for the project, we recommend reading the following documents in order:
 
-   1. 11_Vision-and-Strategy.md: Understand the "why" behind Globule.
-   2. 20_High-Level-Design.md: Get a bird's-eye view of the system architecture.
-   3. 23_Component_Interaction_Flows.md: See how the components work together in practice.
-   4. Browse the 3_Core_Components directory to dive into the specifics of any component that interests you.
-
+1.  `1_Foundations/11_Vision-and-Strategy.md`: Understand the "why" behind Globule.
+2.  `2_System_Architecture/20_High-Level-Design.md`: Get a bird's-eye view of the system architecture.
+3.  `2_System_Architecture/23_Component_Interaction_Flows.md`: See how the components work together in practice.
+4.  Browse the `3_Core_Components` directory to dive into the specifics of any component that interests you.
 
 You can navigate through the documents using the sidebar. The numbering is intended to provide a logical reading order, from abstract concepts to concrete implementations.
+
+---
+
+This wiki is a living document. As the project evolves, so will this knowledge base. Welcome to Globule.
