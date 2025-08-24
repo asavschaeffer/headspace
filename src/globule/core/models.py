@@ -168,3 +168,28 @@ class ProcessedGlobuleV1(BaseGlobuleModel):
     def processing_notes(self) -> List[str]:
         """Compatibility property for storage manager that expects 'processing_notes' field."""
         return self.provider_metadata.get('processing_notes', [])
+    
+    @property
+    def is_managed(self) -> bool:
+        """Returns True if this globule is managed by Globule (has file_decision)."""
+        return self.file_decision is not None
+    
+    @property
+    def is_indexed_only(self) -> bool:
+        """Returns True if this globule is indexed but not managed (no file_decision)."""
+        return self.file_decision is None
+    
+    @property
+    def original_file_path(self) -> Optional[str]:
+        """Returns the original file path if this globule was indexed from a file."""
+        return self.provider_metadata.get('original_file_path')
+    
+    @property
+    def management_status(self) -> str:
+        """Returns a string describing the management status of this globule."""
+        if self.is_managed:
+            return "managed"
+        elif self.original_file_path:
+            return "indexed"
+        else:
+            return "captured"

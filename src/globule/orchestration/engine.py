@@ -41,12 +41,16 @@ class GlobuleOrchestrator(IOrchestrationEngine):
         # Processor router for Phase 4 multi-modal support (optional for backward compatibility)
         self.processor_router = processor_router
         
-    async def process(self, globule: GlobuleV1) -> ProcessedGlobuleV1:
+    async def process(self, globule: GlobuleV1, skip_file_operations: bool = False) -> ProcessedGlobuleV1:
         """
         Process a raw globule into a processed globule.
         
         Implements the IOrchestrationEngine interface requirement.
         Coordinates parsing and embedding in parallel, then constructs the final result.
+        
+        Args:
+            globule: The raw globule to process
+            skip_file_operations: If True, skip file decision generation (for indexing)
         """
         start_time = time.time()
         
@@ -89,13 +93,15 @@ class GlobuleOrchestrator(IOrchestrationEngine):
             else:
                 processor_result = results[2]
         
-        # Generate file decision from parsed data or processor result
+        # Generate file decision from parsed data or processor result (skip for indexing)
+        file_decision = None
         primary_data = parsed_data
         if processor_result and processor_result.confidence > 0.5:
             # Use processor result if it has high confidence
             primary_data = processor_result.structured_data
         
-        file_decision = self._generate_file_decision(globule.raw_text, primary_data)
+        if not skip_file_operations:
+            file_decision = self._generate_file_decision(globule.raw_text, primary_data)
         
         # Calculate total processing time
         total_time = (time.time() - start_time) * 1000
@@ -128,12 +134,16 @@ class GlobuleOrchestrator(IOrchestrationEngine):
         logger.debug(f"Globule processed in {total_time:.1f}ms")
         return processed_globule
     
-    async def process_globule(self, enriched_input) -> ProcessedGlobuleV1:
+    async def process_globule(self, enriched_input, skip_file_operations: bool = False) -> ProcessedGlobuleV1:
         """
         Process an enriched input into a processed globule.
         
         This method takes an EnrichedInput and converts it to a GlobuleV1 
         before processing, maintaining compatibility with the existing API.
+        
+        Args:
+            enriched_input: The enriched input to process
+            skip_file_operations: If True, skip file decision generation (for indexing)
         """
         from globule.core.models import GlobuleV1
         
@@ -144,8 +154,8 @@ class GlobuleOrchestrator(IOrchestrationEngine):
             initial_context=enriched_input.additional_context
         )
         
-        # Use the existing process method
-        return await self.process(globule)
+        # Use the existing process method with optional file operations skip
+        return await self.process(globule, skip_file_operations=skip_file_operations)
     
     # Business Logic Methods (extracted from TUI)
     
