@@ -50,6 +50,9 @@ class SQLiteStorageManager(IStorageManager):
         """
         db = await self._get_connection()
         await self._create_schema(db)
+        
+        # Run migrations to ensure schema is up to date
+        await self._run_migrations(db)
             
         # Optional automatic reconciliation on startup
         if auto_reconcile:
@@ -66,6 +69,7 @@ class SQLiteStorageManager(IStorageManager):
                 parsed_data TEXT,  -- JSON
                 parsing_confidence REAL DEFAULT 0.0,
                 file_path TEXT,
+                original_file_path TEXT,
                 orchestration_strategy TEXT DEFAULT 'parallel',
                 confidence_scores TEXT,  -- JSON
                 processing_time_ms TEXT,  -- JSON
@@ -94,7 +98,29 @@ class SQLiteStorageManager(IStorageManager):
             ON globules(text)
         """)
         
+        # Add indexes for Index-First architecture
+        await db.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_globules_original_file_path 
+            ON globules(original_file_path) WHERE original_file_path IS NOT NULL
+        """)
+        
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_globules_file_path 
+            ON globules(file_path) WHERE file_path IS NOT NULL
+        """)
+        
         await db.commit()
+    
+    async def _run_migrations(self, db: aiosqlite.Connection) -> None:
+        """Run database migrations to ensure schema is up to date."""
+        try:
+            from .migrations import MigrationManager
+            migration_manager = MigrationManager(self.db_path)
+            await migration_manager.migrate_to_index_first_schema(db)
+        except Exception as e:
+            # Don't fail initialization due to migration errors for now
+            # In production, you might want to fail or handle this more gracefully
+            print(f"Warning: Migration failed: {e}")
     
     async def _perform_startup_reconciliation(self) -> None:
         """
@@ -212,10 +238,10 @@ class SQLiteStorageManager(IStorageManager):
                 cursor = await db.execute("""
                     INSERT OR REPLACE INTO globules (
                         id, text, embedding, embedding_confidence, parsed_data,
-                        parsing_confidence, file_path, orchestration_strategy,
+                        parsing_confidence, file_path, original_file_path, orchestration_strategy,
                         confidence_scores, processing_time_ms, semantic_neighbors,
                         processing_notes, created_at, modified_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     globule.id,
                     globule.text,
@@ -224,6 +250,7 @@ class SQLiteStorageManager(IStorageManager):
                     parsed_data_json,
                     globule.parsing_confidence,
                     file_path,
+                    file_path,  # For managed globules, original_file_path = file_path
                     globule.orchestration_strategy,
                     confidence_scores_json,
                     processing_time_json,
@@ -256,6 +283,88 @@ class SQLiteStorageManager(IStorageManager):
             # OUTBOX PATTERN STEP 5: Any failure - clean up temp file
             self._file_manager.cleanup_temp(temp_file_path)
             raise Exception(f"Atomic storage operation failed: {e}")
+    
+    async def store_globule_indexed(self, globule: ProcessedGlobuleV1, original_file_path: str) -> str:
+        """
+        Store a globule from indexing operation (read-only, no file creation).
+        
+        This method stores globules that come from indexing existing files.
+        It sets original_file_path and leaves file_path as NULL to mark them as unmanaged.
+        
+        Args:
+            globule: The processed globule to store
+            original_file_path: Absolute path to the original source file
+            
+        Returns:
+            The globule ID
+            
+        Raises:
+            Exception: If storage fails or if original_file_path already indexed
+        """
+        if globule.id is None:
+            globule.id = str(uuid.uuid4())
+        
+        # Serialize complex fields to JSON
+        embedding_blob = None
+        if globule.embedding is not None:
+            # Convert to numpy array if it's a list
+            embedding_array = np.array(globule.embedding, dtype=np.float32) if isinstance(globule.embedding, list) else globule.embedding.astype(np.float32)
+            # Normalize the embedding for consistent similarity calculations
+            normalized_embedding = self._normalize_vector(embedding_array)
+            embedding_blob = normalized_embedding.tobytes()
+        
+        parsed_data_json = json.dumps(globule.parsed_data)
+        confidence_scores_json = json.dumps(globule.confidence_scores)
+        processing_time_json = json.dumps(globule.processing_time_ms)
+        semantic_neighbors_json = json.dumps(globule.semantic_neighbors)
+        processing_notes_json = json.dumps(globule.processing_notes)
+        
+        db = await self._get_connection()
+        
+        try:
+            await db.execute("BEGIN TRANSACTION")
+            
+            # Insert into the main table with original_file_path but NULL file_path
+            cursor = await db.execute("""
+                INSERT OR REPLACE INTO globules (
+                    id, text, embedding, embedding_confidence, parsed_data,
+                    parsing_confidence, file_path, original_file_path, orchestration_strategy,
+                    confidence_scores, processing_time_ms, semantic_neighbors,
+                    processing_notes, created_at, modified_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                globule.id,
+                globule.text,
+                embedding_blob,
+                globule.embedding_confidence,
+                parsed_data_json,
+                globule.parsing_confidence,
+                None,  # file_path is NULL for indexed/unmanaged globules
+                original_file_path,  # original_file_path tracks source file
+                globule.orchestration_strategy,
+                confidence_scores_json,
+                processing_time_json,
+                semantic_neighbors_json,
+                processing_notes_json,
+                globule.created_at.isoformat(),
+                globule.modified_at.isoformat()
+            ))
+            
+            globule_rowid = cursor.lastrowid
+            
+            # Insert into the vector search index
+            if embedding_blob is not None:
+                await db.execute("""
+                    INSERT OR REPLACE INTO vss_globules (rowid, embedding)
+                    VALUES (?, ?)
+                """, (globule_rowid, embedding_blob))
+            
+            await db.commit()
+            return globule.id
+            
+        except Exception as db_error:
+            await db.rollback()
+            raise Exception(f"Failed to store indexed globule: {db_error}")
     
     async def update_globule(self, globule: ProcessedGlobuleV1) -> bool:
         """
@@ -499,12 +608,12 @@ class SQLiteStorageManager(IStorageManager):
         if row[2] is not None:  # embedding blob
             embedding = np.frombuffer(row[2], dtype=np.float32)
         
-        # Deserialize JSON fields
+        # Deserialize JSON fields  
         parsed_data = json.loads(row[4]) if row[4] else {}
-        confidence_scores = json.loads(row[8]) if row[8] else {}
-        processing_time_ms = json.loads(row[9]) if row[9] else {}
-        semantic_neighbors = json.loads(row[10]) if row[10] else []
-        processing_notes = json.loads(row[11]) if row[11] else []
+        confidence_scores = json.loads(row[9]) if row[9] else {}  # Updated index
+        processing_time_ms = json.loads(row[10]) if row[10] else {}  # Updated index
+        semantic_neighbors = json.loads(row[11]) if row[11] else []  # Updated index
+        processing_notes = json.loads(row[12]) if row[12] else []  # Updated index
         
         # Create file decision if file path exists
         file_decision = None
@@ -524,13 +633,13 @@ class SQLiteStorageManager(IStorageManager):
             globule_id=UUID(row[0]),
             raw_text=row[1],
             source="database",  # We don't store original source separately
-            creation_timestamp=datetime.fromisoformat(row[12])
+            creation_timestamp=datetime.fromisoformat(row[13])  # Updated index
         )
         
         # Create the processed globule with proper field names
         return ProcessedGlobuleV1(
             globule_id=UUID(row[0]),
-            processed_timestamp=datetime.fromisoformat(row[13]),
+            processed_timestamp=datetime.fromisoformat(row[14]),  # Updated index
             original_globule=original_globule,
             embedding=embedding,
             parsed_data=parsed_data,
@@ -539,10 +648,11 @@ class SQLiteStorageManager(IStorageManager):
             provider_metadata={
                 'embedding_confidence': row[3],
                 'parsing_confidence': row[5],
-                'orchestration_strategy': row[7],
+                'orchestration_strategy': row[8],  # Updated index
                 'confidence_scores': confidence_scores,
                 'semantic_neighbors': semantic_neighbors,
-                'processing_notes': processing_notes
+                'processing_notes': processing_notes,
+                'original_file_path': row[7]  # Add original_file_path to metadata
             }
         )
     
@@ -556,6 +666,94 @@ class SQLiteStorageManager(IStorageManager):
             return 0.0
         
         return dot_product / (norm_a * norm_b)
+    
+    async def get_unmanaged_globules(self, limit: int = 100) -> List[ProcessedGlobuleV1]:
+        """
+        Retrieve globules that are indexed but not yet organized (unmanaged).
+        
+        Returns globules where file_path IS NULL and original_file_path IS NOT NULL.
+        
+        Args:
+            limit: Maximum number of unmanaged globules to retrieve
+            
+        Returns:
+            List of unmanaged ProcessedGlobuleV1 objects
+        """
+        db = await self._get_connection()
+        cursor = await db.execute("""
+            SELECT id, text, embedding, embedding_confidence, parsed_data,
+                   parsing_confidence, file_path, original_file_path, orchestration_strategy,
+                   confidence_scores, processing_time_ms, semantic_neighbors,
+                   processing_notes, created_at, modified_at
+            FROM globules
+            WHERE file_path IS NULL AND original_file_path IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
+        
+        rows = await cursor.fetchall()
+        await cursor.close()
+        
+        return [self._row_to_globule(row) for row in rows]
+    
+    async def get_managed_globules(self, limit: int = 100) -> List[ProcessedGlobuleV1]:
+        """
+        Retrieve globules that are organized/managed by Globule.
+        
+        Returns globules where file_path IS NOT NULL.
+        
+        Args:
+            limit: Maximum number of managed globules to retrieve
+            
+        Returns:
+            List of managed ProcessedGlobuleV1 objects
+        """
+        db = await self._get_connection()
+        cursor = await db.execute("""
+            SELECT id, text, embedding, embedding_confidence, parsed_data,
+                   parsing_confidence, file_path, original_file_path, orchestration_strategy,
+                   confidence_scores, processing_time_ms, semantic_neighbors,
+                   processing_notes, created_at, modified_at
+            FROM globules
+            WHERE file_path IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
+        
+        rows = await cursor.fetchall()
+        await cursor.close()
+        
+        return [self._row_to_globule(row) for row in rows]
+    
+    async def promote_to_managed(self, globule_id: str, managed_file_path: str) -> bool:
+        """
+        Promote an unmanaged globule to managed status by setting its file_path.
+        
+        Args:
+            globule_id: ID of the globule to promote
+            managed_file_path: Path to the newly created managed file
+            
+        Returns:
+            True if promotion succeeded, False if globule not found or already managed
+        """
+        db = await self._get_connection()
+        
+        try:
+            cursor = await db.execute("""
+                UPDATE globules 
+                SET file_path = ?, modified_at = ?
+                WHERE id = ? AND file_path IS NULL
+            """, (managed_file_path, datetime.now().isoformat(), globule_id))
+            
+            await db.commit()
+            rows_affected = cursor.rowcount
+            await cursor.close()
+            
+            return rows_affected > 0
+            
+        except Exception as e:
+            await db.rollback()
+            raise Exception(f"Failed to promote globule to managed: {e}")
     
     async def close(self) -> None:
         """Close database connection"""
