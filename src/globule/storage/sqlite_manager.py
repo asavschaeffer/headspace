@@ -6,7 +6,6 @@ Vector search capabilities will be added in Phase 2.
 """
 
 import json
-import sqlite3
 import asyncio
 import aiosqlite
 from pathlib import Path
@@ -153,6 +152,10 @@ class SQLiteStorageManager(IStorageManager):
         """Get or create database connection"""
         if self._connection is None:
             self._connection = await aiosqlite.connect(str(self.db_path))
+            
+            # CRITICAL: Set row_factory to access columns by name instead of fragile indices
+            self._connection.row_factory = aiosqlite.Row
+            
             await self._connection.enable_load_extension(True)
             
             # Load sqlite-vec extension
@@ -601,24 +604,29 @@ class SQLiteStorageManager(IStorageManager):
         return vector / norm
 
     
-    def _row_to_globule(self, row: sqlite3.Row) -> ProcessedGlobuleV1:
-        """Convert database row to ProcessedGlobule"""
+    def _row_to_globule(self, row: aiosqlite.Row) -> ProcessedGlobuleV1:
+        """
+        Convert database row to ProcessedGlobule using safe column name access.
+        
+        This method now uses row['column_name'] instead of fragile numeric indices,
+        making it resilient to schema changes and column reordering.
+        """
         # Deserialize embedding
         embedding = None
-        if row[2] is not None:  # embedding blob
-            embedding = np.frombuffer(row[2], dtype=np.float32)
+        if row['embedding'] is not None:
+            embedding = np.frombuffer(row['embedding'], dtype=np.float32)
         
-        # Deserialize JSON fields  
-        parsed_data = json.loads(row[4]) if row[4] else {}
-        confidence_scores = json.loads(row[9]) if row[9] else {}  # Updated index
-        processing_time_ms = json.loads(row[10]) if row[10] else {}  # Updated index
-        semantic_neighbors = json.loads(row[11]) if row[11] else []  # Updated index
-        processing_notes = json.loads(row[12]) if row[12] else []  # Updated index
+        # Deserialize JSON fields safely
+        parsed_data = json.loads(row['parsed_data']) if row['parsed_data'] else {}
+        confidence_scores = json.loads(row['confidence_scores']) if row['confidence_scores'] else {}
+        processing_time_ms = json.loads(row['processing_time_ms']) if row['processing_time_ms'] else {}
+        semantic_neighbors = json.loads(row['semantic_neighbors']) if row['semantic_neighbors'] else []
+        processing_notes = json.loads(row['processing_notes']) if row['processing_notes'] else []
         
         # Create file decision if file path exists
         file_decision = None
-        if row[6]:  # file_path
-            file_path = Path(row[6])
+        if row['file_path']:
+            file_path = Path(row['file_path'])
             file_decision = FileDecisionV1(
                 semantic_path=str(file_path.parent),
                 filename=file_path.name,
@@ -630,29 +638,29 @@ class SQLiteStorageManager(IStorageManager):
         # Create the original globule
         from globule.core.models import GlobuleV1
         original_globule = GlobuleV1(
-            globule_id=UUID(row[0]),
-            raw_text=row[1],
+            globule_id=UUID(row['id']),
+            raw_text=row['text'],
             source="database",  # We don't store original source separately
-            creation_timestamp=datetime.fromisoformat(row[13])  # Updated index
+            creation_timestamp=datetime.fromisoformat(row['created_at'])
         )
         
         # Create the processed globule with proper field names
         return ProcessedGlobuleV1(
-            globule_id=UUID(row[0]),
-            processed_timestamp=datetime.fromisoformat(row[14]),  # Updated index
+            globule_id=UUID(row['id']),
+            processed_timestamp=datetime.fromisoformat(row['modified_at']),
             original_globule=original_globule,
             embedding=embedding,
             parsed_data=parsed_data,
             file_decision=file_decision,
             processing_time_ms=processing_time_ms,
             provider_metadata={
-                'embedding_confidence': row[3],
-                'parsing_confidence': row[5],
-                'orchestration_strategy': row[8],  # Updated index
+                'embedding_confidence': row['embedding_confidence'],
+                'parsing_confidence': row['parsing_confidence'],
+                'orchestration_strategy': row['orchestration_strategy'],
                 'confidence_scores': confidence_scores,
                 'semantic_neighbors': semantic_neighbors,
                 'processing_notes': processing_notes,
-                'original_file_path': row[7]  # Add original_file_path to metadata
+                'original_file_path': row['original_file_path']  # Now safely accessed by name
             }
         )
     
