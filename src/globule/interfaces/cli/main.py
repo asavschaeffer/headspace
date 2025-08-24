@@ -516,6 +516,186 @@ async def test_message(ctx: click.Context, source: str, content: str):
     except Exception as e:
         click.echo(f"❌ Test message processing failed: {e}", err=True)
 
+@click.command()
+@click.argument('path', required=True)
+@click.option('--include', '-i', multiple=True, help='Include patterns (e.g., *.md, *.jpg). Processes all supported content if not specified.')
+@click.option('--exclude', '-e', multiple=True, help='Exclude patterns (e.g., *.tmp, *.log). Adds to default exclusions.')
+@click.option('--dry-run', is_flag=True, help='Show what would be indexed without actually indexing')
+@click.pass_context
+async def index(ctx: click.Context, path: str, include: tuple, exclude: tuple, dry_run: bool) -> None:
+    """
+    Index all processable content in a directory for read-only analysis (Phase A - Index-First).
+    
+    This command intelligently processes all supported content types (text, images, PDFs, etc.)
+    and stores them in the database without modifying or moving any files. This is the safe,
+    read-only entry point to Globule that leverages its multi-modal processing capabilities.
+    
+    Examples:
+        globule index ~/Documents/notes
+        globule index /path/to/project --include "*.md" "*.jpg"
+        globule index . --exclude "*.tmp" --dry-run
+    """
+    verbose = ctx.obj.get('verbose', False)
+    
+    async with ctx.obj['context'] as context:
+        try:
+            await context.initialize(verbose)
+            
+            # Convert path to absolute path
+            from pathlib import Path
+            absolute_path = Path(path).resolve()
+            
+            if not absolute_path.exists():
+                click.echo(f"❌ Path does not exist: {absolute_path}", err=True)
+                raise click.Abort()
+            
+            if not absolute_path.is_dir():
+                click.echo(f"❌ Path is not a directory: {absolute_path}", err=True)
+                raise click.Abort()
+            
+            click.echo(f"🔍 {'[DRY RUN] ' if dry_run else ''}Indexing processable content in: {absolute_path}")
+            if include:
+                click.echo(f"📂 Including: {', '.join(include)}")
+            if exclude:
+                click.echo(f"🚫 Excluding: {', '.join(exclude)} (plus defaults)")
+            
+            if dry_run:
+                # For dry run, estimate files that would be processed
+                import os
+                import fnmatch
+                
+                # Use same default exclusions as the API
+                default_excludes = ['*.tmp', '*.log', '*.cache', '.DS_Store', 'thumbs.db', '*.lock']
+                all_excludes = list(exclude) + default_excludes
+                
+                count = 0
+                for root, dirs, files in os.walk(absolute_path):
+                    dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', '__pycache__', 'venv', 'env', '.git']]
+                    for file in files:
+                        if file.startswith('.'):
+                            continue
+                        
+                        # Apply include/exclude patterns
+                        if include and not any(fnmatch.fnmatch(file, pattern) for pattern in include):
+                            continue
+                            
+                        if any(fnmatch.fnmatch(file, pattern) for pattern in all_excludes):
+                            continue
+                            
+                        count += 1
+                
+                click.echo(f"📊 Would attempt to process {count} files")
+                click.echo(f"💡 Globule's processor router will determine what can actually be indexed")
+                click.echo(f"🎯 Supports: text files, images, PDFs, and more via intelligent content detection")
+                return
+            
+            # Perform actual indexing
+            include_patterns = list(include) if include else None
+            exclude_patterns = list(exclude) if exclude else None
+            stats = await context.api.index_path(str(absolute_path), 
+                                                 include_patterns=include_patterns,
+                                                 exclude_patterns=exclude_patterns)
+            
+            # Display results
+            click.echo(f"\n✅ Indexing completed!")
+            click.echo(f"📁 Files processed: {stats['files_processed']}")
+            click.echo(f"📝 Files indexed: {stats['files_indexed']}")
+            click.echo(f"⏭️  Files skipped: {stats['files_skipped']}")
+            click.echo(f"🔄 Files unsupported: {stats.get('files_unsupported', 0)}")
+            click.echo(f"❌ Files failed: {stats['files_failed']}")
+            click.echo(f"📊 Total size: {stats['total_size_bytes']:,} bytes")
+            
+            # Show content types discovered
+            if stats.get('content_types'):
+                click.echo(f"\n📋 Content types indexed:")
+                for content_type, count in stats['content_types'].items():
+                    click.echo(f"   • {content_type}: {count} files")
+            
+            if stats['errors']:
+                click.echo(f"\n⚠️  Errors encountered:")
+                for error in stats['errors'][:5]:  # Show first 5 errors
+                    click.echo(f"   {error}")
+                if len(stats['errors']) > 5:
+                    click.echo(f"   ... and {len(stats['errors']) - 5} more errors")
+            
+            if stats['files_indexed'] > 0:
+                click.echo(f"\n💡 Next steps:")
+                click.echo(f"   • Search your indexed content: globule search '<query>'")
+                click.echo(f"   • Discover themes: globule cluster")
+                click.echo(f"   • Organize into files: globule organize --dry-run")
+                
+        except Exception as e:
+            logger.error(f"Indexing failed: {e}")
+            click.echo(f"❌ Indexing failed: {e}", err=True)
+            raise click.Abort()
+
+@click.command()
+@click.option('--output-dir', '-o', help='Directory where organized files should be created')
+@click.option('--dry-run', is_flag=True, help='Show proposed organization without creating files')
+@click.option('--interactive', '-i', is_flag=True, help='Interactively approve organization structure')
+@click.pass_context
+async def organize(ctx: click.Context, output_dir: str, dry_run: bool, interactive: bool) -> None:
+    """
+    Organize indexed content into structured files (Phase B - Index-First).
+    
+    This command takes your indexed content and creates organized markdown files
+    with AI-generated directory structures based on semantic clustering.
+    
+    Examples:
+        globule organize --dry-run
+        globule organize --output-dir ~/organized-notes
+        globule organize --interactive
+    """
+    verbose = ctx.obj.get('verbose', False)
+    
+    async with ctx.obj['context'] as context:
+        try:
+            await context.initialize(verbose)
+            
+            click.echo("📋 Analyzing indexed content for organization...")
+            
+            # Always do dry run first to show proposed structure
+            results = await context.api.organize_repository(output_dir=output_dir, dry_run=True)
+            
+            if results.get("status") == "no_unmanaged_globules":
+                click.echo("📭 No unmanaged content found to organize.")
+                click.echo("💡 Tip: Use 'globule index <path>' to index content first.")
+                return
+            
+            # Display analysis results
+            click.echo(f"📊 Analysis Results:")
+            click.echo(f"   • Unmanaged files: {results['unmanaged_count']}")
+            click.echo(f"   • Semantic clusters: {results['clusters_found']}")
+            
+            structure = results.get('proposed_structure', {})
+            if structure.get('type') == 'clustered':
+                click.echo(f"\n📁 Proposed Directory Structure:")
+                for dir_name, info in structure.get('directories', {}).items():
+                    click.echo(f"   📂 {dir_name}/ ({info['globule_count']} files)")
+                    click.echo(f"      {info['description']}")
+                    click.echo(f"      Keywords: {', '.join(info['keywords'][:5])}")
+            elif structure.get('type') == 'flat':
+                click.echo(f"\n📁 Content will be organized into: {structure.get('directories', ['unsorted'])}")
+            
+            if dry_run:
+                click.echo(f"\n💡 This was a dry run. Use without --dry-run to create files.")
+                return
+            
+            if interactive:
+                if not click.confirm("\nDo you want to proceed with this organization?"):
+                    click.echo("Organization cancelled.")
+                    return
+            
+            # TODO: Implement actual file creation (not yet implemented)
+            click.echo(f"\n⚠️  File creation not yet implemented.")
+            click.echo(f"The organize command currently supports analysis and dry-run only.")
+            click.echo(f"Full file creation will be implemented in the next phase.")
+                
+        except Exception as e:
+            logger.error(f"Organization failed: {e}")
+            click.echo(f"❌ Organization failed: {e}", err=True)
+            raise click.Abort()
+
 # Register all commands
 cli.add_command(add)
 cli.add_command(draft)
@@ -525,6 +705,8 @@ cli.add_command(cluster)
 cli.add_command(nlsearch)
 cli.add_command(skeleton)
 cli.add_command(inputs)
+cli.add_command(index)
+cli.add_command(organize)
 
 def main():
     """Entry point for the CLI."""
