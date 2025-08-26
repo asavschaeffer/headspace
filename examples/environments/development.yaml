@@ -1,0 +1,34 @@
+# Development Environment Configuration
+# Fast iteration with local services and lightweight models
+
+embedding:
+  provider: ollama
+  # Use a small, fast model for development
+  model: llama3.2:1b
+  # Local Ollama instance
+  endpoint: https://localhost:11434
+
+storage:
+  # SQLite for simple local development
+  backend: sqlite
+  # Store in project directory for easy cleanup
+  path: ./dev-data.db
+
+# Example variations for different development scenarios:
+
+# For testing embedding quality:
+# embedding:
+#   provider: ollama
+#   model: mxbai-embed-large  # Higher quality for embedding tests
+#   endpoint: https://localhost:11434
+
+# For offline development:
+# embedding:
+#   provider: ollama
+#   model: nomic-embed-text   # Lightweight alternative
+#   endpoint: https://localhost:11434
+
+# For development with shared team database:
+# storage:
+#   backend: postgres
+#   path: postgresql://dev_user:dev_pass@dev-db.local:5432/globule_dev

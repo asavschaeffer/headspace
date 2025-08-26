@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Academic Content Schema",
+  "description": "Schema for academic papers, research notes, and scholarly content",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Academic title or paper title",
+      "maxLength": 120,
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "description": "Academic content category",
+      "enum": [
+        "research_note",
+        "paper_summary",
+        "hypothesis",
+        "methodology",
+        "literature_review",
+        "data_analysis",
+        "conclusion",
+        "citation"
+      ]
+    },
+    "domain": {
+      "type": "string", 
+      "description": "Academic discipline",
+      "enum": [
+        "computer_science",
+        "mathematics",
+        "physics",
+        "biology",
+        "chemistry",
+        "psychology",
+        "sociology",
+        "economics",
+        "philosophy",
+        "linguistics",
+        "other"
+      ]
+    },
+    "authors": {
+      "type": "array",
+      "description": "Authors or researchers mentioned",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 20
+    },
+    "keywords": {
+      "type": "array",
+      "description": "Academic keywords and terms",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 15,
+      "uniqueItems": true
+    },
+    "concepts": {
+      "type": "array",
+      "description": "Key academic concepts discussed",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 10,
+      "uniqueItems": true
+    },
+    "methodology": {
+      "type": "string",
+      "description": "Research methodology if applicable",
+      "enum": [
+        "experimental",
+        "observational", 
+        "theoretical",
+        "meta_analysis",
+        "case_study",
+        "survey",
+        "not_applicable"
+      ]
+    },
+    "confidence_score": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "citation_count": {
+      "type": "integer",
+      "description": "Number of citations if applicable",
+      "minimum": 0
+    },
+    "publication_year": {
+      "type": "integer",
+      "description": "Year of publication if mentioned",
+      "minimum": 1900,
+      "maximum": 2030
+    },
+    "reasoning": {
+      "type": "string",
+      "maxLength": 300
+    }
+  },
+  "required": [
+    "title",
+    "category",
+    "domain", 
+    "keywords",
+    "concepts",
+    "confidence_score"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,31 @@
+{
+    "title": "Valet Modules",
+    "canvas_config": {
+        "layout": {
+            "type": "panel",
+            "position": "center",
+            "size": "medium"
+        },
+        "tui_style": {
+            "border": "round",
+            "border_color": "$primary",
+            "background": "$surface",
+            "height": "auto",
+            "overflow": "auto"
+        },
+        "web_style": {
+            "className": "valet-modules bg-white border border-gray-300 rounded-lg p-6 shadow-md",
+            "gridArea": "main-content"
+        }
+    },
+    "modules": [
+        {
+            "name": "[PREVIEW] Press Enter to add to canvas",
+            "content": "### maria\n\n| id | text | parsed_data |\n| --- | --- | --- |\n| 61d678ec-9b41-4ad0-b5e1-cf3909a1b489 | Valet Maria parked BMW X5 plate DEF-456 in spot C3... | {\"title\": \"Valet Maria parked BMW X5 plate DEF-456... |\n| 3654a014-21cc-45da-94b1-43ec2fb98e94 | Valet Maria picked up Honda Civic from B2. No dama... | {\"title\": \"Valet Maria picked up Honda Civic from ... |\n| 52717a69-53e5-43b7-a2b4-b281c8fb8d80 | car make: honda parked by valet:maria | {\"title\": \"Sample title\", \"category\": \"car_arrival... |\n"
+        },
+        {
+            "name": "Valet John parked Toyota Camry plate ABC-123 in sp...",
+            "content": "Valet John parked Toyota Camry plate ABC-123 in spot A5. Small scratch on door. Tip: "
+        }
+    ]
+}

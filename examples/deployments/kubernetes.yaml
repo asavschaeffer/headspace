@@ -1,0 +1,129 @@
+# Kubernetes deployment for Globule
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: globule-config
+  namespace: globule
+data:
+  config.yaml: |
+    embedding:
+      provider: ollama
+      model: mxbai-embed-large
+      endpoint: https://ollama-service.globule.svc.cluster.local:11434
+    storage:
+      backend: postgres
+      path: postgresql://globule:password@postgres.globule.svc.cluster.local:5432/globule
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: globule-secrets
+  namespace: globule
+type: Opaque
+stringData:
+  db-connection: postgresql://globule:secure_password@postgres.globule.svc.cluster.local:5432/globule
+  openai-api-key: sk-your-openai-key-here
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: globule-api
+  namespace: globule
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: globule-api
+  template:
+    metadata:
+      labels:
+        app: globule-api
+    spec:
+      containers:
+      - name: globule
+        image: globule:latest
+        ports:
+        - containerPort: 8000
+        env:
+        # Configuration via environment variables (highest precedence)
+        - name: GLOBULE_EMBEDDING__PROVIDER
+          value: "ollama"
+        - name: GLOBULE_STORAGE__BACKEND
+          value: "postgres"
+        - name: GLOBULE_STORAGE__PATH
+          valueFrom:
+            secretKeyRef:
+              name: globule-secrets
+              key: db-connection
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/globule
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config-volume
+        configMap:
+          name: globule-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: globule-service
+  namespace: globule
+spec:
+  selector:
+    app: globule-api
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: ClusterIP
+
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: globule-hpa
+  namespace: globule
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: globule-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

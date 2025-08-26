@@ -1,0 +1,60 @@
+# Docker Compose setup for Globule with Ollama and PostgreSQL
+version: '3.8'
+
+services:
+  # Ollama embedding service
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=globule
+      - POSTGRES_USER=globule
+      - POSTGRES_PASSWORD=globule_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U globule"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Globule application
+  globule:
+    build: .
+    depends_on:
+      ollama:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      # Override configuration via environment variables
+      - GLOBULE_EMBEDDING__PROVIDER=ollama
+      - GLOBULE_EMBEDDING__MODEL=mxbai-embed-large
+      - GLOBULE_EMBEDDING__ENDPOINT=https://ollama:11434
+      - GLOBULE_STORAGE__BACKEND=postgres
+      - GLOBULE_STORAGE__PATH=postgresql://globule:globule_password@postgres:5432/globule
+    volumes:
+      # Mount system config if needed
+      - ./config:/etc/globule:ro
+    ports:
+      - "8000:8000"
+
+volumes:
+  ollama_data:
+  postgres_data:

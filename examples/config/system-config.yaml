@@ -1,0 +1,36 @@
+# System-wide configuration for Globule
+# Location: 
+#   Linux/macOS: /etc/globule/config.yaml
+#   Windows: C:\ProgramData\Globule\config.yaml
+#
+# This file sets organization-wide defaults for all users
+
+# Embedding Configuration
+embedding:
+  # Provider selection: ollama, openai, huggingface
+  provider: ollama
+  
+  # Default model for embeddings
+  model: mxbai-embed-large
+  
+  # Optional: Custom endpoint (must be HTTPS)
+  # endpoint: https://internal-ollama.company.com
+  
+# Storage Configuration  
+storage:
+  # Backend selection: sqlite, postgres
+  backend: sqlite
+  
+  # Default storage path for organization
+  # Use absolute paths for system-wide deployments
+  path: /opt/globule/data/globule.db
+
+# Example: Multi-tenant organization setup
+# embedding:
+#   provider: openai
+#   model: text-embedding-3-large
+#   endpoint: https://api.openai.com
+# 
+# storage:
+#   backend: postgres
+#   path: postgresql://globule:password@db.company.com:5432/globule_prod

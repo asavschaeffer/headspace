@@ -1,0 +1,30 @@
+# Staging Environment Configuration
+# Production-like setup for testing and validation
+
+embedding:
+  provider: ollama
+  # Use production model for realistic testing
+  model: mxbai-embed-large
+  # Staging Ollama cluster
+  endpoint: https://ollama-staging.internal.company.com:11434
+
+storage:
+  # PostgreSQL to match production
+  backend: postgres
+  # Staging database with production-like data volume
+  path: postgresql://globule_staging:staging_password@postgres-staging.internal:5432/globule_staging
+
+# Alternative: Test with OpenAI for API compatibility
+# embedding:
+#   provider: openai
+#   model: text-embedding-3-large
+#   endpoint: https://api.openai.com
+
+# For testing multi-tenant scenarios:
+# embedding:
+#   provider: ollama
+#   model: mxbai-embed-large
+#   endpoint: https://ollama-staging.internal:11434
+# storage:
+#   backend: postgres
+#   path: postgresql://globule:password@postgres-staging:5432/globule_tenant_staging

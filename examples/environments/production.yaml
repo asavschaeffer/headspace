@@ -1,0 +1,39 @@
+# Production Environment Configuration
+# High-performance, reliable setup for production workloads
+
+embedding:
+  provider: ollama
+  # High-quality model for production
+  model: mxbai-embed-large
+  # Production Ollama cluster with load balancing
+  endpoint: https://ollama-cluster.prod.company.com:11434
+
+storage:
+  # PostgreSQL with high availability
+  backend: postgres
+  # Production database with connection pooling and SSL
+  path: postgresql://globule_prod:secure_production_password@postgres-ha.prod.company.com:5432/globule_production?sslmode=require&pool_max_conns=20
+
+# High-scale production with OpenAI:
+# embedding:
+#   provider: openai
+#   model: text-embedding-3-large
+#   endpoint: https://api.openai.com
+
+# Multi-region production setup:
+# embedding:
+#   provider: ollama
+#   model: mxbai-embed-large
+#   endpoint: https://ollama-us-east.prod.company.com:11434
+# storage:
+#   backend: postgres
+#   path: postgresql://globule:password@postgres-primary.us-east.prod:5432/globule_prod
+
+# Enterprise production with custom models:
+# embedding:
+#   provider: huggingface
+#   model: company/custom-embedding-model
+#   endpoint: https://inference.huggingface.co
+# storage:
+#   backend: postgres
+#   path: postgresql://globule:enterprise_password@postgres-enterprise.company.com:5432/globule_enterprise

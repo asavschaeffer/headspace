@@ -1,0 +1,39 @@
+# User-specific configuration for Globule
+# Location:
+#   Linux/macOS: ~/.config/globule/config.yaml (or $XDG_CONFIG_HOME/globule/config.yaml)
+#   Windows: %APPDATA%\Globule\config.yaml
+#
+# This file overrides system defaults for individual users
+
+# Personal Embedding Preferences
+embedding:
+  # Override model for personal use
+  model: llama3.2:1b  # Lighter model for personal laptop
+  
+  # Personal development endpoint
+  endpoint: https://localhost:11434
+
+# Personal Storage Settings
+storage:
+  # Use local SQLite for personal data
+  backend: sqlite
+  path: ~/.local/share/globule/personal.db
+
+# Example: Developer working on different projects
+# embedding:
+#   provider: ollama
+#   model: codellama:7b-instruct  # Code-focused model
+#   endpoint: https://dev-ollama.local:11434
+#
+# storage:
+#   backend: sqlite
+#   path: ~/projects/globule-dev/data.db
+
+# Example: Remote worker connecting to company infrastructure  
+# embedding:
+#   provider: openai  # Override system ollama with personal OpenAI
+#   model: text-embedding-3-small  # Cost-effective for personal use
+#
+# storage:
+#   backend: sqlite
+#   path: ~/work/globule-remote.db

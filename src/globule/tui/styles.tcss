@@ -1,0 +1,133 @@
+/* Canvas layout styles for schema-driven positioning */
+
+VizCanvas {
+    layout: grid;
+    grid-size: 3 3;
+    grid-gutter: 1 1;
+    background: $panel;
+}
+
+#main-canvas-text {
+    grid-column: 1 / 4;
+    grid-row: 2;
+    border: round $primary;
+    background: $surface;
+    overflow: auto;
+}
+
+/* Schema-specific module styles */
+.canvas-module {
+    border: round $accent;
+    padding: 1;
+    background: $surface;
+}
+
+.canvas-module.valet {
+    border-color: $success;
+    background: $success 10%;
+}
+
+.canvas-module.academic {
+    border-color: $info; 
+    background: $info 10%;
+}
+
+.canvas-module.technical {
+    border-color: $warning;
+    background: $warning 10%;
+}
+
+/* Position-based styles */
+.position-top-left {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.position-top-center {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.position-top-right {
+    grid-column: 3; 
+    grid-row: 1;
+}
+
+.position-center-left {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+.position-center {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.position-center-right {
+    grid-column: 3;
+    grid-row: 2;
+}
+
+.position-bottom-left {
+    grid-column: 1;
+    grid-row: 3;
+}
+
+.position-bottom-center {
+    grid-column: 2;
+    grid-row: 3;
+}
+
+.position-bottom-right {
+    grid-column: 3;
+    grid-row: 3;
+}
+
+.position-full-width {
+    grid-column: 1 / 4;
+    grid-row: 2;
+}
+
+/* Size-based styles */
+.size-small {
+    height: 8;
+}
+
+.size-medium {
+    height: 16;
+}
+
+.size-large {
+    height: 24;
+}
+
+.size-auto {
+    height: auto;
+}
+
+.size-full {
+    height: 100%;
+}
+
+/* Layout type styles */
+.layout-widget {
+    border: round;
+    padding: 1;
+    margin: 1;
+}
+
+.layout-panel {
+    border: heavy;
+    padding: 2;
+}
+
+.layout-sidebar {
+    border: dashed;
+    padding: 1;
+}
+
+.layout-fullscreen {
+    border: none;
+    padding: 0;
+    margin: 0;
+}

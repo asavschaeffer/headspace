@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Creative Content Schema",
+  "description": "Schema for creative writing, brainstorming, and artistic content",
+  "type": "object", 
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Creative title or theme",
+      "maxLength": 100,
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "description": "Creative content category",
+      "enum": [
+        "story_idea",
+        "character_concept",
+        "plot_point",
+        "dialogue",
+        "poetry",
+        "brainstorm",
+        "inspiration",
+        "scene_description",
+        "world_building"
+      ]
+    },
+    "domain": {
+      "type": "string",
+      "description": "Creative domain",
+      "enum": [
+        "fiction_writing",
+        "poetry",
+        "screenwriting",
+        "game_design", 
+        "visual_arts",
+        "music_composition",
+        "theater",
+        "creative_nonfiction",
+        "other"
+      ]
+    },
+    "genre": {
+      "type": "array",
+      "description": "Genres that apply to this creative content",
+      "items": {
+        "type": "string",
+        "enum": [
+          "fantasy",
+          "science_fiction",
+          "mystery",
+          "romance",
+          "horror",
+          "drama",
+          "comedy",
+          "thriller",
+          "historical",
+          "literary",
+          "experimental",
+          "other"
+        ]
+      },
+      "maxItems": 3,
+      "uniqueItems": true
+    },
+    "mood": {
+      "type": "string",
+      "description": "Emotional mood or atmosphere",
+      "enum": [
+        "uplifting",
+        "melancholic",
+        "mysterious",
+        "energetic",
+        "contemplative",
+        "whimsical",
+        "tense",
+        "peaceful",
+        "chaotic",
+        "nostalgic"
+      ]
+    },
+    "themes": {
+      "type": "array",
+      "description": "Central themes explored",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 8,
+      "uniqueItems": true
+    },
+    "characters": {
+      "type": "array",
+      "description": "Characters mentioned or developed",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 10,
+      "uniqueItems": true
+    },
+    "keywords": {
+      "type": "array",
+      "description": "Creative keywords and motifs",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 12,
+      "uniqueItems": true
+    },
+    "development_stage": {
+      "type": "string",
+      "description": "Stage of creative development",
+      "enum": [
+        "initial_idea",
+        "rough_draft",
+        "development",
+        "refinement",
+        "polished",
+        "complete"
+      ]
+    },
+    "confidence_score": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "word_count": {
+      "type": "integer",
+      "description": "Approximate word count if applicable",
+      "minimum": 0
+    },
+    "reasoning": {
+      "type": "string",
+      "maxLength": 250
+    }
+  },
+  "required": [
+    "title",
+    "category",
+    "domain",
+    "mood",
+    "themes",
+    "keywords",
+    "development_stage",
+    "confidence_score"
+  ],
+  "additionalProperties": false
+}

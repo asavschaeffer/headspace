@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Default Globule Parsing Schema",
+  "description": "Standard schema for parsing text content into structured globule data",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "A concise, meaningful title for the content",
+      "maxLength": 80,
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "description": "The primary category of the content",
+      "enum": [
+        "note",
+        "idea", 
+        "question",
+        "task",
+        "reference",
+        "draft",
+        "quote",
+        "observation"
+      ]
+    },
+    "domain": {
+      "type": "string",
+      "description": "The domain or field this content relates to",
+      "enum": [
+        "creative",
+        "technical", 
+        "personal",
+        "academic",
+        "business",
+        "philosophy",
+        "other"
+      ]
+    },
+    "keywords": {
+      "type": "array",
+      "description": "Key terms and concepts from the text",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 10,
+      "uniqueItems": true
+    },
+    "entities": {
+      "type": "array", 
+      "description": "Named entities (people, places, concepts) mentioned in the text",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 15,
+      "uniqueItems": true
+    },
+    "sentiment": {
+      "type": "string",
+      "description": "Overall emotional tone of the content",
+      "enum": [
+        "positive",
+        "negative", 
+        "neutral",
+        "mixed"
+      ]
+    },
+    "content_type": {
+      "type": "string",
+      "description": "The structural type of the content",
+      "enum": [
+        "prose",
+        "list",
+        "code",
+        "data",
+        "dialogue",
+        "poetry",
+        "instructions"
+      ]
+    },
+    "confidence_score": {
+      "type": "number",
+      "description": "Parser confidence in the analysis (0.0 to 1.0)",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Brief explanation of classification decisions",
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "title",
+    "category", 
+    "domain",
+    "keywords",
+    "entities",
+    "sentiment",
+    "content_type",
+    "confidence_score"
+  ],
+  "additionalProperties": false
+}

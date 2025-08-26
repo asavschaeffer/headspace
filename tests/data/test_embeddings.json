@@ -1,0 +1,184 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "embedding_dimension": 1024,
+    "description": "Pre-computed deterministic embeddings for integration tests",
+    "generation_method": "OpenAI text-embedding-ada-002 (simulated with deterministic hash-based generation)"
+  },
+  "test_globules": [
+    {
+      "id": "fitness_progressive_overload",
+      "text": "Progressive overload in fitness means gradually increasing weight, frequency, or number of reps in your strength training routine. This principle ensures continuous adaptation and growth.",
+      "embedding_hash": "fitness_progressive_concept_strength_training",
+      "embedding_confidence": 0.92,
+      "parsed_data": {
+        "title": "Progressive Overload Principle",
+        "domain": "fitness",
+        "category": "concept",
+        "keywords": ["progressive", "overload", "strength", "training", "adaptation"],
+        "metadata": {"parser_type": "ollama_llm", "confidence_score": 0.89}
+      },
+      "parsing_confidence": 0.89,
+      "file_decision": {
+        "semantic_path": "fitness/principles",
+        "filename": "progressive-overload.md",
+        "confidence": 0.85
+      },
+      "days_ago": 7
+    },
+    {
+      "id": "software_technical_debt",
+      "text": "The concept of technical debt in software development refers to the implied cost of additional rework caused by choosing an easy solution now instead of using a better approach that would take longer.",
+      "embedding_hash": "software_technical_debt_development_rework",
+      "embedding_confidence": 0.88,
+      "parsed_data": {
+        "title": "Technical Debt Definition",
+        "domain": "software",
+        "category": "concept",
+        "keywords": ["technical", "debt", "software", "development", "rework"],
+        "metadata": {"parser_type": "ollama_llm", "confidence_score": 0.86}
+      },
+      "parsing_confidence": 0.86,
+      "file_decision": {
+        "semantic_path": "software/concepts",
+        "filename": "technical-debt.md",
+        "confidence": 0.82
+      },
+      "days_ago": 5
+    },
+    {
+      "id": "wellness_mindfulness_meditation",
+      "text": "Mindfulness meditation involves paying attention to the present moment without judgment. Regular practice can reduce stress and improve focus and emotional regulation.",
+      "embedding_hash": "wellness_mindfulness_meditation_present_stress",
+      "embedding_confidence": 0.85,
+      "parsed_data": {
+        "title": "Mindfulness Meditation Practice",
+        "domain": "wellness",
+        "category": "practice",
+        "keywords": ["mindfulness", "meditation", "present", "stress", "focus"],
+        "metadata": {"parser_type": "ollama_llm", "confidence_score": 0.83}
+      },
+      "parsing_confidence": 0.83,
+      "file_decision": {
+        "semantic_path": "wellness/practices",
+        "filename": "mindfulness-meditation.md",
+        "confidence": 0.80
+      },
+      "days_ago": 3
+    },
+    {
+      "id": "learning_feynman_technique",
+      "text": "The Feynman Technique is a learning method where you explain a concept in simple terms as if teaching it to a child. This helps identify gaps in understanding.",
+      "embedding_hash": "learning_feynman_technique_explain_understanding",
+      "embedding_confidence": 0.90,
+      "parsed_data": {
+        "title": "Feynman Technique for Learning",
+        "domain": "learning",
+        "category": "technique",
+        "keywords": ["feynman", "technique", "learning", "explain", "understanding"],
+        "metadata": {"parser_type": "ollama_llm", "confidence_score": 0.87}
+      },
+      "parsing_confidence": 0.87,
+      "file_decision": {
+        "semantic_path": "learning/techniques",
+        "filename": "feynman-technique.md",
+        "confidence": 0.88
+      },
+      "days_ago": 1
+    },
+    {
+      "id": "finance_compound_interest",
+      "text": "Compound interest is the addition of interest to the principal sum of a loan or deposit. Einstein allegedly called it the eighth wonder of the world.",
+      "embedding_hash": "finance_compound_interest_principal_investment",
+      "embedding_confidence": 0.87,
+      "parsed_data": {
+        "title": "Compound Interest Concept",
+        "domain": "finance",
+        "category": "concept",
+        "keywords": ["compound", "interest", "principal", "finance", "investment"],
+        "metadata": {"parser_type": "ollama_llm", "confidence_score": 0.84}
+      },
+      "parsing_confidence": 0.84,
+      "file_decision": {
+        "semantic_path": "finance/concepts",
+        "filename": "compound-interest.md",
+        "confidence": 0.81
+      },
+      "days_ago": 2
+    },
+    {
+      "id": "productivity_pomodoro_technique",
+      "text": "The Pomodoro Technique is a time management method that breaks work into 25-minute focused intervals separated by short breaks. This helps maintain concentration and prevents burnout.",
+      "embedding_hash": "productivity_pomodoro_time_management_focus",
+      "embedding_confidence": 0.89,
+      "parsed_data": {
+        "title": "Pomodoro Technique for Focus",
+        "domain": "productivity",
+        "category": "technique",
+        "keywords": ["pomodoro", "time", "management", "focus", "concentration"],
+        "metadata": {"parser_type": "ollama_llm", "confidence_score": 0.87}
+      },
+      "parsing_confidence": 0.87,
+      "file_decision": {
+        "semantic_path": "productivity/techniques",
+        "filename": "pomodoro-technique.md",
+        "confidence": 0.85
+      },
+      "days_ago": 4
+    },
+    {
+      "id": "creativity_divergent_thinking",
+      "text": "Divergent thinking involves generating multiple creative solutions to a problem by exploring unexpected connections. It's the opposite of convergent thinking which seeks single correct answers.",
+      "embedding_hash": "creativity_divergent_thinking_solutions_connections",
+      "embedding_confidence": 0.86,
+      "parsed_data": {
+        "title": "Divergent Thinking in Creativity",
+        "domain": "creativity",
+        "category": "concept",
+        "keywords": ["divergent", "thinking", "creative", "solutions", "connections"],
+        "metadata": {"parser_type": "ollama_llm", "confidence_score": 0.84}
+      },
+      "parsing_confidence": 0.84,
+      "file_decision": {
+        "semantic_path": "creativity/concepts",
+        "filename": "divergent-thinking.md",
+        "confidence": 0.82
+      },
+      "days_ago": 6
+    },
+    {
+      "id": "science_systems_thinking",
+      "text": "Systems thinking is a holistic approach to analysis that focuses on the way that a system's constituent parts interrelate and how systems work over time and within larger systems.",
+      "embedding_hash": "science_systems_thinking_holistic_interrelate",
+      "embedding_confidence": 0.91,
+      "parsed_data": {
+        "title": "Systems Thinking Approach",
+        "domain": "science",
+        "category": "methodology",
+        "keywords": ["systems", "thinking", "holistic", "interrelate", "analysis"],
+        "metadata": {"parser_type": "ollama_llm", "confidence_score": 0.89}
+      },
+      "parsing_confidence": 0.89,
+      "file_decision": {
+        "semantic_path": "science/methodologies",
+        "filename": "systems-thinking.md",
+        "confidence": 0.87
+      },
+      "days_ago": 8
+    }
+  ],
+  "semantic_relationships": {
+    "similar_pairs": [
+      ["fitness_progressive_overload", "learning_feynman_technique", 0.72, "Both involve gradual improvement through systematic approach"],
+      ["software_technical_debt", "finance_compound_interest", 0.68, "Both concepts involve accumulating costs/benefits over time"],
+      ["wellness_mindfulness_meditation", "productivity_pomodoro_technique", 0.65, "Both are practices for improved focus and mental clarity"],
+      ["creativity_divergent_thinking", "science_systems_thinking", 0.70, "Both involve holistic, multi-perspective approaches"]
+    ],
+    "cross_domain_concepts": [
+      ["progressive improvement", ["fitness_progressive_overload", "learning_feynman_technique"]],
+      ["systematic practice", ["wellness_mindfulness_meditation", "productivity_pomodoro_technique"]],
+      ["holistic thinking", ["creativity_divergent_thinking", "science_systems_thinking"]],
+      ["compound effects", ["software_technical_debt", "finance_compound_interest"]]
+    ]
+  }
+}

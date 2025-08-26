@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Valet Parking Entry Schema",
+  "description": "Enhanced schema for valet parking service entries with validation",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Concise title for the entry",
+      "maxLength": 80,
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "description": "Entry category",
+      "enum": [
+        "car_arrival",
+        "car_departure", 
+        "incident",
+        "note"
+      ]
+    },
+    "domain": {
+      "type": "string", 
+      "description": "Service domain",
+      "enum": [
+        "valet",
+        "parking_service"
+      ]
+    },
+    "valet_name": {
+      "type": "string",
+      "description": "Name of valet or attendant",
+      "maxLength": 50,
+      "minLength": 1
+    },
+    "vehicle_make": {
+      "type": "string",
+      "description": "Vehicle manufacturer (e.g., Toyota, Ford, BMW)",
+      "pattern": "^[A-Za-z][A-Za-z0-9 \\-]+$",
+      "maxLength": 30
+    },
+    "vehicle_model": {
+      "type": "string", 
+      "description": "Vehicle model (e.g., Camry, F-150)",
+      "maxLength": 50,
+      "minLength": 1
+    },
+    "license_plate": {
+      "type": "string",
+      "description": "License plate number",
+      "pattern": "^[A-Z0-9\\-]{6,10}$",
+      "minLength": 6,
+      "maxLength": 10
+    },
+    "parking_spot": {
+      "type": "string",
+      "description": "Parking location identifier (e.g., 'C7', 'Level 2-A5')",
+      "maxLength": 20,
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Unix timestamp (null if not present in text)"
+    },
+    "damage_notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "uniqueItems": true,
+      "description": "List of any damage observations (empty array if none)"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "description": "Key terms extracted from the entry",
+      "minItems": 1
+    },
+    "entities": {
+      "type": "array", 
+      "items": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "description": "Named entities (people, vehicles, locations)",
+      "minItems": 1
+    },
+    "sentiment": {
+      "type": "string",
+      "description": "Overall sentiment of the entry",
+      "enum": ["positive", "negative", "neutral", "mixed"],
+      "default": "neutral"
+    },
+    "content_type": {
+      "type": "string", 
+      "description": "Type of content structure",
+      "enum": ["prose", "list", "data", "instructions", "log_entry"],
+      "default": "log_entry"
+    },
+    "confidence_score": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Parser confidence in extraction accuracy",
+      "default": 0.85
+    }
+  },
+  "required": [
+    "title",
+    "category", 
+    "domain",
+    "valet_name",
+    "vehicle_make",
+    "vehicle_model", 
+    "license_plate",
+    "parking_spot",
+    "keywords",
+    "entities"
+  ],
+  "additionalProperties": false,
+  "canvas_config": {
+    "layout": {
+      "type": "widget",
+      "position": "top-left",
+      "size": "small"
+    },
+    "tui_style": {
+      "border": "round",
+      "border_color": "$accent",
+      "background": "$panel",
+      "height": "auto",
+      "padding": "1"
+    },
+    "web_style": {
+      "className": "valet-widget bg-blue-50 border-2 border-blue-200 rounded-lg p-4 shadow-sm",
+      "gridArea": "top-left"
+    }
+  }
+}

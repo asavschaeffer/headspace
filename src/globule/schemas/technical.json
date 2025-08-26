@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Technical Content Schema", 
+  "description": "Schema for code, technical documentation, and engineering content",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Technical title or function/method name",
+      "maxLength": 100,
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "description": "Technical content category",
+      "enum": [
+        "code_snippet",
+        "function_definition",
+        "bug_report", 
+        "documentation",
+        "architecture_note",
+        "api_reference",
+        "configuration",
+        "troubleshooting",
+        "performance_note"
+      ]
+    },
+    "domain": {
+      "type": "string",
+      "description": "Technical domain",
+      "enum": [
+        "software_engineering",
+        "web_development",
+        "data_science",
+        "machine_learning",
+        "devops",
+        "cybersecurity",
+        "databases",
+        "networking",
+        "systems_administration",
+        "other"
+      ]
+    },
+    "programming_languages": {
+      "type": "array",
+      "description": "Programming languages used or referenced",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 5,
+      "uniqueItems": true
+    },
+    "technologies": {
+      "type": "array",
+      "description": "Technologies, frameworks, or tools mentioned",
+      "items": {
+        "type": "string", 
+        "minLength": 1
+      },
+      "maxItems": 10,
+      "uniqueItems": true
+    },
+    "keywords": {
+      "type": "array",
+      "description": "Technical keywords and concepts",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 15,
+      "uniqueItems": true
+    },
+    "complexity_level": {
+      "type": "string",
+      "description": "Technical complexity level",
+      "enum": [
+        "beginner",
+        "intermediate", 
+        "advanced",
+        "expert"
+      ]
+    },
+    "code_type": {
+      "type": "string",
+      "description": "Type of code if applicable",
+      "enum": [
+        "function",
+        "class",
+        "script",
+        "configuration",
+        "query",
+        "snippet",
+        "not_applicable"
+      ]
+    },
+    "confidence_score": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "line_count": {
+      "type": "integer",
+      "description": "Number of lines if code content",
+      "minimum": 0
+    },
+    "reasoning": {
+      "type": "string",
+      "maxLength": 250
+    }
+  },
+  "required": [
+    "title",
+    "category",
+    "domain",
+    "technologies",
+    "keywords",
+    "complexity_level",
+    "confidence_score"
+  ],
+  "additionalProperties": false
+}
