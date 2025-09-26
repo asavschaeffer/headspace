@@ -1,21 +1,2 @@
-# Brain System - Optional Dependencies
-#
-# The core system works with Python 3.6+ standard library only.
-# These are optional enhancements:
-
-# For faster search (highly recommended)
-# Install ripgrep separately: https://github.com/BurntSushi/ripgrep
-
-# For image OCR
-# tesseract  # Install system package: apt-get install tesseract-ocr
-
-# For audio transcription
-# whisper.cpp  # Install separately: https://github.com/ggerganov/whisper.cpp
-
-# For PDF text extraction
-# pdftotext  # Part of poppler-utils: apt-get install poppler-utils
-
-# Future enhancements (not yet implemented):
-# numpy>=1.19.0      # For vector embeddings
-# scikit-learn>=0.24 # For similarity calculations
-# openai>=0.27.0     # For GPT embeddings (optional)
+# Core dependencies for deployment
+gunicorn==21.2.0
