@@ -1,1 +1,0 @@
-"""Storage layer for Globule - handles data persistence and retrieval."""

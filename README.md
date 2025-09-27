@@ -1,89 +1,131 @@
-# Globule
+# Brain - Living Memory Galaxy
 
-> Capture your thoughts, find connections, and draft your next big idea.
+A filesystem-based thought capture system with a breathing, orbital visualization. Type anything, find it later through any mental pathway.
 
-![Project Status: Active Development](https://img.shields.io/badge/status-active_development-green)
-
-Globule is a tool for thought management. It uses AI to help you find semantic connections between your notes, making it easy to synthesize new ideas and draft coherent documents.
-
-## The Core Experience
-
-Globule's magic is in its simplicity. Capture any thought, and let the AI handle the rest.
-
-#### 1. Capture Instantly
-
-No need to think about folders or filenames. Just capture the thought from anywhere - command line, WhatsApp, Telegram, or email.
+## Quick Start
 
 ```bash
-$ globule add "The concept of 'progressive overload' in fitness could apply to creative stamina."
-
-$ globule add "A core theme for my next post: discipline isn't about restriction, it's about freedom."
+python start_brain.py
 ```
 
-Or send a message to your personal WhatsApp bot and watch your thoughts flow seamlessly into your knowledge base.
+Opens browser to `http://localhost:8888` with the galaxy interface.
 
-#### 2. Synthesize with Ease
+## Features
 
-When you're ready to write, tell Globule what you're thinking about.
+### Core Principles
+- **Instant Capture**: <10ms save latency - thought speed input
+- **Collision as Continuation**: Same filename = same thought thread (echo-append)
+- **Living Organization**: Files drift together based on similarity over geological time
+- **Progressive Search**: Instant filename → fast content → semantic similarity
 
-```bash
-$ globule draft "my next blog post"
+### The Breathing Space
+- Files orbit slowly like cosmic dust
+- Similar thoughts naturally cluster
+- Recent activity creates ripples
+- The entire space breathes with a 30-second rhythm
+
+## Usage
+
+### Input Modes
+- **Save**: Type anything, press `Ctrl+Enter`
+- **Search**: Start with `/` to search
+- **Navigate**: Click and drag to pan, scroll to zoom
+
+### File Organization
+```
+~/brain/
+  meeting-sarah-vector-db.txt     # Auto-named from content
+  error-auth-middleware.txt       # Semantic detection
+  question-how-to-implement.txt   # Question detection
+  code-calculate-distance.txt     # Code detection
+  [.metadata/]                    # Connections and metadata
 ```
 
-Globule's intelligent engine understands these thoughts are related and presents them in a clean, two-pane interface, ready for you to weave them together into a coherent first draft.
+### Collision Handling
+When you save with the same filename, it appends with a timestamp separator:
+```
+Original thought about vectors...
 
-## Getting Started
+==================================================
+[Continued 2024-11-15 14:32:10]
+==================================================
 
-```bash
-# Clone and install from source
-git clone https://github.com/asavschaeffer/globule
-cd globule
-pip install -e .
-
-# Start capturing your thoughts
-globule add "Your first thought here"
-
-# Draft content from your captured thoughts
-globule draft "your topic"
+New thought about vectors...
 ```
 
-## Key Commands
+## Technical Architecture
 
-- `globule add "<text>"`: Captures a new thought.
-- `globule draft "<topic>"`: Opens an interactive TUI to synthesize a draft on a topic.
-- `globule search "<query>"`: Performs a semantic search for related thoughts.
-- `globule reconcile`: Reconciles the file system with the database.
+### Components
+1. **brain_core.py**: Filesystem operations, collision handling, metadata
+2. **brain_server.py**: HTTP server with REST API
+3. **brain_interface.html**: Living galaxy visualization
+4. **start_brain.py**: Launcher with auto-browser open
 
-### Messaging Integration
+### Processing Pipeline
+```
+Input → Detect Type → Generate Filename → Check Collision → Save/Append
+                                                ↓
+                                    Extract Metadata → Update Graph
+```
 
-Capture thoughts from anywhere with messaging platform integration:
+### Search Layers
+1. **Instant** (<10ms): Filename matching
+2. **Fast** (<100ms): Content grep/ripgrep
+3. **Smart** (background): Semantic similarity
 
-- `globule inputs setup-whatsapp`: Set up WhatsApp Business API integration
-- `globule inputs setup-telegram`: Set up Telegram bot integration  
-- `globule inputs webhook-server`: Run local webhook server for message processing
-- `globule inputs test-message`: Test messaging integration with sample data
+### Orbital Mechanics
+- **Mass**: File size determines gravitational pull
+- **Heat**: Recent access makes nodes glow
+- **Age**: Older files fade and move slower
+- **Connections**: Similar content creates attraction
 
-Send messages with text, images, or documents to your connected platforms and Globule will automatically process them into searchable thoughts in your knowledge base.
+## API Endpoints
 
-## Architecture
+- `GET /` - Main interface
+- `POST /api/save` - Save new thought
+- `GET /api/graph` - Get nodes and edges
+- `GET /api/search?q=query` - Search content
+- `GET /api/file/{name}` - Get file content
+- `GET /api/recent` - Recently modified files
 
-The Globule codebase has been refactored for simplicity, maintainability, and performance. It now follows a clean, three-layer architecture:
+## Extending
 
-1.  **Command-Line Interface (CLI):** The user-facing entry point, built with `click`.
-2.  **GlobuleAPI:** A clean, UI-agnostic API that exposes the core features of the application.
-3.  **Core Logic:** The underlying orchestration engine, services, and storage managers that handle data processing and persistence.
+### Add Processors
+Edit `brain_core.py` to add new file type processors:
+```python
+def process_newtype(self, filepath):
+    # Extract searchable text
+    return extracted_text
+```
 
-This separation of concerns makes the system easier to understand, test, and extend.
+### Customize Physics
+Edit orbital mechanics in `brain_interface.html`:
+```javascript
+this.settings = {
+    driftSpeed: 0.0001,      // Geological time drift
+    gravityStrength: 0.001,   // Center attraction
+    connectionAttraction: 0.01 // Edge pull
+}
+```
 
-## The Vision: Where We're Going
+## Philosophy
 
-The initial version of Globule is focused on the core experience of capture and synthesis. But this is just the foundation for a much larger vision.
+This isn't a filing system - it's a living memory space. Files aren't stored, they're released into orbit. Similar thoughts converge naturally. The visualization shows your mind's organizational patterns emerging without conscious effort.
 
--   **Empowering Workflows:** Soon, you'll be able to teach Globule about *your* specific types of information (like `Recipes` or `Code Snippets`), enabling custom formatting and perfect integration with tools like Obsidian.
--   **Personalized Organization:** You will be able to tune Globule's brain, defining your own templates for how files and folders are named and organized, making the semantic filesystem truly your own.
+After a month, you'll see:
+- Solar systems of related thoughts
+- Asteroid belts of scattered ideas
+- Comets of recurring themes
+- Dark matter of forgotten memories
 
-Our ultimate goal is to build a new foundational layer for personal computing—one that understands context, not just commands.
+## Requirements
 
-## Contributing
+- Python 3.6+
+- Modern browser with Canvas support
+- Optional: ripgrep for faster search
+- Optional: tesseract for OCR
+- Optional: whisper for audio transcription
 
-This project is currently in a design-heavy phase. If you are interested in the architecture, design philosophy, and the future of semantic computing, we welcome you to explore our **[Project Wiki](https://github.com/asavschaeffer/globule/wiki)** where the system is being designed in the open.
+## License
+
+MIT - Your thoughts belong to you.
