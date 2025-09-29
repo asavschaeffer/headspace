@@ -1,0 +1,878 @@
+Love this — gorgeous concept. I’ll treat it like an engineering + product brief + small implementation plan with actionable tech choices, UI affordances (organizational-psychology), and a tiny starter code sketch so you can get moving immediately. Please consider all the mutable choices.. mutable. Mutable choices are things like programming language, embedding models, database providers, tools, etc. 
+
+# TL;DR (the rocket fuel)
+
+* **Frontend:** React + TypeScript; use a 3D force-graph UI (Three.js under the hood) so nodes behave like planets & orbits but you get built-in force-layout + interaction. ([vasturiano.github.io][1])
+* **Embeddings & vectors:** Use a sentence embedding for text (fast: `all-MiniLM-L6-v2` / higher quality: MPNet or OpenAI `text-embedding-3-*`) and store *high-dim vectors* in a vector DB (pgvector / Pinecone / Milvus). Project to 3D with **UMAP** (better global + speed than t-SNE for UX). ([Hugging Face][2])
+* **Collaboration:** Yjs (CRDT) for realtime, conflict-free editing and shared state. ([docs.yjs.dev][3])
+
+---
+
+# 1) System architecture (high level)
+
+* **Client (React/TS)**
+
+  * Visual canvas: `react-force-graph-3d` or a custom React-Three-Fiber scene if you want bespoke visuals. The ready component gives node physics + interactions out of the box. ([GitHub][4])
+  * Local UI state, drag/rotate, right-click menu, editor modal, filters, visual cluster controls.
+  * Offload heavy work (embedding projection, ANN queries) to the backend or to WebWorkers.
+
+* **Backend**
+
+  * Embedding service: call OpenAI embeddings (or your own sentence-transformer server) to convert files into vectors and metadata. Store raw file (blob or S3) + text/extracted text + vector. ([OpenAI Platform][5])
+  * Vector DB: options:
+
+    * **pgvector** (Postgres extension) — easy to run alongside relational metadata. Good for prototyping/self-host. ([GitHub][6])
+    * **Pinecone / Milvus / Weaviate** — managed or open-source vector DBs with high-performance ANN indexing for production scale. Pick based on your ops appetite. ([Pinecone Docs][7])
+  * Indexing / reduction: store the original high-dim vectors; compute 3D projection (PCA → UMAP) for the visual positions and cache it. ([pair-code.github.io][8])
+  * Realtime sync: WebSocket + Yjs awareness for collaborative cursor/selection + CRDT document sync. ([docs.yjs.dev][3])
+
+* **Worker pipeline**
+
+  * File ingestion → extract text (OCR for images) → chunk large documents (sliding window) → compute embedding per chunk → store chunk vectors + parent doc id → compute doc-level vector (e.g., mean or weighted aggregation).
+  * Periodically recompute clusters / UMAP for whole dataset or per-project.
+
+---
+
+# 2) Vector / embedding design (practical)
+
+* **Model choices**
+
+  * Fast / cheap: `all-MiniLM-L6-v2` → 384-dim (great for interactive apps). ([Hugging Face][2])
+  * Higher quality: MPNet / OpenAI `text-embedding-3-small/large` (larger dims, better semantic fidelity). Keep the original high-dim vector for retrieval and only project to 3D for visualization. ([OpenAI Platform][5])
+* **Multi-modal (images + text)**
+
+  * Use a visual embedding (CLIP / similar) and either concatenate or learn a projection to the same space (or keep two spaces and hybrid-score). For UX, keep one “visual position” space to place nodes.
+* **Chunking**
+
+  * Long files → slice into 512–2048 token chunks with overlap; embed each chunk and store chunk metadata so you can show snippet provenance in search results (the UX needs to show “this match came from paragraph X”). [Pinecone and other vector DB guides discuss chunking; it’s standard]. ([pinecone.io][9])
+
+---
+
+# 3) Layout + physics ideas (makes the “space” feel alive)
+
+* **Base positions:** use the 3D projection (UMAP/PCA) to set initial node positions in 3D “thought space.” ([pair-code.github.io][8])
+* **Force rules:**
+
+  * **Similarity attraction:** Attractive force magnitude ∝ similarity (cosine) between vectors.
+  * **Citation springs:** If A cites B or A contains B, model a spring: preferred distance = small radius → produce orbital motion. Use trig + time to implement gentle orbit if you want deterministic circular orbits for “citation children.”
+  * **Repulsive force / collision avoidance:** prevent overlap; cap force magnitudes to maintain stable motion.
+  * **Damping + lerp smoothing:** positions should `lerp(target, 0.02)` so motion is floaty, not jittery.
+* **Performance:** use Barnes-Hut or approximate force sim (d3-force variants used by force-graph) to scale to thousands of nodes. `react-force-graph-3d` already uses d3/ngraph methods. ([vasturiano.github.io][1])
+
+UX affordances:
+
+* Node size = centrality / citation count / recency.
+* Node glow / color = cluster/topic tag.
+* Orbit speed = “virality” (count of inbound citations).
+* Pin / freeze a node to remove it from physics (useful for manual curation).
+
+---
+
+# 4) Organizational-psychology & UX rules (how to avoid cognitive overload)
+
+* **Progressive disclosure:** don’t show every single neighbor at zoom-out. Show aggregated “cluster planets” that expand on zoom/click.
+* **Make system suggestions explainable:** when you auto-suggest a link between two docs, show the top 1–2 overlapping chunks and a one-line LLM summary explaining *why* they’re related (provenance).
+* **Avoid algorithmic echo chambers:** give users controls to tune similarity thresholds and to toggle “serendipity” mode (show low-similarity but high novelty items).
+* **Affordances for creativity:** quick-create (right-click → New doc), quote-connect (select node A → create child B pre-populated with quote snippet), snapshots/bookmarks of views, and “focus mode” (reduce distractions).
+* **Cognitive limits:** cap default visible neighbors to ~6–10; allow “expand more” on user action.
+
+---
+
+# 5) Collaboration, versioning, and sync
+
+* **Realtime editing:** use **Yjs** to sync document contents, node positions, and selection state. It’s battle-tested for Google-Docs/Figma style sync. ([docs.yjs.dev][3])
+* **History / branching:** treat each document as a CRDT/text with version history and a “fork” action. Keep edit provenance and allow merge or create a link that indicates derivation.
+* **Conflict handling:** CRDTs avoid manual merges for concurrent edits; for structural edits (node delete/move) show “replayer” UI to roll back.
+
+---
+
+# 6) Storage, search & scale (ops)
+
+* **Store**: file blobs in S3, metadata in Postgres, vectors in pgvector (or use Pinecone/Milvus for scale). pgvector gives you the convenience of relational queries + vector search for prototypes. ([GitHub][6])
+* **ANN index choices**: HNSW is a solid general choice; use Faiss or HNSWlib if you want in-memory speed + custom ops. For production serverless, Pinecone/Milvus/Weaviate provide managed indexes. ([Zilliz][10])
+* **Projection caching:** compute 3D UMAP projection on the backend, cache results, and only recompute on significant dataset changes (or do incremental updates). UMAP is a good tradeoff for preserving both local & global structure and scales better than t-SNE. ([pair-code.github.io][8])
+
+---
+
+# 7) Minimal MVP (drop-in features, prioritized)
+
+1. Basic node graph canvas: create nodes, drag, connect (left click to edit). Use `react-force-graph-3d`. ([GitHub][4])
+2. Save/load documents & links to a backend (Postgres + pgvector). ([GitHub][6])
+3. Embeddings pipeline for text files using a lightweight encoder (`all-MiniLM-L6-v2`) and show nodes placed by UMAP projection. ([Hugging Face][2])
+4. Simple “quote-connect” flow: right-click → create quoted child with link to source snippet.
+5. Search box: hybrid (full text + vector similarity) — show provenance.
+6. Next phase: add CRDT realtime via Yjs; add image embedding support and RAG-style summaries.
+
+---
+
+# 8) Small starter code (React + node sketch)
+
+Below is a **tiny** starter to get the visual canvas going. This uses `react-force-graph-3d` for an interactive 3D force graph. (Install: `npm i react-force-graph three @types/three`)
+
+```tsx
+// App.tsx (React + TS)
+import React, { useRef, useState, useEffect } from 'react';
+import ForceGraph3D, { ForceGraphMethods } from 'react-force-graph-3d';
+
+type Node = { id: string; title?: string; size?: number; vec?: number[]; pinned?: boolean };
+type Link = { source: string; target: string };
+
+export default function App() {
+  const fgRef = useRef<ForceGraphMethods | null>(null);
+  const [graph, setGraph] = useState({ nodes: [] as Node[], links: [] as Link[] });
+
+  useEffect(() => {
+    // seed demo
+    setGraph({
+      nodes: [
+        { id: 'business_ideas', title: 'business_ideas', size: 12 },
+        { id: 'ai_startup', title: 'AI startup', size: 6 },
+        { id: 'visualizer', title: 'Visualizer idea', size: 6 }
+      ],
+      links: [
+        { source: 'ai_startup', target: 'business_ideas' },
+        { source: 'visualizer', target: 'business_ideas' }
+      ]
+    });
+  }, []);
+
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <ForceGraph3D
+        ref={fgRef}
+        graphData={graph}
+        nodeLabel={(n: any) => `${n.title}`}
+        nodeAutoColorBy="group"
+        nodeThreeObject={(node: any) => {
+          // simple sphere scaled by node.size
+          const sprite = new THREE.Mesh(
+            new THREE.SphereGeometry((node.size || 4) * 0.2, 16, 16),
+            new THREE.MeshStandardMaterial({ metalness: 0.2, roughness: 0.7 })
+          );
+          return sprite;
+        }}
+        onNodeClick={(node) => {
+          // open editor modal (pseudo)
+          alert('Open editor for ' + (node as any).id);
+        }}
+        onNodeDragEnd={(node: any) => {
+          // pin node when user moves it
+          node.fx = node.x;
+          node.fy = node.y;
+          node.fz = node.z;
+        }}
+        cooldownTicks={100}
+        enableNodeDrag={true}
+      />
+    </div>
+  );
+}
+```
+
+**Server snippet (Node/Express)** — embed + store (pseudo)
+
+```js
+// POST /ingest
+app.post('/ingest', async (req, res) => {
+  const { text, metadata } = req.body;
+  // chunk if needed, call embedding API (OpenAI or sentence-transformers)
+  const embedding = await embedText(text); // returns high-dim vector
+  // store metadata, text, and vector (pgvector or Pinecone)
+  await saveToVectorStore({ id: docId, vector: embedding, metadata });
+  res.json({ ok: true, id: docId });
+});
+```
+
+---
+
+# 9) Key tradeoffs you should know
+
+* **Client-only vs server embeddings:** Client-only (in-browser) is privacy-friendly but heavy on resources; server embeddings are easier and cheaper to run with good models and allow central indexing. ([Hugging Face][2])
+* **Vector DB choices:** pgvector = easiest to prototype, Pinecone/Milvus = scale. ([GitHub][6])
+* **Projection consistency:** UMAP is great for UX but non-deterministic between runs (seed it or cache). Use PCA + small UMAP steps for stability. ([pair-code.github.io][8])
+
+---
+
+# 10) Final UX / product suggestions (organizational-psych)
+
+* Onboarding: start with “import folder” or “paste a few notes” so users see clusters instantly.
+* Summaries & playlists: allow users to create a “compilation” doc that becomes a planet connecting others.
+* Discovery & prompts: occasional suggestion cards that propose new links with explicit evidence.
+* Export: allow “export view” to PNG/JSON so people can share a snapshot of their thoughtspace.
+
+
+
+[1]: https://vasturiano.github.io/3d-force-graph/?utm_source=chatgpt.com "3D Force-Directed Graph - GitHub Pages"
+[2]: https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2?utm_source=chatgpt.com "sentence-transformers/all-MiniLM-L6-v2"
+[3]: https://docs.yjs.dev/?utm_source=chatgpt.com "Yjs Docs: Introduction"
+[4]: https://github.com/vasturiano/react-force-graph?utm_source=chatgpt.com "vasturiano/react-force-graph: React component for 2D, 3D, ..."
+[5]: https://platform.openai.com/docs/guides/embeddings?utm_source=chatgpt.com "Vector embeddings - OpenAI API"
+[6]: https://github.com/pgvector/pgvector?utm_source=chatgpt.com "pgvector/pgvector: Open-source vector similarity search for ..."
+[7]: https://docs.pinecone.io/?utm_source=chatgpt.com "Pinecone documentation - Pinecone Docs"
+[8]: https://pair-code.github.io/understanding-umap/?utm_source=chatgpt.com "Understanding UMAP"
+[9]: https://www.pinecone.io/learn/?utm_source=chatgpt.com "Learn"
+[10]: https://zilliz.com/blog/faiss-vs-hnswlib-choosing-the-right-tool-for-vector-search?utm_source=chatgpt.com "Faiss vs HNSWlib on Vector Search"
+
+
+Nice — dug deep and put this into an engineer-friendly, product-aware spec you can hand to a frontend or backend person and start building from. I split it into two main sections: **UI spec (screens + interactions)** and **API + DB schema**. Where helpful I include example payloads, SQL DDL, event flows and UX rules. Read through and tell me which part you want turned into a runnable scaffold next (OpenAPI + full repo or a minimal prototype).
+
+---
+
+# UI SPEC — Screens, components & interactions
+
+## 1 — High-level goals / UX principles
+
+* **Explorable, not overwhelming.** Default view shows a curated subset (cluster heads), expanding on zoom/click.
+* **Direct manipulation.** Drag nodes, draw links, right-click context menus, double-click to center.
+* **Provenance & explainability.** Every automatic suggestion shows the evidence: snippet, chunk, or score.
+* **Fluid visual aesthetic.** Space metaphor: slow float, gentle orbits for citations, gravitational pull based on similarity/centrality. Provide a “reduce motion” accessibility toggle.
+
+---
+
+## 2 — Global chrome (persistent UI)
+
+* Top bar: Project switcher, Search box (global), Create (New Doc, Import Folder), Profile / Settings, Collaboration presence avatars.
+* Left sidebar (collapsible): Project info → Filters (tags, file types, date range, authors) → Cluster legend (colors) → Physics controls (gravity strength slider, sim speed, collision toggle).
+* Right inspector (dockable): Node/Selection details: title, content preview, tags, metadata, citations, versions, activity.
+* Bottom bar: Mini-map / timeline scrubber / status (connected workers, last embedding run).
+
+---
+
+## 3 — Screens & detailed interactions
+
+### A. Dashboard (project list)
+
+* Purpose: list projects, quick import, recent snapshots.
+* Elements:
+
+  * Project cards (name, node count, last updated, primary clusters preview).
+  * Quick-create: New Project or Import Folder.
+* Interactions:
+
+  * Click project → Canvas
+  * Hover project → small preview (mini-graph)
+  * Right-click card → Duplicate, Export, Delete.
+
+---
+
+### B. Canvas / Universe (Main working screen)
+
+* Purpose: the main node network visualization (Three.js scene).
+* Initial state:
+
+  * Render nodes (planets) positioned from cached 3D projection.
+  * Links rendered as soft glowing lines.
+  * Camera: orbit controls, inertia enabled.
+* Node representation:
+
+  * Size = centrality / citation count.
+  * Color = cluster/topic.
+  * Glow = recently updated or trending.
+  * Orbit ring when node has explicit "contains" children (children rotate around parent).
+* Primary interactions:
+
+  * **Left click node:** open inspector / center camera.
+  * **Double click node:** “Focus” (camera zoom + center + freeze physics for this view).
+  * **Right click node:** context menu:
+
+    * Edit content
+    * Create quote (quote-connect: create child with selected text)
+    * Connect to… (draw mode)
+    * Pin / Unpin
+    * Duplicate node
+    * Export node (JSON / PNG thumbnail)
+    * Share node (link)
+  * **Drag node:** immediate physics update; on drag-end, pin node to new coords (persist `pinned = true`).
+  * **Click empty space:** deselect.
+  * **Shift + drag:** marquee selection (multi-select nodes).
+  * **Ctrl/Cmd + click:** multi-select toggle.
+  * **Right-click-and-drag:** open radial "create" menu (New Text, Upload File, Link Existing).
+  * **Draw link:** select link tool, click source, drag to target, confirm link type (cite/contains/derives-from).
+  * **Hover:** tooltip with title, top snippet (useful for dense graphs).
+  * **Zoom / Pan:** mouse wheel or pinch; on zoom out, collapse children into cluster summary nodes (aggregate nodes).
+* Keyboard shortcuts (defaults, custom remappable):
+
+  * N = new node
+  * C = connect mode
+  * F = focus selected node
+  * Space + drag = pan
+  * Esc = exit current tool / close modals
+  * ? = help/shortcuts overlay
+* Physics & controls:
+
+  * Sidebar sliders: Gravity strength, Collision radius, Orbital speed. Changing sliders recalculates force constants on the client.
+  * Stabilize button: apply `position = cachedProjection` to reduce drift.
+* Clustering:
+
+  * Toggle cluster aggregation: show cluster planets (aggregate count + representative label), click to expand cluster.
+
+---
+
+### C. Node editor modal / panel
+
+* Title field, content editor (rich text + markdown toggle), tags, file attachments, citations list, derived-from list, share settings.
+* Inline quote creation: select text in any node inspector → right click → “Quote and create node” (opens new editor prefilled).
+* Live save + version history: autosave drafts; version timeline with diff view.
+* Interaction patterns:
+
+  * Save → triggers background ingestion pipeline (text extraction, chunking, enqueue embedding).
+  * Publish / Unpublish toggles.
+  * Merge: pick any other node and merge content (keeps provenance).
+* Editor features:
+
+  * Show which chunks produced embeddings & their similarity scores (for transparency).
+  * Quick insert: drag a search result or another node into editor to create a link.
+
+---
+
+### D. Search / Add Panel (left sidebar)
+
+* Unified search: text-first with vector fallback.
+* UI: search input, results split into “Exact text matches”, “Semantic matches”, “Files”. Each result shows snippet, score, and “Add to canvas” button.
+* Interactions:
+
+  * Add to canvas → creates node at camera center with highlight animation.
+  * Multi-select results → add all.
+  * “Create from selection” → create node composed of multiple selected results.
+
+---
+
+### E. Inspector (right panel)
+
+* When node selected: shows metadata, full content preview, inbound/outbound links, version history, small visualization of nearest neighbors with scores.
+* Actions:
+
+  * Add tag, toggle pinned, view raw embedding (developer mode), open original file, export chunked matches.
+  * Recompute embedding button (force re-embed with chosen model).
+
+---
+
+### F. Import / Ingest modal
+
+* Drag & drop file(s) or paste text. Options:
+
+  * Chunking size / overlap settings (advanced).
+  * OCR toggle for images (auto).
+  * Project assignment.
+* Upload flows:
+
+  * Immediate "fast create node" with optimistic UI while worker extracts text & computes vector. UI shows progress and replaces node with final data when done.
+
+---
+
+### G. Activity & History / Timeline
+
+* Chronological feed of actions (uploads, links created, embeddings computed).
+* Timeline scrubber for canvas states: slide → canvas replays historical layout / state; click snapshot → restore.
+* Interactions:
+
+  * Click event → highlight related node(s).
+  * Rewind/Play for animated transitions.
+
+---
+
+### H. Cluster / Constellation view (aggregate)
+
+* Purpose: abstracted, high-level view showing cluster planets and their relationships. Useful for onboarding and large datasets.
+* Interactions:
+
+  * Click cluster → zoom into cluster, expand to nodes.
+  * Tag cloud & cluster naming suggestions (LLM-suggested names).
+
+---
+
+### I. Settings / Admin
+
+* Project settings: vector model settings, chunking rules, projection algorithm choice (UMAP/PCA), embedding provider config (OpenAI/key), vector DB config.
+* Roles & permissions: Owner, Editor, Viewer, API Key generation.
+* Export / backup: snapshot export (JSON + files), schedule auto backups.
+
+---
+
+### J. Mobile considerations
+
+* Simplified canvas (2D fallback) with tap-to-select, pinch to zoom, long-press for context menu. Provide reduced-motion and simplified physics mode.
+
+---
+
+### Microinteractions & Visual polish
+
+* Node creation pulse / pop animation; link creation draws a luminous trail; new citations create a small gravity-wave ripple; hover shows subtle glow & label reveal; node pin shows a small anchor icon.
+* Accessibility: full keyboard control, ARIA labels on UI elements, high-contrast theme, reduced-motion setting.
+
+---
+
+# API SPEC & BACKEND FLOWS
+
+## Auth & common
+
+* Auth: JWT bearer tokens (`Authorization: Bearer <token>`). Optional OAuth for SSO.
+* Time: all timestamps use `timestamptz`.
+* Errors: standard JSON error envelope:
+
+```json
+{ "error": { "code": "BadRequest", "message": "Description", "details": {} } }
+```
+
+---
+
+## Real time / collaboration
+
+* **Yjs over WebSocket** (recommended): server acts as provider to sync document contents, node positions, selections. Use `wss://api.example.com/realtime` with project room `project:{project_id}`.
+
+  * Presence channel publishes active users, cursors, and selection.
+  * Alternatively, if you prefer custom events: `wss://api.example.com/ws/projects/{project_id}` with events `node:move`, `node:create`, `link:create`, `cursor:update`.
+
+---
+
+## REST endpoints (recommended minimal set)
+
+> NOTE: every request requires `Authorization` header unless public. Responses abbreviated.
+
+### Auth / Users
+
+* `POST /api/v1/auth/login`
+
+  * body: `{ "email": "...", "password": "..." }`
+  * resp: `{ "token": "..." , "user": {...} }`
+* `POST /api/v1/auth/signup`
+* `GET /api/v1/users/me` → current user profile.
+
+---
+
+### Projects
+
+* `POST /api/v1/projects` — create project
+
+  * body: `{ "name", "description", "settings": {...} }`
+* `GET /api/v1/projects` — list projects (filter by membership)
+* `GET /api/v1/projects/{project_id}` — project details
+* `PATCH /api/v1/projects/{project_id}` — update settings
+* `DELETE /api/v1/projects/{project_id}`
+
+---
+
+### Files (S3-backed)
+
+* `POST /api/v1/files/upload-url` → generate signed S3 upload URL
+
+  * body: `{ filename, contentType, projectId }`
+  * resp: `{ uploadUrl, fileId, publicUrl }`
+* `GET /api/v1/files/{fileId}` — metadata
+
+---
+
+### Documents (nodes)
+
+* `POST /api/v1/projects/{project_id}/documents` — create new node/doc
+
+  * body:
+
+```json
+{
+  "title":"business_ideas",
+  "content":"optional string content",
+  "fileId":"optional reference to file",
+  "tags":["business","ideas"],
+  "pinned": false
+}
+```
+
+* resp: `{ "id":"uuid", "status":"pending_embedding", "createdAt":... }`
+* `GET /api/v1/projects/{project_id}/documents/{doc_id}` — full doc + chunk previews + inbound/outbound links
+* `PATCH /api/v1/projects/{project_id}/documents/{doc_id}` — update content/tags/metadata
+* `DELETE /api/v1/projects/{project_id}/documents/{doc_id}`
+
+**Important:** Creating or updating content triggers ingestion: extract text (if file), chunk, enqueue embedding job. Server returns immediately; embedding result is async (webhook / ws update / polling endpoint).
+
+---
+
+### Embeddings & Ingest control
+
+* `POST /api/v1/ingest` — manual ingest trigger (file/text)
+
+  * body: `{ projectId, docId, fileId?, text?, chunkSize?, model? }`
+  * resp: `{ jobId }`
+* `GET /api/v1/ingest/{jobId}` — job status
+* Worker side will push event `embedding:complete` to presence channel or update doc record.
+
+---
+
+### Chunks & provenance
+
+* `GET /api/v1/projects/{project_id}/documents/{doc_id}/chunks?limit=10`
+
+  * returns chunk text, embedding id, embedding vector reference, chunk index, snippet
+
+---
+
+### Links / Graph edges
+
+* `POST /api/v1/projects/{project_id}/links` — create link
+
+  * body:
+
+```json
+{ "sourceId":"uuid", "targetId":"uuid", "type":"cite|contains|derives", "metadata": { "snippet": "...", "score": 0.87 } }
+```
+
+* `GET /api/v1/projects/{project_id}/links?nodeId={id}` — list edges for node
+* `DELETE /api/v1/projects/{project_id}/links/{linkId}`
+
+---
+
+### Projections / Visual positions
+
+* `GET /api/v1/projects/{project_id}/projection` — returns cached 3D positions for nodes:
+
+```json
+{ "positions":[ { "nodeId":"uuid", "x":0.12, "y":-1.2, "z":0.5 }, ... ], "version": 42 }
+```
+
+* `POST /api/v1/projects/{project_id}/projection/recompute` — request recompute (admin/owner only). Body: `{ algorithm: "umap|pca", seed?: int }`
+* `PATCH /api/v1/projects/{project_id}/nodes/{nodeId}/position` — persist pinned position after drag
+
+---
+
+### Search (hybrid)
+
+* `POST /api/v1/projects/{project_id}/search`
+
+  * body:
+
+```json
+{
+  "q":"ai visualizer",
+  "useVector": true,
+  "k": 25,
+  "filters": { "tags":["ai"], "fileTypes":["text","image"] }
+}
+```
+
+* resp: hybrid ranked results with `scoreText`, `scoreVector`, `combinedScore`, `sourceChunkId`
+* `POST /api/v1/projects/{project_id}/semantic-suggest` — returns suggested links / cluster names (LLM powered)
+
+---
+
+### Clusters & metadata
+
+* `GET /api/v1/projects/{project_id}/clusters` — list clusters with centroid node and member counts
+* `POST /api/v1/projects/{project_id}/clusters/merge` — merge clusters, admin only
+* `POST /api/v1/projects/{project_id}/clusters/naming` — LLM-suggested names for clusters
+
+---
+
+### Export & Snapshots
+
+* `POST /api/v1/projects/{project_id}/snapshot` — create snapshot (JSON + projection + files manifest)
+* `GET /api/v1/projects/{project_id}/snapshot/{snapshotId}` — download
+
+---
+
+### Admin / Ops
+
+* `POST /api/v1/admin/reindex` — reindex vector DB (admin only)
+* `GET /api/v1/admin/health` — worker queues, vector DB status, last ingests
+
+---
+
+## Example REST flow (create document + view on canvas)
+
+1. Client `POST /projects/{p}/documents` → server creates doc row (status `pending`) and returns `docId`.
+2. Server enqueues ingest job `ingest:{docId}`.
+3. Worker extracts text, chunks, computes embeddings, writes chunk embeddings to `doc_chunks` and `embeddings`. Worker calculates doc vector (mean or weighted) and writes to `doc_embeddings`.
+4. Worker triggers recompute/append to projection queue or writes new coordinates for the specific doc in `projection_updates` table. Alternatively, at scheduled intervals recompute UMAP for whole project.
+5. Client polls or receives WebSocket event `document:updated` and then requests `GET /projects/{p}/projection` (or client receives `projection:updated`) and updates canvas.
+
+---
+
+# DB SCHEMA (Postgres + pgvector recommended)
+
+Below is a practical schema (DDL snippets). Assume `pgvector` extension is installed.
+
+### Extensions
+
+```sql
+-- enable extensions
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+### 1) `users`
+
+```sql
+CREATE TABLE users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text UNIQUE NOT NULL,
+  name text,
+  hashed_password text,
+  created_at timestamptz DEFAULT now(),
+  profile jsonb
+);
+```
+
+### 2) `projects`
+
+```sql
+CREATE TABLE projects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  name text NOT NULL,
+  description text,
+  settings jsonb DEFAULT '{}'::jsonb,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz
+);
+CREATE INDEX idx_projects_owner ON projects(owner_id);
+```
+
+### 3) `project_members`
+
+```sql
+CREATE TABLE project_members (
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  user_id uuid REFERENCES users(id) ON DELETE CASCADE,
+  role text CHECK (role IN ('owner','editor','viewer')),
+  PRIMARY KEY (project_id, user_id)
+);
+```
+
+### 4) `files`
+
+```sql
+CREATE TABLE files (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  filename text,
+  mime text,
+  size bigint,
+  s3_key text,           -- or URL
+  uploader_id uuid REFERENCES users(id),
+  metadata jsonb,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX idx_files_project ON files(project_id);
+```
+
+### 5) `documents` (nodes)
+
+```sql
+CREATE TABLE documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+  title text,
+  content text,                -- small content preview or raw markdown
+  file_id uuid REFERENCES files(id),
+  owner_id uuid REFERENCES users(id),
+  tags text[],                 -- simple tags
+  pinned boolean DEFAULT false,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz,
+  status text DEFAULT 'pending'  -- pending_embedding | ready | error
+);
+CREATE INDEX idx_documents_project ON documents(project_id);
+CREATE INDEX idx_documents_tags ON documents USING GIN (tags);
+```
+
+### 6) `doc_chunks` (for provenance & chunked embedding)
+
+```sql
+CREATE TABLE doc_chunks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id uuid REFERENCES documents(id) ON DELETE CASCADE,
+  seq integer NOT NULL,
+  text text,
+  token_count integer,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX idx_chunks_doc ON doc_chunks(document_id);
+```
+
+### 7) `embeddings` (chunk-level embeddings)
+
+```sql
+-- embedding vector size 384 in this example
+CREATE TABLE embeddings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id),
+  document_id uuid REFERENCES documents(id),
+  chunk_id uuid REFERENCES doc_chunks(id),
+  model text NOT NULL,
+  vector vector(384),         -- pgvector column; choose size per model
+  created_at timestamptz DEFAULT now()
+);
+-- ANN index (example using ivfflat). Adjust lists parameter to dataset.
+CREATE INDEX ON embeddings USING ivfflat (vector) WITH (lists = 100);
+CREATE INDEX idx_embeddings_doc ON embeddings(document_id);
+```
+
+> Note: 384 is example (MiniLM). If you use multiple models, choose variant vector lengths accordingly or store model metadata and use a consistent model across corpus.
+
+### 8) `doc_vectors` (precomputed doc-level vector)
+
+```sql
+CREATE TABLE doc_vectors (
+  document_id uuid PRIMARY KEY REFERENCES documents(id),
+  project_id uuid REFERENCES projects(id),
+  model text,
+  vector vector(384),
+  updated_at timestamptz DEFAULT now()
+);
+CREATE INDEX ON doc_vectors USING ivfflat (vector) WITH (lists = 100);
+```
+
+### 9) `links` (graph edges)
+
+```sql
+CREATE TABLE links (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id),
+  source_id uuid REFERENCES documents(id) ON DELETE CASCADE,
+  target_id uuid REFERENCES documents(id) ON DELETE CASCADE,
+  type text CHECK (type IN ('cite','contains','derives','link')),
+  metadata jsonb,
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX idx_links_source ON links(source_id);
+CREATE INDEX idx_links_target ON links(target_id);
+```
+
+### 10) `projections` (cached 3D positions)
+
+```sql
+CREATE TABLE projections (
+  project_id uuid REFERENCES projects(id),
+  node_id uuid REFERENCES documents(id),
+  x double precision,
+  y double precision,
+  z double precision,
+  version integer DEFAULT 1,    -- bump on recompute
+  updated_at timestamptz DEFAULT now(),
+  PRIMARY KEY (project_id, node_id)
+);
+CREATE INDEX idx_projections_project ON projections(project_id);
+```
+
+### 11) `clusters`
+
+```sql
+CREATE TABLE clusters (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id),
+  name text,
+  centroid vector(384),
+  metadata jsonb,
+  member_count integer DEFAULT 0,
+  updated_at timestamptz DEFAULT now()
+);
+CREATE INDEX ON clusters USING ivfflat (centroid) WITH (lists = 64);
+```
+
+### 12) `activity` / audit
+
+```sql
+CREATE TABLE activity (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id),
+  user_id uuid REFERENCES users(id),
+  action text,
+  payload jsonb,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX idx_activity_project ON activity(project_id);
+```
+
+### 13) `snapshots`
+
+```sql
+CREATE TABLE snapshots (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid REFERENCES projects(id),
+  created_by uuid,
+  manifest jsonb,  -- metadata about snapshot (files list, doc ids, projection version)
+  storage_url text,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+---
+
+## Indexing & search considerations
+
+* **Vector ANN index**: `ivfflat` or `hnsw` on embedding columns (depending on pgvector / DB support). Tune `lists` or HNSW params depending on dataset size & QPS.
+* **Text search**: maintain a `tsvector` column on documents and chunks and GIN index for full-text search. Example:
+
+```sql
+ALTER TABLE documents ADD COLUMN content_tsv tsvector;
+CREATE INDEX idx_documents_text ON documents USING GIN(content_tsv);
+-- use trigger to update tsvector on insert/update (or compute in ingestion pipeline)
+```
+
+* **Hybrid search**: combine full-text ranking (`ts_rank`) with ANN vector score; return both and expose combined ranking in API.
+
+---
+
+# Operational notes & best practices
+
+* **Chunking policy:** default 512–1024 tokens with 20–30% overlap. Store chunk mapping so search can show exact snippet provenance.
+* **Projection recompute cadence:** for large projects, schedule UMAP/PCA recompute during off-peak or use incremental update for new nodes. Cache the projection version and send clients the version to avoid mismatch.
+* **Worker architecture:** use a background job queue (Redis / RabbitMQ / Sidekiq / Celery). Workers: file extraction, OCR, chunking, embedder, indexer, projection worker.
+* **Embeddings model choice:** pick one model for the project corpus to keep vector dimension consistent; if changing models, plan re-embedding migration.
+* **Permissions:** enforce project-level ACLs in every endpoint. Signed S3 URLs for uploads. Rate-limit embedding requests to provider.
+
+---
+
+# Example API Request/Response (Create doc + search result)
+
+**Create doc**
+
+```
+POST /api/v1/projects/{p}/documents
+Authorization: Bearer <token>
+{
+  "title": "business_ideas",
+  "content": "AI-driven cosmic visualizer: map your notes to a starfield",
+  "tags": ["ai","visualizer"]
+}
+```
+
+Response:
+
+```json
+{
+  "id": "7b2d...uuid",
+  "status": "pending_embedding",
+  "createdAt": "2025-09-27T22:15:00Z"
+}
+```
+
+**Search**
+
+```
+POST /api/v1/projects/{p}/search
+{
+  "q": "cosmic visualizer",
+  "useVector": true,
+  "k": 10
+}
+```
+
+Response (one result):
+
+```json
+{
+  "results": [
+    {
+      "documentId": "7b2d...",
+      "title": "business_ideas",
+      "snippet": "AI-driven cosmic visualizer: map your notes to a starfield",
+      "scoreText": 0.37,
+      "scoreVector": 0.92,
+      "combinedScore": 0.75,
+      "sourceChunkId": "c9f1..."
+    }
+  ]
+}
+```
+

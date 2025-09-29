@@ -1,131 +1,51 @@
-# Brain - Living Memory Galaxy
+# Thoughtspace - Cosmic Document Explorer (v0.1)
 
-A filesystem-based thought capture system with a breathing, orbital visualization. Type anything, find it later through any mental pathway.
+## The Ultra-Minimal Version
 
-## Quick Start
+This is the simplest possible implementation of your cosmic document visualization concept. It focuses on the core magic: **text becomes a star in semantic space**.
 
+## What it does
+
+- **Drop text** → Creates a glowing sphere node
+- **Embedding magic** → Text is converted to vectors using MiniLM (runs in browser!)
+- **Semantic positioning** → Similar concepts appear near each other in 3D space
+- **Living space** → Nodes gently drift, making the space feel alive
+- **Beautiful starfield** → Creates an immersive cosmic atmosphere
+
+## How to run
+
+1. Start the server:
 ```bash
-python start_brain.py
+python server.py
 ```
 
-Opens browser to `http://localhost:8888` with the galaxy interface.
-
-## Features
-
-### Core Principles
-- **Instant Capture**: <10ms save latency - thought speed input
-- **Collision as Continuation**: Same filename = same thought thread (echo-append)
-- **Living Organization**: Files drift together based on similarity over geological time
-- **Progressive Search**: Instant filename → fast content → semantic similarity
-
-### The Breathing Space
-- Files orbit slowly like cosmic dust
-- Similar thoughts naturally cluster
-- Recent activity creates ripples
-- The entire space breathes with a 30-second rhythm
-
-## Usage
-
-### Input Modes
-- **Save**: Type anything, press `Ctrl+Enter`
-- **Search**: Start with `/` to search
-- **Navigate**: Click and drag to pan, scroll to zoom
-
-### File Organization
+2. Open in your browser:
 ```
-~/brain/
-  meeting-sarah-vector-db.txt     # Auto-named from content
-  error-auth-middleware.txt       # Semantic detection
-  question-how-to-implement.txt   # Question detection
-  code-calculate-distance.txt     # Code detection
-  [.metadata/]                    # Connections and metadata
+http://localhost:8080
 ```
 
-### Collision Handling
-When you save with the same filename, it appends with a timestamp separator:
-```
-Original thought about vectors...
+## How to use
 
-==================================================
-[Continued 2024-11-15 14:32:10]
-==================================================
+- **Type or paste text** in the input box and press Enter
+- **Drag and drop** text files onto the drop zone
+- **Paste text** anywhere on the page (Ctrl+V)
+- **Navigate** with mouse: drag to rotate, scroll to zoom
 
-New thought about vectors...
-```
+## Technical details
 
-## Technical Architecture
+- **Pure client-side**: Everything runs in your browser, no backend needed
+- **Embeddings**: Uses Xenova/transformers.js with MiniLM model
+- **3D engine**: Three.js for WebGL rendering
+- **Zero dependencies**: Just one HTML file + CDN scripts
 
-### Components
-1. **brain_core.py**: Filesystem operations, collision handling, metadata
-2. **brain_server.py**: HTTP server with REST API
-3. **brain_interface.html**: Living galaxy visualization
-4. **start_brain.py**: Launcher with auto-browser open
+## What's next?
 
-### Processing Pipeline
-```
-Input → Detect Type → Generate Filename → Check Collision → Save/Append
-                                                ↓
-                                    Extract Metadata → Update Graph
-```
+Once we validate this core experience works well, we can add:
+- Image support (drag images to create visual nodes)
+- Connections between nodes (citations, links)
+- Better dimensionality reduction (UMAP instead of simple projection)
+- Persistence (save/load your thoughtspace)
+- Multi-user collaboration
+- Neural network dynamics
 
-### Search Layers
-1. **Instant** (<10ms): Filename matching
-2. **Fast** (<100ms): Content grep/ripgrep
-3. **Smart** (background): Semantic similarity
-
-### Orbital Mechanics
-- **Mass**: File size determines gravitational pull
-- **Heat**: Recent access makes nodes glow
-- **Age**: Older files fade and move slower
-- **Connections**: Similar content creates attraction
-
-## API Endpoints
-
-- `GET /` - Main interface
-- `POST /api/save` - Save new thought
-- `GET /api/graph` - Get nodes and edges
-- `GET /api/search?q=query` - Search content
-- `GET /api/file/{name}` - Get file content
-- `GET /api/recent` - Recently modified files
-
-## Extending
-
-### Add Processors
-Edit `brain_core.py` to add new file type processors:
-```python
-def process_newtype(self, filepath):
-    # Extract searchable text
-    return extracted_text
-```
-
-### Customize Physics
-Edit orbital mechanics in `brain_interface.html`:
-```javascript
-this.settings = {
-    driftSpeed: 0.0001,      // Geological time drift
-    gravityStrength: 0.001,   // Center attraction
-    connectionAttraction: 0.01 // Edge pull
-}
-```
-
-## Philosophy
-
-This isn't a filing system - it's a living memory space. Files aren't stored, they're released into orbit. Similar thoughts converge naturally. The visualization shows your mind's organizational patterns emerging without conscious effort.
-
-After a month, you'll see:
-- Solar systems of related thoughts
-- Asteroid belts of scattered ideas
-- Comets of recurring themes
-- Dark matter of forgotten memories
-
-## Requirements
-
-- Python 3.6+
-- Modern browser with Canvas support
-- Optional: ripgrep for faster search
-- Optional: tesseract for OCR
-- Optional: whisper for audio transcription
-
-## License
-
-MIT - Your thoughts belong to you.
+But for now, enjoy the simple magic of watching your thoughts float in space!
