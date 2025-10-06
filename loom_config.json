@@ -1,0 +1,78 @@
+{
+  "api_keys": {
+    "gemini": "${GEMINI_API_KEY}",
+    "openai": "${OPENAI_API_KEY}"
+  },
+  "chunking_strategy": {
+    "preferred_chunker": "llm",
+    "fallback_chunker": "structural"
+  },
+  "llm": {
+    "preferred_provider": "ollama",
+    "fallback_chain": ["ollama", "gemini", "openai", "mock"],
+    "providers": {
+      "ollama": {
+        "enabled": true,
+        "url": "http://localhost:11434/api/generate",
+        "models": [
+          {"name": "gemma3:4b", "priority": 1, "enabled": true},
+          {"name": "qwen2:8b", "priority": 3, "enabled": false}
+        ]
+      },
+      "gemini": {
+        "enabled": true,
+        "models": [
+          {"name": "gemini-2.5-flash", "priority": 1, "enabled": true},
+          {"name": "gemini-2.5-pro", "priority": 2, "enabled": false}
+        ]
+      },
+      "openai": {
+        "enabled": false,
+        "models": [
+          {"name": "gpt-4o-mini", "priority": 1, "enabled": true},
+          {"name": "gpt-4o", "priority": 2, "enabled": false}
+        ]
+      },
+      "mock": {
+        "enabled": true,
+        "models": [
+          {"name": "mock-llm", "priority": 1, "enabled": true}
+        ]
+      }
+    }
+  },
+  "embeddings": {
+    "preferred_provider": "ollama",
+    "fallback_chain": ["ollama", "gemini", "sentence-transformers", "mock"],
+    "providers": {
+      "ollama": {
+        "enabled": true,
+        "url": "http://localhost:11434/api/embed",
+        "models": [
+          {"name": "embeddinggemma", "priority": 1, "enabled": true},
+          {"name": "mxbai-embed-large", "priority": 2, "enabled": false}
+        ]
+      },
+      "gemini": {
+        "enabled": true,
+        "models": [
+          {"name": "embeddinggemma", "priority": 1, "enabled": true},
+          {"name": "embedding-001", "priority": 2, "enabled": false}
+        ]
+      },
+      "sentence-transformers": {
+        "enabled": true,
+        "models": [
+          {"name": "all-MiniLM-L6-v2", "priority": 1, "enabled": true},
+          {"name": "all-mpnet-base-v2", "priority": 2, "enabled": false}
+        ]
+      },
+      "mock": {
+        "enabled": true,
+        "models": [
+          {"name": "mock-embedding", "priority": 1, "enabled": true}
+        ]
+      }
+    }
+  }
+}

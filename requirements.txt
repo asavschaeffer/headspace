@@ -1,0 +1,28 @@
+# Core dependencies for Headspace
+# Lightweight installation - API keys only (Gemini/OpenAI)
+
+# FastAPI and web server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+websockets>=12.0
+aiofiles>=23.2.0
+
+# Data processing (lightweight)
+numpy>=1.24.0
+
+# HTTP and API clients
+requests>=2.31.0
+httpx>=0.24.0
+
+# Google Gemini support
+google-generativeai>=0.3.0
+
+# OpenAI support (optional but lightweight)
+openai>=1.0.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Validation
+pydantic>=2.5.0

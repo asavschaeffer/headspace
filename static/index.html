@@ -1,0 +1,2043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Headspace - Cosmic Knowledge System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* Layout */
+        .app-container {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: rgba(10, 10, 20, 0.95);
+            border-right: 1px solid rgba(102, 126, 234, 0.2);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+        }
+
+        .app-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+
+        .app-subtitle {
+            font-size: 0.75em;
+            color: #666;
+        }
+
+        /* Document List */
+        .document-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .document-item {
+            padding: 12px;
+            margin-bottom: 5px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-left: 3px solid transparent;
+        }
+
+        .document-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-left-color: #667eea;
+            transform: translateX(3px);
+        }
+
+        .document-item.active {
+            background: rgba(102, 126, 234, 0.1);
+            border-left-color: #667eea;
+        }
+
+        .document-title {
+            font-size: 14px;
+            margin-bottom: 3px;
+        }
+
+        .document-meta {
+            font-size: 11px;
+            color: #666;
+        }
+
+        /* Add Document Button */
+        .add-document {
+            padding: 15px 20px;
+            border-top: 1px solid rgba(102, 126, 234, 0.1);
+        }
+
+        .add-btn {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .add-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Main Content */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* View Toggle */
+        .view-toggle {
+            padding: 10px 20px;
+            background: rgba(10, 10, 20, 0.95);
+            border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .view-btn {
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 20px;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 13px;
+        }
+
+        .view-btn.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-color: transparent;
+            color: white;
+        }
+
+        /* Document View */
+        #document-view {
+            flex: 1;
+            overflow-y: auto;
+            padding: 40px;
+            display: none;
+        }
+
+        #document-view.active {
+            display: block;
+        }
+
+        .doc-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* Breadcrumb */
+        .breadcrumb {
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+            font-size: 13px;
+        }
+
+        .breadcrumb-item {
+            display: inline;
+            color: #667eea;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+            color: #8599f6;
+        }
+
+        .breadcrumb-separator {
+            color: #555;
+            margin: 0 8px;
+        }
+
+        .breadcrumb-current {
+            color: #aaa;
+        }
+
+        .doc-header {
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .doc-title-main {
+            font-size: 2.5em;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        /* Chunks */
+        .chunk {
+            margin-bottom: 2px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-left: 3px solid;
+        }
+
+        /* Subtle hover: parentheses fade in at margins (no text movement!) */
+        .chunk::before,
+        .chunk::after {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 32px;
+            color: rgba(102, 126, 234, 0.3);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            font-weight: 300;
+        }
+
+        .chunk::before {
+            content: '(';
+            left: -20px;
+        }
+
+        .chunk::after {
+            content: ')';
+            right: -20px;
+        }
+
+        .chunk:hover::before,
+        .chunk:hover::after {
+            opacity: 1;
+        }
+
+        .chunk:hover {
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .chunk-content {
+            font-size: 15px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+
+        .chunk-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .chunk:hover .chunk-badge {
+            opacity: 1;
+        }
+
+        .cosmos-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .cosmos-btn:hover {
+            transform: scale(1.2) rotate(20deg);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.5);
+        }
+
+        /* Chunk Types */
+        .chunk.heading_1 { border-left-color: #e74c3c; }
+        .chunk.heading_2 { border-left-color: #f39c12; }
+        .chunk.heading_3 { border-left-color: #f1c40f; }
+        .chunk.paragraph { border-left-color: #3498db; }
+        .chunk.list { border-left-color: #16a085; }
+        .chunk.code {
+            border-left-color: #667eea;
+            font-family: 'Courier New', monospace;
+            background: rgba(102, 126, 234, 0.05);
+        }
+        .chunk.function { border-left-color: #9b59b6; }
+
+        /* Attachment Badge */
+        .attachment-badge {
+            position: absolute;
+            top: 12px;
+            left: -16px;
+            background: #667eea;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 3px solid #0a0a0f;
+            z-index: 10;
+        }
+
+        .attachment-badge:hover {
+            transform: scale(1.2);
+            background: #8599f6;
+        }
+
+        .attachment-badge.has-attachments {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(102, 126, 234, 0); }
+        }
+
+        /* Attachments Panel */
+        .attachments-panel {
+            margin-top: 15px;
+            padding: 20px;
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            display: none;
+        }
+
+        .attachments-panel.visible {
+            display: block;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .attachments-title {
+            font-size: 13px;
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .attachment-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid #667eea;
+        }
+
+        .attachment-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(5px);
+        }
+
+        .attachment-title {
+            font-size: 14px;
+            color: #e0e0e0;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .attachment-preview {
+            font-size: 12px;
+            color: #aaa;
+            font-style: italic;
+        }
+
+        .attach-new-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .attach-new-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Chunk ID Display */
+        .chunk-id {
+            position: absolute;
+            top: 8px;
+            right: 50px;
+            font-size: 10px;
+            color: #555;
+            font-family: 'Courier New', monospace;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .chunk:hover .chunk-id {
+            opacity: 1;
+        }
+
+        /* Cosmos View */
+        #cosmos-view {
+            flex: 1;
+            position: relative;
+            display: none;
+        }
+
+        #cosmos-view.active {
+            display: block;
+        }
+
+        #cosmos-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Cosmos Info Panel */
+        #cosmos-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(10, 10, 30, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            max-width: 350px;
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 100;
+        }
+
+        #cosmos-info.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .cosmos-info-title {
+            font-size: 14px;
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .cosmos-info-id {
+            font-size: 11px;
+            color: #888;
+            font-family: 'Courier New', monospace;
+            margin-bottom: 10px;
+        }
+
+        .cosmos-info-text {
+            font-size: 13px;
+            color: #ccc;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .cosmos-info-meta {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        .cosmos-attach-btn {
+            width: 100%;
+            padding: 8px 12px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .cosmos-attach-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Cosmos Controls */
+        .cosmos-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(10, 10, 20, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+        }
+
+        .control-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        .control-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-item input {
+            cursor: pointer;
+        }
+
+        .control-item input[type="range"] {
+            width: 100px;
+        }
+
+        /* Input Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: rgba(10, 10, 30, 0.95);
+            padding: 30px;
+            border-radius: 15px;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            max-width: 600px;
+            width: 90%;
+        }
+
+        .modal-header {
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+
+        .modal-subtitle {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .modal-input {
+            width: 100%;
+            margin-bottom: 15px;
+        }
+
+        .modal-input input,
+        .modal-input textarea {
+            width: 100%;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .modal-input input:focus,
+        .modal-input textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .modal-input textarea {
+            min-height: 200px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .modal-btn.primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .modal-btn.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .modal-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Loading */
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(102, 126, 234, 0.3);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Chunk Info Tooltip */
+        .chunk-tooltip {
+            position: fixed;
+            background: rgba(10, 10, 30, 0.95);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            font-size: 11px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 100;
+        }
+
+        .chunk-tooltip.visible {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="app-title">🌌 Headspace</div>
+                <div class="app-subtitle">Cosmic Knowledge System</div>
+            </div>
+
+            <div class="document-list" id="document-list">
+                <!-- Documents will be loaded here -->
+            </div>
+
+            <div class="add-document">
+                <button class="add-btn" onclick="showAddModal()">
+                    + Add Document
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="view-toggle">
+                <button class="view-btn active" onclick="switchView('document')">
+                    📄 Document
+                </button>
+                <button class="view-btn" onclick="switchView('cosmos')">
+                    🌌 Cosmos
+                </button>
+                <div style="flex: 1;"></div>
+                <span style="color: #666; font-size: 12px;" id="status-text">Ready</span>
+            </div>
+
+            <!-- Document View -->
+            <div id="document-view" class="active">
+                <div class="doc-container">
+                    <div class="breadcrumb" id="breadcrumb" style="display: none;">
+                        <!-- Breadcrumb will be dynamically generated -->
+                    </div>
+                    <div class="doc-header">
+                        <h1 class="doc-title-main" id="doc-title">Select a document</h1>
+                        <div style="color: #666; font-size: 14px;" id="doc-meta"></div>
+                    </div>
+                    <div id="chunks-container">
+                        <!-- Chunks will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cosmos View -->
+            <div id="cosmos-view">
+                <canvas id="cosmos-canvas"></canvas>
+
+                <!-- Breadcrumb in Cosmos -->
+                <div class="breadcrumb" id="cosmos-breadcrumb" style="position: absolute; top: 20px; left: 20px; max-width: 400px; display: none;">
+                    <!-- Breadcrumb will be dynamically generated -->
+                </div>
+
+                <!-- Cosmos Info Panel (for hover/selection) -->
+                <div id="cosmos-info">
+                    <div class="cosmos-info-title">Chunk Info</div>
+                    <div class="cosmos-info-id" id="cosmos-info-id">chunk_id</div>
+                    <div class="cosmos-info-meta" id="cosmos-info-meta">Type: paragraph</div>
+                    <div class="cosmos-info-text" id="cosmos-info-text">Hover over a chunk to see details...</div>
+                    <button class="cosmos-attach-btn" id="cosmos-attach-btn" onclick="attachFromCosmos()">+ Attach Document</button>
+                </div>
+
+                <div class="cosmos-controls">
+                    <div class="control-item">
+                        <input type="checkbox" id="show-connections" checked>
+                        <label for="show-connections">Connections</label>
+                    </div>
+                    <div class="control-item">
+                        <input type="checkbox" id="show-nebulae" checked>
+                        <label for="show-nebulae">Nebulae</label>
+                    </div>
+                    <div class="control-item">
+                        <input type="checkbox" id="enable-gravity">
+                        <label for="enable-gravity">Gravity</label>
+                    </div>
+                    <div class="control-item">
+                        <label>Speed:</label>
+                        <input type="range" id="animation-speed" min="0" max="2" step="0.1" value="1">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Document Modal -->
+    <div class="modal" id="add-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Add New Document</div>
+                <div class="modal-subtitle">Type text, paste content, or upload file</div>
+            </div>
+            <div class="modal-input">
+                <input type="text" placeholder="Document Title" id="doc-title-input">
+            </div>
+            <div class="modal-input">
+                <label style="display: block; margin-bottom: 8px; color: #888; font-size: 12px;">
+                    Or upload file:
+                    <input type="file" id="file-upload-input" accept=".txt,.md,.py,.js,.rs,.java,.cpp"
+                           onchange="handleFileUpload(event)"
+                           style="margin-left: 10px; color: white;">
+                </label>
+                <textarea placeholder="Document content... (or upload file above)" id="doc-content-input" rows="10"></textarea>
+            </div>
+            <div class="modal-input">
+                <select id="doc-type-select" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white;">
+                    <option value="text">Text Document</option>
+                    <option value="code">Code</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn secondary" onclick="hideAddModal()">Cancel</button>
+                <button class="modal-btn primary" onclick="addDocument()">Add Document</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chunk Tooltip -->
+    <div class="chunk-tooltip" id="chunk-tooltip"></div>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // Global state
+        let currentDocument = null;
+        let documents = [];
+        let chunks = [];
+        let connections = [];
+        let currentView = 'document';
+
+        // Three.js variables
+        let scene, camera, renderer, controls;
+        let chunkMeshes = new Map();
+        let connectionLines = [];
+        let animationId = null;
+        let gravityEnabled = false;  // Disabled by default for performance
+        let animationSpeed = 1.0;
+        let nebulae = [];
+        let raycaster, mouse;
+        let hoveredChunk = null;
+        let selectedChunk = null;
+
+        // API base URL
+        const API_BASE = 'http://localhost:8000/api';
+
+        // Custom shaders for enhanced visuals
+        const starVertexShader = `
+            attribute float size;
+            attribute vec3 customColor;
+            varying vec3 vColor;
+            void main() {
+                vColor = customColor;
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = size * (300.0 / -mvPosition.z);
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `;
+
+        const starFragmentShader = `
+            varying vec3 vColor;
+            void main() {
+                vec2 cxy = 2.0 * gl_PointCoord - 1.0;
+                float r = dot(cxy, cxy);
+                if (r > 1.0) {
+                    discard;
+                }
+                // Multi-layer glow effect
+                float glow = pow(1.0 - r, 2.5);
+                float core = pow(1.0 - r * 0.5, 4.0);
+                float alpha = glow + core * 0.5;
+
+                vec3 finalColor = vColor * (1.0 + core);
+                gl_FragColor = vec4(finalColor, alpha);
+            }
+        `;
+
+        const nebulaVertexShader = `
+            attribute float alpha;
+            attribute float size;
+            uniform float time;
+            varying float vAlpha;
+
+            void main() {
+                vAlpha = alpha;
+
+                // Subtle animation
+                vec3 animatedPos = position;
+                animatedPos.x += sin(time * 0.1 + position.y * 0.01) * 2.0;
+                animatedPos.y += cos(time * 0.1 + position.x * 0.01) * 2.0;
+
+                vec4 mvPosition = modelViewMatrix * vec4(animatedPos, 1.0);
+                gl_PointSize = size * (200.0 / -mvPosition.z);
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `;
+
+        const nebulaFragmentShader = `
+            uniform vec3 nebulaColor;
+            varying float vAlpha;
+
+            void main() {
+                vec2 cxy = 2.0 * gl_PointCoord - 1.0;
+                float r = dot(cxy, cxy);
+                if (r > 1.0) {
+                    discard;
+                }
+
+                // Soft particle effect
+                float softness = 1.0 - pow(r, 0.5);
+                float alpha = softness * vAlpha * 0.3;
+
+                // Color variation
+                vec3 color = nebulaColor * (0.8 + 0.4 * softness);
+                gl_FragColor = vec4(color, alpha);
+            }
+        `;
+
+        // Initialize
+        async function init() {
+            console.log('🏁 App initializing...');
+            try {
+                await loadDocuments();
+                console.log('📚 Documents loaded');
+
+                // Initialize cosmos but don't load data yet
+                initCosmos();
+                console.log('✨ Initialization complete');
+            } catch (error) {
+                console.error('❌ Initialization error:', error);
+                updateStatus('Failed to initialize');
+            }
+        }
+
+        // Load documents from API
+        async function loadDocuments() {
+            try {
+                const response = await fetch(`${API_BASE}/documents`);
+                documents = await response.json();
+                renderDocumentList();
+
+                // Load first document if available
+                if (documents.length > 0) {
+                    loadDocument(documents[0].id);
+                }
+            } catch (error) {
+                console.error('Failed to load documents:', error);
+                updateStatus('Failed to connect to server');
+            }
+        }
+
+        // Render document list in sidebar
+        function renderDocumentList() {
+            const container = document.getElementById('document-list');
+            container.innerHTML = '';
+
+            documents.forEach(doc => {
+                const item = document.createElement('div');
+                item.className = 'document-item';
+                item.dataset.docId = doc.id;
+                item.onclick = () => loadDocument(doc.id);
+
+                item.innerHTML = `
+                    <div class="document-title">${doc.title}</div>
+                    <div class="document-meta">${doc.chunk_count} chunks • ${doc.doc_type}</div>
+                `;
+
+                container.appendChild(item);
+            });
+        }
+
+        // Load specific document
+        async function loadDocument(docId) {
+            updateStatus('Loading document...');
+
+            try {
+                const response = await fetch(`${API_BASE}/documents/${docId}`);
+                const data = await response.json();
+
+                currentDocument = data.document;
+                chunks = data.chunks;
+                connections = data.connections;
+
+                // Update UI
+                document.querySelectorAll('.document-item').forEach(item => {
+                    item.classList.toggle('active', item.dataset.docId === docId);
+                });
+
+                renderDocument();
+                updateCosmosData();
+                updateStatus('Document loaded');
+            } catch (error) {
+                console.error('Failed to load document:', error);
+                updateStatus('Failed to load document');
+            }
+        }
+
+        // Render document in view
+        function renderDocument() {
+            if (!currentDocument) return;
+
+            // Update breadcrumb
+            updateBreadcrumb();
+
+            // Update header
+            document.getElementById('doc-title').textContent = currentDocument.title;
+            document.getElementById('doc-meta').textContent =
+                `${chunks.length} chunks • ${currentDocument.doc_type} • ${new Date(currentDocument.created_at).toLocaleDateString()}`;
+
+            // Render chunks
+            const container = document.getElementById('chunks-container');
+            container.innerHTML = '';
+
+            chunks.forEach((chunk, index) => {
+                const chunkEl = document.createElement('div');
+                chunkEl.className = `chunk ${chunk.chunk_type}`;
+                chunkEl.dataset.chunkId = chunk.id;
+                chunkEl.style.borderLeftColor = chunk.color;
+
+                // Apply subtle background based on embedding color
+                const rgb = hexToRgb(chunk.color);
+                if (rgb) {
+                    chunkEl.style.background = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.03)`;
+                }
+
+                // Attachment badge
+                const attachmentCount = chunk.attachments ? chunk.attachments.length : 0;
+                const attachmentBadge = document.createElement('div');
+                attachmentBadge.className = attachmentCount > 0 ? 'attachment-badge has-attachments' : 'attachment-badge';
+                attachmentBadge.textContent = attachmentCount > 0 ? attachmentCount : '+';
+                attachmentBadge.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleAttachments(chunk.id);
+                };
+                chunkEl.appendChild(attachmentBadge);
+
+                // Chunk ID (shows on hover)
+                const chunkId = document.createElement('div');
+                chunkId.className = 'chunk-id';
+                chunkId.textContent = chunk.id;
+                chunkEl.appendChild(chunkId);
+
+                const content = document.createElement('div');
+                content.className = 'chunk-content';
+                content.textContent = chunk.content;
+                chunkEl.appendChild(content);
+
+                // Attachments panel (initially hidden)
+                const attachmentsPanel = document.createElement('div');
+                attachmentsPanel.className = 'attachments-panel';
+                attachmentsPanel.id = `attachments-${chunk.id}`;
+                attachmentsPanel.innerHTML = `
+                    <div class="attachments-title">Attached Documents</div>
+                    <div class="attachments-list" id="attachments-list-${chunk.id}">
+                        ${attachmentCount > 0 ? '' : '<div style="color: #666; font-size: 12px;">No attachments yet</div>'}
+                    </div>
+                    <button class="attach-new-btn" onclick="showAttachModal('${chunk.id}')">+ Attach Document</button>
+                `;
+                chunkEl.appendChild(attachmentsPanel);
+
+                const badge = document.createElement('div');
+                badge.className = 'chunk-badge';
+                badge.innerHTML = `
+                    <button class="cosmos-btn" onclick="focusChunkInCosmos('${chunk.id}')" title="View in cosmos">
+                        🪐
+                    </button>
+                `;
+                chunkEl.appendChild(badge);
+
+                // Click to view in cosmos
+                chunkEl.onclick = (e) => {
+                    if (!e.target.classList.contains('cosmos-btn')) {
+                        focusChunkInCosmos(chunk.id);
+                    }
+                };
+
+                // Hover tooltip
+                chunkEl.onmouseenter = (e) => showChunkTooltip(e, chunk);
+                chunkEl.onmouseleave = () => hideChunkTooltip();
+
+                container.appendChild(chunkEl);
+            });
+        }
+
+        // Focus on chunk in cosmos view
+        function focusChunkInCosmos(chunkId) {
+            switchView('cosmos');
+
+            setTimeout(() => {
+                const mesh = chunkMeshes.get(chunkId);
+                if (mesh) {
+                    animateCameraToTarget(mesh.position);
+                }
+            }, 100);
+        }
+
+        // Switch between views
+        function switchView(view) {
+            console.log('🔄 switchView called with:', view);
+            currentView = view;
+
+            // Update buttons
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if ((view === 'document' && btn.textContent.includes('📄')) ||
+                    (view === 'cosmos' && btn.textContent.includes('🌌'))) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // Update views
+            document.getElementById('document-view').classList.toggle('active', view === 'document');
+            document.getElementById('cosmos-view').classList.toggle('active', view === 'cosmos');
+            console.log('📺 View toggled. Cosmos active?', document.getElementById('cosmos-view').classList.contains('active'));
+
+            if (view === 'cosmos') {
+                // Resize renderer now that cosmos-view is visible
+                const container = document.getElementById('cosmos-view');
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+                console.log('📐 Resizing renderer to:', width, 'x', height);
+
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                renderer.setSize(width, height);
+
+                if (!animationId) {
+                    console.log('🎬 Starting animation...');
+                    animateCosmos();
+                } else {
+                    console.log('⚠️ Animation already running, ID:', animationId);
+                }
+            }
+        }
+
+        // Show add document modal
+        function showAddModal() {
+            document.getElementById('add-modal').classList.add('active');
+            // Clear previous values
+            document.getElementById('doc-title-input').value = '';
+            document.getElementById('doc-content-input').value = '';
+            document.getElementById('file-upload-input').value = '';
+        }
+
+        // Hide add document modal
+        function hideAddModal() {
+            document.getElementById('add-modal').classList.remove('active');
+            document.getElementById('doc-title-input').value = '';
+            document.getElementById('doc-content-input').value = '';
+            document.getElementById('file-upload-input').value = '';
+        }
+
+        // Handle file upload in modal
+        async function handleFileUpload(event) {
+            console.log('📁 File upload triggered');
+            const file = event.target.files[0];
+            if (!file) return;
+
+            console.log('📄 File selected:', file.name, file.size, 'bytes');
+
+            try {
+                // Read file content
+                const content = await file.text();
+                console.log('✅ File read, length:', content.length);
+
+                // Auto-fill the form
+                const titleInput = document.getElementById('doc-title-input');
+                const contentInput = document.getElementById('doc-content-input');
+                const typeSelect = document.getElementById('doc-type-select');
+
+                // Set title from filename if empty
+                if (!titleInput.value) {
+                    titleInput.value = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
+                }
+
+                // Set content
+                contentInput.value = content;
+
+                // Auto-detect type
+                if (file.name.match(/\.(py|js|rs|java|cpp|c|ts)$/)) {
+                    typeSelect.value = 'code';
+                } else {
+                    typeSelect.value = 'text';
+                }
+
+                console.log('✨ Form auto-filled from file');
+            } catch (error) {
+                console.error('❌ Error reading file:', error);
+                alert('Failed to read file: ' + error.message);
+            }
+        }
+
+        // Add new document
+        async function addDocument() {
+            console.log('🆕 addDocument() called');
+
+            const title = document.getElementById('doc-title-input').value;
+            const content = document.getElementById('doc-content-input').value;
+            const docType = document.getElementById('doc-type-select').value;
+
+            console.log('📝 Title:', title);
+            console.log('📄 Content length:', content.length);
+            console.log('🏷️ Type:', docType);
+
+            if (!title || !content) {
+                alert('Please enter title and content');
+                return;
+            }
+
+            updateStatus('Processing document...');
+
+            try {
+                console.log('📤 Sending to API...');
+                const response = await fetch(`${API_BASE}/documents`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        title: title,
+                        content: content,
+                        doc_type: docType
+                    })
+                });
+
+                console.log('📥 Response status:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                console.log('✅ Document created:', result);
+
+                hideAddModal();
+                updateStatus('Reloading documents...');
+                await loadDocuments();
+
+                console.log('📖 Loading new document:', result.id);
+                await loadDocument(result.id);
+
+                updateStatus('Document added successfully!');
+            } catch (error) {
+                console.error('❌ Failed to add document:', error);
+                alert('Failed to add document: ' + error.message);
+                updateStatus('Failed to add document');
+            }
+        }
+
+        // Initialize Three.js cosmos
+        function initCosmos() {
+            console.log('🚀 initCosmos() called');
+            const container = document.getElementById('cosmos-view');
+            console.log('📦 Container:', container, 'Size:', container.clientWidth, 'x', container.clientHeight);
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000010, 0.0003);
+            console.log('🌌 Scene created');
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(
+                75,
+                container.clientWidth / container.clientHeight,
+                0.1,
+                10000
+            );
+            camera.position.set(0, 50, 150);
+            console.log('📷 Camera created at:', camera.position);
+
+            // Renderer with enhanced settings
+            renderer = new THREE.WebGLRenderer({
+                canvas: document.getElementById('cosmos-canvas'),
+                antialias: true,
+                alpha: true,
+                powerPreference: "high-performance"
+            });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            console.log('🎨 Renderer created, size:', container.clientWidth, 'x', container.clientHeight);
+
+            // Controls with better settings
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 10;
+            controls.maxDistance = 500;
+            controls.maxPolarAngle = Math.PI;
+            console.log('🎮 Controls created');
+
+            // Enhanced lighting for atmospheric effect
+            const ambientLight = new THREE.AmbientLight(0x404060, 0.3);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(100, 100, 50);
+            scene.add(directionalLight);
+
+            // Colored point lights for atmosphere
+            const lightColors = [0x667eea, 0xff6b6b, 0x4ecdc4];
+            lightColors.forEach((color, i) => {
+                const light = new THREE.PointLight(color, 0.3, 200);
+                light.position.set(
+                    Math.cos(i * Math.PI * 2 / 3) * 100,
+                    Math.sin(i * Math.PI * 2 / 3) * 50,
+                    50
+                );
+                scene.add(light);
+            });
+
+            const pointLight = new THREE.PointLight(0xffffff, 0.5);
+            camera.add(pointLight);
+            scene.add(camera);
+            console.log('💡 Enhanced lighting added');
+
+            // Raycaster for interactions
+            raycaster = new THREE.Raycaster();
+            raycaster.params.Points.threshold = 3;
+            mouse = new THREE.Vector2();
+
+            // Create starfield
+            console.log('⭐ Creating starfield...');
+            createStarfield();
+            console.log('✅ Starfield created');
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('show-connections').addEventListener('change', updateConnections);
+            document.getElementById('show-nebulae').addEventListener('change', toggleNebulae);
+            document.getElementById('enable-gravity').addEventListener('change', (e) => {
+                gravityEnabled = e.target.checked;
+            });
+            document.getElementById('animation-speed').addEventListener('input', (e) => {
+                animationSpeed = parseFloat(e.target.value);
+            });
+
+            // Cosmos interaction listeners
+            const canvas = document.getElementById('cosmos-canvas');
+            canvas.addEventListener('mousemove', onCosmosMouseMove);
+            canvas.addEventListener('click', onCosmosClick);
+        }
+
+        // Toggle nebulae visibility
+        function toggleNebulae() {
+            const visible = document.getElementById('show-nebulae').checked;
+            nebulae.forEach(nebula => {
+                nebula.visible = visible;
+            });
+        }
+
+        // Create enhanced starfield background
+        function createStarfield() {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            const colors = [];
+            const sizes = [];
+
+            for (let i = 0; i < 15000; i++) {
+                // Create some star clusters
+                const cluster = Math.random() < 0.3;
+                const spread = cluster ? 500 : 2000;
+
+                vertices.push(
+                    (Math.random() - 0.5) * spread,
+                    (Math.random() - 0.5) * spread,
+                    (Math.random() - 0.5) * spread
+                );
+
+                // Varied star colors - blue to purple range
+                const color = new THREE.Color();
+                const hue = Math.random() * 0.15 + 0.55;
+                const saturation = cluster ? 0.6 : 0.3;
+                const lightness = Math.random() * 0.4 + 0.6;
+                color.setHSL(hue, saturation, lightness);
+                colors.push(color.r, color.g, color.b);
+
+                // Varied sizes
+                sizes.push(Math.random() * 1.5 + 0.5);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.8,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true
+            });
+
+            const stars = new THREE.Points(geometry, material);
+            stars.name = 'starfield';
+            scene.add(stars);
+        }
+
+        // Update cosmos with current document data
+        function updateCosmosData() {
+            console.log('🔄 updateCosmosData called. Chunks to process:', chunks.length);
+
+            // Clear existing meshes
+            chunkMeshes.forEach(mesh => scene.remove(mesh));
+            chunkMeshes.clear();
+
+            connectionLines.forEach(line => scene.remove(line));
+            connectionLines = [];
+
+            // Define geometries
+            const geometries = {
+                sphere: new THREE.SphereGeometry(3, 32, 32),
+                cube: new THREE.BoxGeometry(5, 5, 5),
+                icosahedron: new THREE.IcosahedronGeometry(4, 0),
+                torus: new THREE.TorusGeometry(3, 1, 16, 100)
+            };
+
+            // Create chunk meshes with enhanced materials
+            chunks.forEach((chunk, index) => {
+                if (index === 0) console.log('📍 First chunk:', chunk);
+                
+                const geometry = geometries[chunk.shape_3d] || geometries.sphere;
+                const color = new THREE.Color(chunk.color);
+
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    emissive: color,
+                    emissiveIntensity: 0.5,
+                    transparent: true,
+                    opacity: 0.95,
+                    shininess: 100,
+                    specular: new THREE.Color(0xffffff)
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(...chunk.position_3d);
+                mesh.userData = chunk; // Store all chunk data
+
+                // Add velocity for gravity simulation
+                mesh.userData.velocity = new THREE.Vector3(0, 0, 0);
+
+                // Enhanced multi-layer glow
+                const glowGeometry1 = new THREE.SphereGeometry(4.5, 16, 16);
+                const glowMaterial1 = new THREE.MeshBasicMaterial({
+                    color: color,
+                    transparent: true,
+                    opacity: 0.15,
+                    side: THREE.BackSide,
+                    blending: THREE.AdditiveBlending
+                });
+                const glow1 = new THREE.Mesh(glowGeometry1, glowMaterial1);
+                mesh.add(glow1);
+
+                const glowGeometry2 = new THREE.SphereGeometry(6, 16, 16);
+                const glowMaterial2 = new THREE.MeshBasicMaterial({
+                    color: color,
+                    transparent: true,
+                    opacity: 0.05,
+                    side: THREE.BackSide,
+                    blending: THREE.AdditiveBlending
+                });
+                const glow2 = new THREE.Mesh(glowGeometry2, glowMaterial2);
+                mesh.add(glow2);
+
+                scene.add(mesh);
+                chunkMeshes.set(chunk.id, mesh);
+            });
+
+            // Create nebulae around chunk clusters
+            createNebulae();
+
+            // Create connections
+            updateConnections();
+        }
+
+        // Create nebulae around chunk clusters (optimized for performance)
+        function createNebulae() {
+            // Clear existing nebulae
+            nebulae.forEach(n => scene.remove(n));
+            nebulae = [];
+
+            if (chunks.length < 3) return;
+
+            // Skip nebulae for very large datasets (performance)
+            if (chunks.length > 100) {
+                console.log('📊 Skipping nebulae for large dataset (' + chunks.length + ' chunks)');
+                return;
+            }
+
+            // Simple clustering by proximity
+            const clusterCenters = [];
+            const clusterRadius = 40;
+
+            // Create fewer clusters for better performance
+            const numClusters = Math.min(Math.max(Math.floor(chunks.length / 20), 2), 4);
+            for (let i = 0; i < numClusters; i++) {
+                const randomChunk = chunks[Math.floor(Math.random() * chunks.length)];
+                clusterCenters.push({
+                    position: randomChunk.position_3d,
+                    color: randomChunk.color
+                });
+            }
+
+            // Create nebula for each cluster with reduced particles
+            clusterCenters.forEach((cluster, i) => {
+                const geometry = new THREE.BufferGeometry();
+                const positions = [];
+                const alphas = [];
+                const sizes = [];
+
+                // Reduced particle count for performance
+                const particleCount = chunks.length > 50 ? 500 : 1000;
+                const center = new THREE.Vector3(...cluster.position);
+
+                for (let j = 0; j < particleCount; j++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    const r = Math.pow(Math.random(), 0.5) * clusterRadius;
+
+                    const x = center.x + r * Math.sin(phi) * Math.cos(theta);
+                    const y = center.y + r * Math.sin(phi) * Math.sin(theta);
+                    const z = center.z + r * Math.cos(phi);
+
+                    positions.push(x, y, z);
+
+                    const normalizedR = r / clusterRadius;
+                    const alpha = Math.pow(1.0 - normalizedR, 2);
+                    alphas.push(alpha);
+
+                    sizes.push(Math.random() * 3 + 1);
+                }
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('alpha', new THREE.Float32BufferAttribute(alphas, 1));
+                geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        nebulaColor: { value: new THREE.Color(cluster.color) },
+                        time: { value: 0 }
+                    },
+                    vertexShader: nebulaVertexShader,
+                    fragmentShader: nebulaFragmentShader,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                });
+
+                const nebula = new THREE.Points(geometry, material);
+                nebula.userData = { clusterId: i };
+                nebulae.push(nebula);
+                scene.add(nebula);
+            });
+
+            console.log('✨ Created ' + nebulae.length + ' nebulae');
+        }
+
+        // Update connection lines with glowing constellation effect (optimized)
+        function updateConnections() {
+            // Clear existing connections
+            connectionLines.forEach(line => scene.remove(line));
+            connectionLines = [];
+
+            if (!document.getElementById('show-connections').checked) return;
+
+            // Limit connections for large datasets (performance)
+            const MAX_CONNECTIONS = 500;
+            const connectionsToRender = connections.length > MAX_CONNECTIONS
+                ? connections.slice(0, MAX_CONNECTIONS)
+                : connections;
+
+            if (connections.length > MAX_CONNECTIONS) {
+                console.log(`⚡ Rendering ${MAX_CONNECTIONS} of ${connections.length} connections for performance`);
+            }
+
+            connectionsToRender.forEach(conn => {
+                const fromMesh = chunkMeshes.get(conn.from_chunk_id);
+                const toMesh = chunkMeshes.get(conn.to_chunk_id);
+
+                if (fromMesh && toMesh) {
+                    // Enhanced glowing line material
+                    const material = new THREE.LineBasicMaterial({
+                        color: conn.connection_type === 'semantic' ? 0xff40ff : 0x4080ff,
+                        transparent: true,
+                        opacity: conn.strength * 0.4,
+                        blending: THREE.AdditiveBlending,
+                        linewidth: 2
+                    });
+
+                    const points = [fromMesh.position, toMesh.position];
+                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    const line = new THREE.Line(geometry, material);
+
+                    line.userData = { from: fromMesh, to: toMesh };
+                    connectionLines.push(line);
+                    scene.add(line);
+                }
+            });
+
+            console.log('🔗 Rendered ' + connectionLines.length + ' connections');
+        }
+
+        // Optimized gravity physics for large datasets
+        let gravityFrame = 0;
+        const GRAVITY_THROTTLE = 3; // Only calc gravity every N frames
+        const MAX_GRAVITY_RANGE = 100; // Only calc gravity for nearby chunks
+
+        function applyGravity() {
+            if (!gravityEnabled) return;
+
+            // Throttle gravity calculations for performance
+            gravityFrame++;
+            if (gravityFrame % GRAVITY_THROTTLE !== 0) return;
+
+            // Performance check - disable for very large datasets
+            if (chunkMeshes.size > 200) {
+                console.warn('⚠️ Too many nodes for gravity physics. Disabled for performance.');
+                gravityEnabled = false;
+                document.getElementById('enable-gravity').checked = false;
+                return;
+            }
+
+            const G = 0.05 * animationSpeed; // Reduced gravitational constant
+            const damping = 0.97; // Stronger damping for stability
+            const minDistance = 15; // Increased to prevent extreme forces
+            const maxForce = 0.3; // Reduced max force
+
+            const meshArray = Array.from(chunkMeshes.values());
+
+            meshArray.forEach((mesh1, idx1) => {
+                let force = new THREE.Vector3(0, 0, 0);
+
+                // Only calculate gravity for nearby chunks (spatial optimization)
+                meshArray.forEach((mesh2, idx2) => {
+                    if (idx1 === idx2) return;
+
+                    const delta = mesh2.position.clone().sub(mesh1.position);
+                    const distance = delta.length();
+
+                    // Skip distant chunks (major optimization)
+                    if (distance > MAX_GRAVITY_RANGE) return;
+
+                    const safeDist = Math.max(distance, minDistance);
+
+                    // Weaker gravity, falls off with distance
+                    const strength = G / (safeDist * safeDist);
+                    const attraction = delta.normalize().multiplyScalar(Math.min(strength, maxForce));
+                    force.add(attraction);
+
+                    // Stronger repulsion at close range
+                    if (distance < 25) {
+                        const repulsion = delta.normalize().multiplyScalar(-3 / safeDist);
+                        force.add(repulsion);
+                    }
+                });
+
+                // Apply connection forces (springs) - only for connected chunks
+                const meshId = Array.from(chunkMeshes.keys())[idx1];
+                connections.forEach(conn => {
+                    if (conn.from_chunk_id === meshId || conn.to_chunk_id === meshId) {
+                        const otherId = conn.from_chunk_id === meshId ? conn.to_chunk_id : conn.from_chunk_id;
+                        const otherMesh = chunkMeshes.get(otherId);
+                        if (otherMesh) {
+                            const delta = otherMesh.position.clone().sub(mesh1.position);
+                            const distance = delta.length();
+                            const idealDistance = 35;
+                            const springForce = (distance - idealDistance) * 0.005 * conn.strength;
+                            force.add(delta.normalize().multiplyScalar(springForce));
+                        }
+                    }
+                });
+
+                // Apply force with limits
+                mesh1.userData.velocity.add(force);
+                mesh1.userData.velocity.multiplyScalar(damping);
+
+                // Cap maximum velocity
+                const maxVelocity = 2.0;
+                if (mesh1.userData.velocity.length() > maxVelocity) {
+                    mesh1.userData.velocity.normalize().multiplyScalar(maxVelocity);
+                }
+
+                mesh1.position.add(mesh1.userData.velocity);
+            });
+
+            // Update connection lines (only if visible)
+            if (document.getElementById('show-connections').checked) {
+                connectionLines.forEach(line => {
+                    const points = [line.userData.from.position, line.userData.to.position];
+                    line.geometry.setFromPoints(points);
+                });
+            }
+        }
+
+        // Animate camera to target
+        function animateCameraToTarget(targetPos) {
+            const startPos = camera.position.clone();
+            const endPos = targetPos.clone().add(new THREE.Vector3(0, 10, 30));
+            const startTarget = controls.target.clone();
+
+            let progress = 0;
+            const animate = () => {
+                progress += 0.02;
+                if (progress <= 1) {
+                    const t = 1 - Math.pow(1 - progress, 3); // Ease out cubic
+                    camera.position.lerpVectors(startPos, endPos, t);
+                    controls.target.lerpVectors(startTarget, targetPos, t);
+                    controls.update();
+                    requestAnimationFrame(animate);
+                }
+            };
+            animate();
+        }
+
+        // Animation loop
+        let frameCount = 0;
+        function animateCosmos() {
+            animationId = requestAnimationFrame(animateCosmos);
+
+            if (currentView !== 'cosmos') return;
+
+            const time = Date.now() * 0.001;
+
+            // Debug every 300 frames (about 5 seconds) - reduce console noise
+            if (frameCount % 300 === 0) {
+                console.log('🎞️ Animation status at frame', frameCount, '| Scene children:', scene.children.length, 'Chunks:', chunkMeshes.size, 'Nebulae:', nebulae.length);
+            }
+            frameCount++;
+
+            // Apply physics
+            applyGravity();
+
+            // Rotate chunks with subtle pulsing
+            chunkMeshes.forEach((mesh, i) => {
+                mesh.rotation.y += 0.001 * animationSpeed;
+
+                // Subtle pulse on emissive intensity
+                const pulse = Math.sin(time * 0.5 + i * 0.1) * 0.1 + 0.5;
+                mesh.material.emissiveIntensity = pulse;
+            });
+
+            // Animate nebulae
+            nebulae.forEach((nebula, i) => {
+                // Slow rotation
+                nebula.rotation.y += 0.0001 * animationSpeed;
+                nebula.rotation.z += 0.0002 * animationSpeed;
+
+                // Update shader time uniform
+                if (nebula.material.uniforms && nebula.material.uniforms.time) {
+                    nebula.material.uniforms.time.value = time;
+                }
+            });
+
+            // Rotate starfield slowly
+            const starfield = scene.getObjectByName('starfield');
+            if (starfield) {
+                starfield.rotation.y += 0.00005 * animationSpeed;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Window resize
+        function onWindowResize() {
+            const container = document.getElementById('cosmos-view');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // Utility functions
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+
+        function updateStatus(message) {
+            document.getElementById('status-text').textContent = message;
+        }
+
+        function showChunkTooltip(event, chunk) {
+            const tooltip = document.getElementById('chunk-tooltip');
+            tooltip.innerHTML = `
+                <div>Type: ${chunk.chunk_type}</div>
+                <div>Index: ${chunk.chunk_index}</div>
+                <div>ID: ${chunk.id}</div>
+            `;
+            tooltip.style.left = event.clientX + 10 + 'px';
+            tooltip.style.top = event.clientY + 10 + 'px';
+            tooltip.classList.add('visible');
+        }
+
+        function hideChunkTooltip() {
+            document.getElementById('chunk-tooltip').classList.remove('visible');
+        }
+
+        // Breadcrumb navigation
+        function updateBreadcrumb() {
+            const breadcrumbEl = document.getElementById('breadcrumb');
+            const cosmosBreadcrumbEl = document.getElementById('cosmos-breadcrumb');
+
+            if (!currentDocument) {
+                breadcrumbEl.style.display = 'none';
+                cosmosBreadcrumbEl.style.display = 'none';
+                return;
+            }
+
+            // Create breadcrumb HTML
+            const breadcrumbHTML = `
+                <span class="breadcrumb-item" onclick="loadDocuments(); switchView('document')">All Documents</span>
+                <span class="breadcrumb-separator">›</span>
+                <span class="breadcrumb-current">${currentDocument.title}</span>
+            `;
+
+            // Update both breadcrumbs
+            breadcrumbEl.style.display = 'block';
+            breadcrumbEl.innerHTML = breadcrumbHTML;
+
+            cosmosBreadcrumbEl.style.display = 'block';
+            cosmosBreadcrumbEl.innerHTML = breadcrumbHTML;
+        }
+
+        // Attachment functions
+        async function toggleAttachments(chunkId) {
+            const panel = document.getElementById(`attachments-${chunkId}`);
+            if (!panel) return;
+
+            const isVisible = panel.classList.contains('visible');
+
+            // Close all other panels
+            document.querySelectorAll('.attachments-panel').forEach(p => {
+                p.classList.remove('visible');
+            });
+
+            if (!isVisible) {
+                // Open this panel
+                panel.classList.add('visible');
+
+                // Load attachments if not already loaded
+                await loadAttachments(chunkId);
+            }
+        }
+
+        async function loadAttachments(chunkId) {
+            try {
+                const response = await fetch(`${API_BASE}/chunks/${chunkId}/attachments`);
+                const attachments = await response.json();
+
+                const listEl = document.getElementById(`attachments-list-${chunkId}`);
+                if (!listEl) return;
+
+                if (attachments.length === 0) {
+                    listEl.innerHTML = '<div style="color: #666; font-size: 12px;">No attachments yet</div>';
+                } else {
+                    listEl.innerHTML = attachments.map(doc => `
+                        <div class="attachment-item" onclick="loadDocument('${doc.id}')">
+                            <div class="attachment-title">${doc.title}</div>
+                            <div class="attachment-preview">${doc.content.substring(0, 100)}...</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Failed to load attachments:', error);
+            }
+        }
+
+        function showAttachModal(chunkId) {
+            // For now, show a simple prompt. Later we can create a proper modal
+            const docId = prompt('Enter the ID of the document to attach:');
+            if (docId) {
+                attachDocumentToChunk(chunkId, docId);
+            }
+        }
+
+        async function attachDocumentToChunk(chunkId, documentId) {
+            try {
+                const response = await fetch(`${API_BASE}/chunks/${chunkId}/attach`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ document_id: documentId })
+                });
+
+                if (response.ok) {
+                    updateStatus('Document attached successfully');
+                    // Reload attachments
+                    await loadAttachments(chunkId);
+                    // Update badge
+                    const badge = document.querySelector(`[data-chunk-id="${chunkId}"] .attachment-badge`);
+                    if (badge) {
+                        const count = parseInt(badge.textContent) || 0;
+                        badge.textContent = count + 1;
+                        badge.classList.add('has-attachments');
+                    }
+                } else {
+                    updateStatus('Failed to attach document');
+                }
+            } catch (error) {
+                console.error('Failed to attach document:', error);
+                updateStatus('Failed to attach document');
+            }
+        }
+
+        // Cosmos interaction handlers
+        let currentHoveredChunk = null;
+
+        function onCosmosMouseMove(event) {
+            if (currentView !== 'cosmos') return;
+
+            const canvas = document.getElementById('cosmos-canvas');
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const meshArray = Array.from(chunkMeshes.values());
+            const intersects = raycaster.intersectObjects(meshArray);
+
+            // Reset previous hover
+            if (currentHoveredChunk && currentHoveredChunk !== selectedChunk) {
+                const mesh = currentHoveredChunk;
+                mesh.scale.setScalar(1.0);
+                mesh.material.emissiveIntensity = 0.5;
+            }
+
+            // Highlight new hover
+            if (intersects.length > 0) {
+                const mesh = intersects[0].object;
+                const chunk = mesh.userData;
+
+                if (mesh !== selectedChunk) {
+                    // Dramatic hover effect for cosmos view!
+                    mesh.scale.setScalar(1.5);
+                    mesh.material.emissiveIntensity = 1.2;
+                }
+
+                // Update info panel
+                showCosmosInfo(chunk);
+                currentHoveredChunk = mesh;
+                canvas.style.cursor = 'pointer';
+            } else {
+                // Hide info panel
+                if (!selectedChunk) {
+                    hideCosmosInfo();
+                }
+                currentHoveredChunk = null;
+                canvas.style.cursor = 'default';
+            }
+        }
+
+        function onCosmosClick(event) {
+            if (currentView !== 'cosmos') return;
+
+            const canvas = document.getElementById('cosmos-canvas');
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const meshArray = Array.from(chunkMeshes.values());
+            const intersects = raycaster.intersectObjects(meshArray);
+
+            // Reset previous selection
+            if (selectedChunk) {
+                selectedChunk.scale.setScalar(1.0);
+                selectedChunk.material.emissiveIntensity = 0.5;
+            }
+
+            if (intersects.length > 0) {
+                const mesh = intersects[0].object;
+                const chunk = mesh.userData;
+
+                // Select this chunk
+                selectedChunk = mesh;
+                mesh.scale.setScalar(1.8);
+                mesh.material.emissiveIntensity = 1.5;
+
+                // Show info panel (stays visible)
+                showCosmosInfo(chunk);
+
+                // Animate camera to chunk
+                animateCameraToTarget(mesh.position);
+            } else {
+                selectedChunk = null;
+                hideCosmosInfo();
+            }
+        }
+
+        function showCosmosInfo(chunk) {
+            const panel = document.getElementById('cosmos-info');
+            document.getElementById('cosmos-info-id').textContent = chunk.id;
+            
+            let tagsHTML = '';
+            if (chunk.tags && chunk.tags.length > 0) {
+                tagsHTML = `<strong>Tags:</strong> ${chunk.tags.join(', ')}<br>`;
+            }
+
+            let reasoningHTML = '';
+            if (chunk.reasoning) {
+                reasoningHTML = `<strong>Reasoning:</strong> ${chunk.reasoning}`;
+            }
+
+            document.getElementById('cosmos-info-meta').innerHTML =
+                `Type: ${chunk.chunk_type} • Index: ${chunk.chunk_index}<br>${tagsHTML}${reasoningHTML}`;
+            
+            document.getElementById('cosmos-info-text').textContent =
+                chunk.content.substring(0, 200) + (chunk.content.length > 200 ? '...' : '');
+
+            // Update attach button
+            const attachBtn = document.getElementById('cosmos-attach-btn');
+            attachBtn.onclick = () => showAttachModal(chunk.id);
+
+            panel.classList.add('visible');
+        }
+
+        function hideCosmosInfo() {
+            const panel = document.getElementById('cosmos-info');
+            panel.classList.remove('visible');
+        }
+
+        function attachFromCosmos() {
+            if (selectedChunk && selectedChunk.userData) {
+                showAttachModal(selectedChunk.userData.id);
+            }
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

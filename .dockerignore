@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+venv_headspace/
+env/
+ENV/
+
+# Git
+.git/
+.gitignore
+.claude/
+
+# Legacy files (archived)
+legacy/
+archive/
+
+# Documentation
+*.md
+!README.md
+*.svg
+
+# Generated outputs
+*.html
+!templates/*.html
+
+# Database (will be mounted)
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.log
+*.tmp
+temp_*

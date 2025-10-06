@@ -1,5 +1,9 @@
 documents/
 
+# Archive and legacy code (not needed for production)
+archive/
+legacy/
+
 # Python
 __pycache__/
 *.py[cod]

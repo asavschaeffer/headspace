@@ -1,0 +1,25 @@
+services:
+  headspace:
+    build: .
+    ports:
+      - "8000:8000"  # Headspace web server
+    volumes:
+      - ./headspace.db:/app/headspace.db  # Persist database
+      - ./documents:/app/documents  # Persist uploaded documents
+      - ./static:/app/static  # Live reload frontend changes
+      - ./loom_config.json:/app/loom_config.json  # Live config changes
+    environment:
+      - PYTHONUNBUFFERED=1  # See logs immediately
+      # API Keys from .env file
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Ollama URL (use host.docker.internal to connect to host machine)
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      # Optional debug settings
+      - HEADSPACE_DEBUG=${HEADSPACE_DEBUG:-false}
+      - HEADSPACE_LOG_LEVEL=${HEADSPACE_LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Enable host.docker.internal on all platforms
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

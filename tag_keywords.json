@@ -1,0 +1,22 @@
+{
+  "code": {
+    "keywords": ["function", "def ", "class ", "impl ", " fn ", "method", "import ", "from "],
+    "context_boost": ["syntax", "compiler", "runtime", "python", "javascript", "rust"]
+  },
+  "philosophy": {
+    "keywords": ["ontological", "epistemology", "metaphysics", "truth", "being", "reality"],
+    "context_boost": []
+  },
+  "programming": {
+    "keywords": ["programming", "software", "development", "code", "algorithm"],
+    "context_boost": ["computer science"]
+  },
+  "knowledge": {
+    "keywords": ["knowledge", "information", "concepts", "ideas", "understanding"],
+    "context_boost": ["learning", "memory"]
+  },
+  "visualization": {
+    "keywords": ["visualization", "3d", "space", "cosmic", "galaxy", "universe"],
+    "context_boost": ["graphics", "rendering"]
+  }
+}
