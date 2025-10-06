@@ -1,0 +1,55 @@
+documents/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environments
+venv/
+venv_headspace/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/
+
+# Database - ignore for production, but you can track for dev if needed
+headspace.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables and secrets
+.env
+.env.local
+*.key
+
+# Temporary files
+*.log
+*.tmp
+temp_*
+model_status.log
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Test outputs and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
