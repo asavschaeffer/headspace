@@ -1,0 +1,236 @@
+/* Document View - Chunks, Breadcrumbs, Attachments */
+
+#document-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px;
+    display: none;
+}
+
+#document-view.active {
+    display: block;
+}
+
+.doc-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+/* Breadcrumb */
+.breadcrumb {
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 6px;
+    border-left: 3px solid #667eea;
+    font-size: 13px;
+}
+
+.breadcrumb-item {
+    display: inline;
+    color: #667eea;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.breadcrumb-item:hover {
+    text-decoration: underline;
+    color: #8599f6;
+}
+
+.breadcrumb-separator {
+    color: #555;
+    margin: 0 8px;
+}
+
+.breadcrumb-current {
+    color: #aaa;
+}
+
+.doc-header {
+    margin-bottom: 40px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.doc-title-main {
+    font-size: 2.5em;
+    font-weight: 300;
+    margin-bottom: 10px;
+}
+
+/* Chunks */
+.chunk {
+    margin-bottom: 2px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.3s;
+    border-left: 3px solid;
+}
+
+/* Subtle hover: parentheses fade in at margins (no text movement!) */
+.chunk::before,
+.chunk::after {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 32px;
+    color: rgba(102, 126, 234, 0.3);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    font-weight: 300;
+}
+
+.chunk::before {
+    content: '(';
+    left: -20px;
+}
+
+.chunk::after {
+    content: ')';
+    right: -20px;
+}
+
+.chunk:hover::before,
+.chunk:hover::after {
+    opacity: 1;
+}
+
+.chunk:hover {
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+}
+
+.chunk-content {
+    font-size: 15px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+}
+
+.chunk-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.chunk:hover .chunk-badge {
+    opacity: 1;
+}
+
+/* Chunk Types */
+.chunk.heading_1 { border-left-color: #e74c3c; }
+.chunk.heading_2 { border-left-color: #f39c12; }
+.chunk.heading_3 { border-left-color: #f1c40f; }
+.chunk.paragraph { border-left-color: #3498db; }
+.chunk.list { border-left-color: #16a085; }
+.chunk.code {
+    border-left-color: #667eea;
+    font-family: 'Courier New', monospace;
+    background: rgba(102, 126, 234, 0.05);
+}
+.chunk.function { border-left-color: #9b59b6; }
+
+/* Attachment Badge */
+.attachment-badge {
+    position: absolute;
+    top: 12px;
+    left: -16px;
+    background: #667eea;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: 3px solid #0a0a0f;
+    z-index: 10;
+}
+
+.attachment-badge:hover {
+    transform: scale(1.2);
+    background: #8599f6;
+}
+
+.attachment-badge.has-attachments {
+    animation: pulse 2s infinite;
+}
+
+/* Attachments Panel */
+.attachments-panel {
+    margin-top: 15px;
+    padding: 20px;
+    background: rgba(102, 126, 234, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    display: none;
+}
+
+.attachments-panel.visible {
+    display: block;
+    animation: slideDown 0.3s ease-out;
+}
+
+.attachments-title {
+    font-size: 13px;
+    color: #667eea;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.attachment-item {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 3px solid #667eea;
+}
+
+.attachment-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(5px);
+}
+
+.attachment-title {
+    font-size: 14px;
+    color: #e0e0e0;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.attachment-preview {
+    font-size: 12px;
+    color: #aaa;
+    font-style: italic;
+}
+
+/* Chunk ID Display */
+.chunk-id {
+    position: absolute;
+    top: 8px;
+    right: 50px;
+    font-size: 10px;
+    color: #555;
+    font-family: 'Courier New', monospace;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.chunk:hover .chunk-id {
+    opacity: 1;
+}
