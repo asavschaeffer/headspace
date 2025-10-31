@@ -196,15 +196,33 @@ function createStarfield() {
     scene.add(stars);
 }
 
-export function updateCosmosData() {
-    // Clear existing meshes
-    chunkMeshes.forEach(mesh => scene.remove(mesh));
-    chunkMeshes.clear();
+function createChunkGeometry(chunk) {
+    // Use procedural geometry if embedding is available
+    if (chunk.embedding && window.ProceduralGeometryGenerator) {
+        const generator = new window.ProceduralGeometryGenerator();
 
-    connectionLines.forEach(line => scene.remove(line));
-    connectionLines = [];
+        // Adjust parameters based on chunk properties
+        if (chunk.tags && chunk.tags.length > 0) {
+            const primaryTag = chunk.tags[0].toLowerCase();
 
-    // Geometries
+            // Different deformation scales for different content types
+            if (primaryTag.includes('code')) {
+                generator.updateParameters({ deformation: 0.2, smoothing: 1 });
+            } else if (primaryTag.includes('documentation')) {
+                generator.updateParameters({ deformation: 0.35, smoothing: 3 });
+            } else if (primaryTag.includes('data')) {
+                generator.updateParameters({ deformation: 0.4, smoothing: 2 });
+            }
+        }
+
+        // Generate unique planetary shape from embedding
+        // Scale up the geometry to match existing sizes
+        const geometry = generator.generatePlanetaryGeometry(chunk.embedding);
+        geometry.scale(3, 3, 3); // Scale to match existing sphere size
+        return geometry;
+    }
+
+    // Fallback to predefined geometries if no embedding
     const geometries = {
         sphere: new THREE.SphereGeometry(3, 32, 32),
         cube: new THREE.BoxGeometry(5, 5, 5),
@@ -212,9 +230,26 @@ export function updateCosmosData() {
         torus: new THREE.TorusGeometry(3, 1, 16, 100)
     };
 
+    return geometries[chunk.shape_3d] || geometries.sphere;
+}
+
+export function updateCosmosData() {
+    // Check if scene is initialized
+    if (!scene) {
+        console.warn('Cosmos scene not initialized yet');
+        return;
+    }
+
+    // Clear existing meshes
+    chunkMeshes.forEach(mesh => scene.remove(mesh));
+    chunkMeshes.clear();
+
+    connectionLines.forEach(line => scene.remove(line));
+    connectionLines = [];
+
     // Create chunk meshes
     state.chunks.forEach((chunk, index) => {
-        const geometry = geometries[chunk.shape_3d] || geometries.sphere;
+        const geometry = createChunkGeometry(chunk);
         const color = new THREE.Color(chunk.color);
 
         const material = new THREE.MeshPhongMaterial({
@@ -232,28 +267,16 @@ export function updateCosmosData() {
         mesh.userData = chunk;
         mesh.userData.velocity = new THREE.Vector3(0, 0, 0);
 
-        // Glow layers
-        const glowGeometry1 = new THREE.SphereGeometry(4.5, 16, 16);
-        const glowMaterial1 = new THREE.MeshBasicMaterial({
+        // Single subtle glow for depth (minimal)
+        const glowGeometry = new THREE.SphereGeometry(4, 16, 16);
+        const glowMaterial = new THREE.MeshBasicMaterial({
             color: color,
             transparent: true,
-            opacity: 0.15,
-            side: THREE.BackSide,
-            blending: THREE.AdditiveBlending
+            opacity: 0.03,  // Very subtle
+            side: THREE.BackSide
         });
-        const glow1 = new THREE.Mesh(glowGeometry1, glowMaterial1);
-        mesh.add(glow1);
-
-        const glowGeometry2 = new THREE.SphereGeometry(6, 16, 16);
-        const glowMaterial2 = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.05,
-            side: THREE.BackSide,
-            blending: THREE.AdditiveBlending
-        });
-        const glow2 = new THREE.Mesh(glowGeometry2, glowMaterial2);
-        mesh.add(glow2);
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        mesh.add(glow);
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id, mesh);

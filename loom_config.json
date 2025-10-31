@@ -13,7 +13,7 @@
     "providers": {
       "ollama": {
         "enabled": true,
-        "url": "http://localhost:11434/api/generate",
+        "url": "http://host.docker.internal:11434/api/chat",
         "models": [
           {"name": "gemma3:4b", "priority": 1, "enabled": true},
           {"name": "qwen2:8b", "priority": 3, "enabled": false}
@@ -47,7 +47,7 @@
     "providers": {
       "ollama": {
         "enabled": true,
-        "url": "http://localhost:11434/api/embed",
+        "url": "http://host.docker.internal:11434/api/embed",
         "models": [
           {"name": "embeddinggemma", "priority": 1, "enabled": true},
           {"name": "mxbai-embed-large", "priority": 2, "enabled": false}

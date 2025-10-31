@@ -33,7 +33,7 @@ class TagEngine:
         self.compiled_patterns = self._compile_patterns()
 
         # LLM settings for Stage 3
-        self.ollama_url = self.config.get('ollama', {}).get('url', 'http://localhost:11434/api/generate')
+        self.ollama_url = self.config.get('ollama', {}).get('url', 'http://host.docker.internal:11434/api/generate')
         self.ollama_model = self.config.get('ollama', {}).get('model', 'llama3')
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
@@ -222,7 +222,7 @@ JSON response:"""
                 self.ollama_url,
                 json={
                     "model": self.ollama_model,
-                    "prompt": prompt,
+                    "messages": [{"role": "user", "content": prompt}],
                     "stream": False,
                     "format": "json"
                 },
@@ -233,7 +233,7 @@ JSON response:"""
                 return {}
 
             result = response.json()
-            response_text = result.get('response', '{}')
+            response_text = result.get('message', {}).get('content', '{}')
             data = json.loads(response_text)
 
             llm_tags = data.get('tags', [])

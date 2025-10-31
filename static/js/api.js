@@ -4,11 +4,17 @@ import { API_BASE } from './config.js';
 
 export async function fetchDocuments() {
     const response = await fetch(`${API_BASE}/documents`);
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
     return await response.json();
 }
 
 export async function fetchDocument(docId) {
     const response = await fetch(`${API_BASE}/documents/${docId}`);
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
     return await response.json();
 }
 

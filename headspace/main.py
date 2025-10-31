@@ -249,8 +249,17 @@ def create_app():
     # Include API routes
     app.include_router(routes.router)
 
-    # Mount static files
-    app.mount("/static", StaticFiles(directory=STATIC_FOLDER), name="static")
+    # Mount static files - create proper instances with html=True for correct MIME types
+    from pathlib import Path
+    static_path = Path(STATIC_FOLDER).resolve()
+    css_path = static_path / "css"
+    js_path = static_path / "js"
+
+    if css_path.exists():
+        app.mount("/css", StaticFiles(directory=str(css_path), html=True), name="css")
+    if js_path.exists():
+        app.mount("/js", StaticFiles(directory=str(js_path), html=True), name="js")
+    app.mount("/static", StaticFiles(directory=STATIC_FOLDER, html=True), name="static")
 
     # Load initial documents
     load_all_documents(db, processor)
