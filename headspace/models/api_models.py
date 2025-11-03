@@ -19,6 +19,7 @@ class ChunkResponse(BaseModel):
     tags: List[str]
     reasoning: str
     shape_3d: str
+    embedding: List[float] = []  # Embedding vector for procedural geometry
     metadata: Dict = {}
 
 

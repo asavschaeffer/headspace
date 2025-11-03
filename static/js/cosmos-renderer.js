@@ -3,6 +3,10 @@
 
 import { state } from './state.js';
 import { COSMOS_SETTINGS } from './config.js';
+import { GeometryCache } from "./geometry-cache.js";
+if (!window.GeometryCache) window.GeometryCache = GeometryCache;
+import { LODManager } from "./lod-manager.js";
+if (!window.LODManager) window.LODManager = LODManager;
 import { showAddModal } from './modal-manager.js';
 
 // Three.js variables
@@ -14,6 +18,18 @@ let gravityEnabled = COSMOS_SETTINGS.gravity;
 let animationSpeed = COSMOS_SETTINGS.animationSpeed;
 let nebulae = [];
 let raycaster, mouse;
+
+const geometryCache = new GeometryCache();
+const lodManager = new LODManager();
+let geometryWorker = null;
+const geometryCacheReady = geometryCache.init();
+const inMemoryGeometry = new Map();
+const pendingGeometry = new Map();
+
+const workerSupported = typeof window !== 'undefined' && typeof window.Worker !== 'undefined';
+const statusEl = () => document.getElementById('status-text');
+const DEFAULT_PLACEHOLDER_DETAIL = 12;
+const LOD_UPDATE_INTERVAL = 20; // frames
 
 // Shaders
 const starVertexShader = `
@@ -72,7 +88,30 @@ const nebulaFragmentShader = `
     }
 `;
 
-export function initCosmos() {
+export async function initCosmos() {
+    updateStatus('Initializing cosmos...');
+    try {
+        await geometryCacheReady;
+    } catch (error) {
+        console.warn('Cosmos: geometry cache unavailable, continuing without persistence', error);
+    }
+
+    if (workerSupported && !geometryWorker) {
+        try {
+            geometryWorker = new Worker('/js/geometry-worker.js');
+            geometryWorker.onmessage = handleGeometryWorkerMessage;
+            geometryWorker.onerror = (event) => {
+                console.error('Geometry worker error:', event);
+                updateStatus('Worker error — using main thread');
+                geometryWorker.terminate();
+                geometryWorker = null;
+            };
+        } catch (error) {
+            console.warn('Failed to start geometry worker, falling back to main thread', error);
+            geometryWorker = null;
+        }
+    }
+
     const container = document.getElementById('cosmos-view');
 
     // Scene
@@ -150,6 +189,8 @@ export function initCosmos() {
     const canvas = document.getElementById('cosmos-canvas');
     canvas.addEventListener('mousemove', onCosmosMouseMove);
     canvas.addEventListener('click', onCosmosClick);
+
+    updateStatus('Cosmos ready');
 }
 
 function createStarfield() {
@@ -196,71 +237,132 @@ function createStarfield() {
     scene.add(stars);
 }
 
+function createPlaceholderGeometry(chunk) {
+    const geometry = new THREE.IcosahedronGeometry(3, 1);
+    const color = new THREE.Color(chunk.color || '#888888');
+    const vertexCount = geometry.attributes.position.count;
+    const colors = new Float32Array(vertexCount * 3);
+
+    for (let i = 0; i < vertexCount; i++) {
+        const idx = i * 3;
+        colors[idx] = color.r;
+        colors[idx + 1] = color.g;
+        colors[idx + 2] = color.b;
+    }
+
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+    return geometry;
+}
+
+function createChunkMaterial(chunk) {
+    const baseColor = new THREE.Color(chunk.color || '#748ffc');
+    const emissive = baseColor.clone().multiplyScalar(0.35);
+
+    return new THREE.MeshStandardMaterial({
+        color: new THREE.Color(0xffffff),
+        vertexColors: true,
+        emissive,
+        emissiveIntensity: 0.6,
+        metalness: 0.18,
+        roughness: 0.7,
+        transparent: true,
+        opacity: 0.97
+    });
+}
+
+function createGlowShell(colorHex) {
+    const color = new THREE.Color(colorHex || '#748ffc');
+    const glowGeometry = new THREE.SphereGeometry(4.2, 16, 16);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.05,
+        side: THREE.BackSide
+    });
+    return new THREE.Mesh(glowGeometry, glowMaterial);
+}
+
+function determineInitialDetail(mesh) {
+    if (!camera) {
+        return DEFAULT_PLACEHOLDER_DETAIL;
+    }
+    const distance = camera.position.distanceTo(mesh.position);
+    return lodManager.getDetailForDistance(distance, null);
+}
+
 export function updateCosmosData() {
+    // Check if scene is initialized
+    if (!scene) {
+        console.warn('Cosmos scene not initialized yet');
+        return;
+    }
+
     // Clear existing meshes
-    chunkMeshes.forEach(mesh => scene.remove(mesh));
+    chunkMeshes.forEach(mesh => {
+        removeMeshFromPending(mesh);
+        disposeMesh(mesh);
+        scene.remove(mesh);
+    });
     chunkMeshes.clear();
 
     connectionLines.forEach(line => scene.remove(line));
     connectionLines = [];
 
-    // Geometries
-    const geometries = {
-        sphere: new THREE.SphereGeometry(3, 32, 32),
-        cube: new THREE.BoxGeometry(5, 5, 5),
-        icosahedron: new THREE.IcosahedronGeometry(4, 0),
-        torus: new THREE.TorusGeometry(3, 1, 16, 100)
-    };
-
     // Create chunk meshes
-    state.chunks.forEach((chunk, index) => {
-        const geometry = geometries[chunk.shape_3d] || geometries.sphere;
-        const color = new THREE.Color(chunk.color);
-
-        const material = new THREE.MeshPhongMaterial({
-            color: color,
-            emissive: color,
-            emissiveIntensity: 0.5,
-            transparent: true,
-            opacity: 0.95,
-            shininess: 100,
-            specular: new THREE.Color(0xffffff)
-        });
-
+    state.chunks.forEach((chunk) => {
+        const geometry = createPlaceholderGeometry(chunk);
+        const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.set(...chunk.position_3d);
-        mesh.userData = chunk;
-        mesh.userData.velocity = new THREE.Vector3(0, 0, 0);
+        mesh.userData = {
+            chunk,
+            chunkId: chunk.id,
+            velocity: new THREE.Vector3(0, 0, 0),
+            detail: null,
+            isPlaceholder: true,
+            requestKey: null
+        };
 
-        // Glow layers
-        const glowGeometry1 = new THREE.SphereGeometry(4.5, 16, 16);
-        const glowMaterial1 = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.15,
-            side: THREE.BackSide,
-            blending: THREE.AdditiveBlending
-        });
-        const glow1 = new THREE.Mesh(glowGeometry1, glowMaterial1);
-        mesh.add(glow1);
-
-        const glowGeometry2 = new THREE.SphereGeometry(6, 16, 16);
-        const glowMaterial2 = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.05,
-            side: THREE.BackSide,
-            blending: THREE.AdditiveBlending
-        });
-        const glow2 = new THREE.Mesh(glowGeometry2, glowMaterial2);
-        mesh.add(glow2);
+        const glow = createGlowShell(chunk.color);
+        mesh.add(glow);
+        mesh.userData.glow = glow;
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id, mesh);
+
+        const initialDetail = determineInitialDetail(mesh);
+        queueGeometryLoad(chunk, initialDetail, mesh, { force: true });
     });
 
     createNebulae();
     updateConnections();
+}
+
+
+function disposeMesh(mesh) {
+    if (!mesh) return;
+
+    if (mesh.userData && mesh.userData.glow) {
+        const glow = mesh.userData.glow;
+        if (glow.parent === mesh) {
+            mesh.remove(glow);
+        }
+        if (glow.geometry) glow.geometry.dispose();
+        if (glow.material) glow.material.dispose();
+    }
+
+    if (mesh.geometry) {
+        mesh.geometry.dispose();
+    }
+
+    if (mesh.material) {
+        if (Array.isArray(mesh.material)) {
+            mesh.material.forEach(mat => mat.dispose && mat.dispose());
+        } else if (mesh.material.dispose) {
+            mesh.material.dispose();
+        }
+    }
 }
 
 function createNebulae() {
@@ -440,6 +542,11 @@ function animateCosmos() {
 
     if (state.currentView !== 'cosmos') return;
 
+    frameCount++;
+    if (frameCount % LOD_UPDATE_INTERVAL === 0) {
+        updateChunkLODTargets();
+    }
+
     const time = Date.now() * 0.001;
 
     // Rotate chunks
@@ -497,7 +604,7 @@ function onCosmosMouseMove(event) {
     // Highlight new hover
     if (intersects.length > 0) {
         const mesh = intersects[0].object;
-        const chunk = mesh.userData;
+        const chunk = mesh.userData && mesh.userData.chunk ? mesh.userData.chunk : mesh.userData;
 
         if (mesh !== state.selectedChunk) {
             mesh.scale.setScalar(1.5);
@@ -536,7 +643,7 @@ function onCosmosClick(event) {
 
     if (intersects.length > 0) {
         const mesh = intersects[0].object;
-        const chunk = mesh.userData;
+        const chunk = mesh.userData && mesh.userData.chunk ? mesh.userData.chunk : mesh.userData;
 
         state.setSelectedChunk(mesh);
         mesh.scale.setScalar(1.8);
@@ -580,4 +687,274 @@ function showCosmosInfo(chunk) {
 function hideCosmosInfo() {
     const panel = document.getElementById('cosmos-info');
     panel.classList.remove('visible');
+}
+
+function updateStatus(message) {
+    const el = statusEl();
+    if (el) {
+        el.textContent = message;
+    }
+}
+
+function geometryKey(chunkId, detail) {
+    return `${chunkId}|${detail}`;
+}
+
+function queueGeometryLoad(chunk, detail, mesh, options = {}) {
+    const { force = false } = options;
+    const key = geometryKey(chunk.id, detail);
+
+    if (!force) {
+        if (mesh.userData.detail === detail && !mesh.userData.isPlaceholder) {
+            return;
+        }
+        if (mesh.userData.requestKey === key) {
+            return;
+        }
+    }
+
+    if (mesh.userData.requestKey && mesh.userData.requestKey !== key) {
+        removeMeshFromPending(mesh);
+    }
+
+    if (inMemoryGeometry.has(key)) {
+        const geometryData = inMemoryGeometry.get(key);
+        applyGeometryToMesh(mesh, geometryData, detail, key);
+        return;
+    }
+
+    let entry = pendingGeometry.get(key);
+    if (!entry) {
+        entry = {
+            chunk,
+            detail,
+            meshes: new Set(),
+            cacheLookupStarted: false,
+            workerRequested: false
+        };
+        pendingGeometry.set(key, entry);
+    }
+
+    entry.meshes.add(mesh);
+    mesh.userData.requestKey = key;
+
+    if (!entry.cacheLookupStarted) {
+        entry.cacheLookupStarted = true;
+        geometryCache.get(chunk.id, detail)
+            .then((cachedData) => {
+                if (!pendingGeometry.has(key)) {
+                    if (cachedData) {
+                        inMemoryGeometry.set(key, cachedData);
+                    }
+                    return;
+                }
+
+                if (cachedData) {
+                    inMemoryGeometry.set(key, cachedData);
+                    entry.meshes.forEach(targetMesh => {
+                        applyGeometryToMesh(targetMesh, cachedData, detail, key);
+                    });
+                    pendingGeometry.delete(key);
+                } else {
+                    requestGeometryFromWorker(entry, key);
+                }
+            })
+            .catch((error) => {
+                console.warn('Geometry cache lookup failed:', error);
+                requestGeometryFromWorker(entry, key);
+            });
+    } else if (!entry.workerRequested) {
+        requestGeometryFromWorker(entry, key);
+    }
+}
+
+function requestGeometryFromWorker(entry, key) {
+    if (entry.workerRequested) {
+        return;
+    }
+
+    if (!geometryWorker) {
+        fallbackToMainThread(entry, key);
+        return;
+    }
+
+    entry.workerRequested = true;
+    geometryWorker.postMessage({
+        action: 'generateGeometryTexture',
+        chunkId: entry.chunk.id,
+        embedding: entry.chunk.embedding || [],
+        detail: entry.detail,
+        tags: entry.chunk.tags || []
+    });
+}
+
+function fallbackToMainThread(entry, key) {
+    try {
+        const geometryData = generateGeometryOnMainThread(entry.chunk, entry.detail);
+        if (geometryData) {
+            inMemoryGeometry.set(key, geometryData);
+            entry.meshes.forEach(mesh => applyGeometryToMesh(mesh, geometryData, entry.detail, key));
+            geometryCache.set(entry.chunk.id, entry.detail, geometryData).catch(() => {});
+        }
+    } catch (error) {
+        console.error('Main-thread geometry generation failed:', error);
+    } finally {
+        pendingGeometry.delete(key);
+    }
+}
+
+function applyGeometryToMesh(mesh, geometryData, detail, key) {
+    if (!mesh) return;
+
+    if (mesh.geometry) {
+        mesh.geometry.dispose();
+    }
+
+    const geometry = buildGeometryFromData(geometryData);
+    mesh.geometry = geometry;
+    mesh.userData.isPlaceholder = false;
+    mesh.userData.detail = detail;
+    mesh.userData.requestKey = null;
+
+    if (mesh.material) {
+        mesh.material.vertexColors = true;
+        mesh.material.needsUpdate = true;
+    }
+}
+
+function buildGeometryFromData(data) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(data.colors, 3));
+
+    if (data.indices) {
+        geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    }
+
+    geometry.computeBoundingSphere();
+    return geometry;
+}
+
+function geometryDataFromGeometry(geometry) {
+    const positions = new Float32Array(geometry.attributes.position.array);
+    const normals = new Float32Array(geometry.attributes.normal.array);
+    const colors = new Float32Array(geometry.attributes.color.array);
+    let indices = null;
+
+    if (geometry.index && geometry.index.array) {
+        const IndexArray = geometry.index.array.constructor;
+        indices = new IndexArray(geometry.index.array);
+    }
+
+    return {
+        positions,
+        normals,
+        colors,
+        indices,
+        indexType: indices ? indices.constructor.name : null
+    };
+}
+
+function generateGeometryOnMainThread(chunk, detail) {
+    if (!window.ProceduralGeometryGenerator || !window.TextureGenerator) {
+        console.warn('Procedural geometry generator unavailable on main thread');
+        return null;
+    }
+
+    const generator = new window.ProceduralGeometryGenerator();
+    const smoothing = Math.max(1, Math.round(detail / 24));
+    generator.updateParameters({ detail, smoothing });
+
+    const geometry = generator.generatePlanetaryGeometry(chunk.embedding || []);
+    geometry.scale(3, 3, 3);
+    geometry.computeVertexNormals();
+
+    const textureGenerator = new window.TextureGenerator();
+    const colors = textureGenerator.generateVertexColors(geometry, {
+        embedding: chunk.embedding,
+        tags: chunk.tags || []
+    });
+
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    const data = geometryDataFromGeometry(geometry);
+    geometry.dispose();
+
+    return data;
+}
+
+function removeMeshFromPending(mesh) {
+    const previousKey = mesh.userData && mesh.userData.requestKey;
+    if (!previousKey) {
+        return;
+    }
+
+    const entry = pendingGeometry.get(previousKey);
+    if (entry) {
+        entry.meshes.delete(mesh);
+        if (entry.meshes.size === 0 && !entry.workerRequested) {
+            pendingGeometry.delete(previousKey);
+        }
+    }
+
+    mesh.userData.requestKey = null;
+}
+
+function handleGeometryWorkerMessage(event) {
+    const message = event.data;
+    if (!message || typeof message !== 'object') {
+        return;
+    }
+
+    const key = geometryKey(message.chunkId, message.detail);
+    const entry = pendingGeometry.get(key);
+
+    if (!message.success) {
+        console.warn(`Worker failed for chunk ${message.chunkId}:`, message.error);
+        if (entry) {
+            fallbackToMainThread(entry, key);
+        }
+        return;
+    }
+
+    const payload = message.data || {};
+    const geometryData = {
+        positions: new Float32Array(payload.positions),
+        normals: new Float32Array(payload.normals),
+        colors: new Float32Array(payload.colors),
+        indices: payload.indices
+            ? (payload.indexType === 'Uint32Array'
+                ? new Uint32Array(payload.indices)
+                : new Uint16Array(payload.indices))
+            : null,
+        indexType: payload.indexType || null
+    };
+
+    inMemoryGeometry.set(key, geometryData);
+    geometryCache.set(message.chunkId, message.detail, geometryData).catch(() => {});
+
+    if (entry) {
+        entry.meshes.forEach(mesh => applyGeometryToMesh(mesh, geometryData, message.detail, key));
+        pendingGeometry.delete(key);
+    }
+}
+
+function updateChunkLODTargets() {
+    if (!camera) {
+        return;
+    }
+
+    chunkMeshes.forEach((mesh) => {
+        if (!mesh.userData || !mesh.userData.chunk) {
+            return;
+        }
+
+        const distance = camera.position.distanceTo(mesh.position);
+        const currentDetail = mesh.userData.detail || DEFAULT_PLACEHOLDER_DETAIL;
+        const desiredDetail = lodManager.getDetailForDistance(distance, currentDetail);
+
+        if (desiredDetail !== currentDetail) {
+            queueGeometryLoad(mesh.userData.chunk, desiredDetail, mesh, { force: true });
+        }
+    });
 }

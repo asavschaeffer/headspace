@@ -4,10 +4,11 @@ FastAPI endpoints for document management and visualization
 """
 
 import requests
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, HTTPException, File, UploadFile, WebSocket, Depends, Request
+from fastapi import APIRouter, HTTPException, File, UploadFile, WebSocket, Depends, Request, BackgroundTasks
 from fastapi.responses import FileResponse
 
 from headspace.models.api_models import (
@@ -132,15 +133,80 @@ async def detailed_health(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def enrich_document_background(processor, doc_id: str, content: str, doc_type: str):
+    """Background task to enrich document chunks with embeddings and tags"""
+    try:
+        # Get existing chunks created by instant processor
+        chunks = processor.db.get_chunks_by_document(doc_id)
+
+        if not chunks:
+            return
+
+        # Extract chunk texts for batch processing
+        chunk_texts = [chunk.content for chunk in chunks]
+
+        # Generate embeddings for all chunks at once (more efficient)
+        try:
+            embeddings = processor.embedder.generate_embeddings(chunk_texts)
+            positions_3d = processor._calculate_3d_positions(embeddings)
+
+            # Update each chunk with its embedding and calculated position
+            for i, chunk in enumerate(chunks):
+                # Generate tags
+                try:
+                    tag_results = processor.tag_engine.generate_tags(chunk.content)
+                    tags = tag_results.get('keywords', [])
+                except:
+                    tags = []
+
+                # Generate color from embedding
+                color = processor._get_chunk_color(embeddings[i].tolist())
+
+                # Update chunk with enriched data
+                chunk.embedding = embeddings[i].tolist()
+                chunk.position_3d = positions_3d[i].tolist()
+                chunk.color = color
+                chunk.metadata = {
+                    **chunk.metadata,
+                    "status": "enriched",
+                    "tags": tags
+                }
+                processor.db.save_chunk(chunk)
+
+                # Small delay to avoid overwhelming the system
+                await asyncio.sleep(0.1)
+
+        except Exception as e:
+            processor.monitor.logger.error(f"Enrichment failed for {doc_id}: {e}")
+
+        # Update document status
+        doc = processor.db.get_document(doc_id)
+        if doc:
+            doc.metadata["status"] = "enriched"
+            processor.db.save_document(doc)
+
+    except Exception as e:
+        processor.monitor.logger.error(f"Background enrichment failed: {e}")
+
+
 @router.post("/api/documents")
 async def create_document(
     doc: DocumentCreateRequest,
-    processor=Depends(get_processor)
+    processor=Depends(get_processor),
+    background_tasks: BackgroundTasks = BackgroundTasks()
 ):
-    """Create a new document with validation"""
+    """Create a new document with instant response and background enrichment"""
     try:
-        doc_id = processor.process_document(doc.title, doc.content, doc.doc_type)
-        return {"id": doc_id, "message": "Document processed successfully"}
+        # Phase 1: Instant document creation (< 100ms)
+        doc_id = processor.process_document_instant(doc.title, doc.content, doc.doc_type)
+
+        # Phase 2: Queue background enrichment
+        background_tasks.add_task(
+            enrich_document_background,
+            processor, doc_id, doc.content, doc.doc_type
+        )
+
+        return {"id": doc_id, "message": "Document created, enrichment in progress"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create document: {str(e)}")
 
@@ -227,6 +293,7 @@ async def get_visualization_data(
                 tags=chunk.tags,
                 reasoning=chunk.reasoning,
                 shape_3d=processor._get_shape_from_tags(chunk.tags),
+                embedding=chunk.embedding,  # Include embedding for procedural geometry
                 metadata=chunk.metadata
             ))
 

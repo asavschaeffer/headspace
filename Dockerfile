@@ -40,4 +40,5 @@ VOLUME /app/data
 EXPOSE 8000
 
 # Start the headspace system using new entry point
-CMD ["python", "headspace/main.py"]
+# Use -m to run as module so imports work correctly
+CMD ["python", "-m", "headspace.main"]

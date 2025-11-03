@@ -1115,7 +1115,9 @@ async def websocket_endpoint(websocket: WebSocket):
         pass
 
 
-# Static files
+# Static files - mount individual folders to match HTML paths
+app.mount("/css", StaticFiles(directory="static/css"), name="css")
+app.mount("/js", StaticFiles(directory="static/js"), name="js")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 

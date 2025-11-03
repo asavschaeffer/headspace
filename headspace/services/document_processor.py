@@ -22,6 +22,42 @@ class DocumentProcessor:
         self.config_manager = config_manager
         self.monitor = monitor
 
+    def process_document_instant(self, title: str, content: str, doc_type: str = "text") -> str:
+        """Instantly create document with basic paragraph chunks - no API calls"""
+        doc_id = hashlib.md5(f"{title}{datetime.now().isoformat()}".encode()).hexdigest()[:12]
+        document = Document(
+            id=doc_id, title=title, content=content, doc_type=doc_type,
+            created_at=datetime.now(), updated_at=datetime.now(),
+            metadata={"word_count": len(content.split()), "status": "processing"}
+        )
+        self.db.save_document(document)
+
+        # Simple paragraph splitting - instant, no API calls
+        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        if not paragraphs:
+            paragraphs = [content]
+
+        # Create basic chunks with placeholder embeddings
+        for i, para in enumerate(paragraphs[:50]):  # Limit to first 50 paragraphs for safety
+            # Generate random 3D position for instant visualization
+            position_3d = (np.random.randn(3) * 50).tolist()
+
+            chunk_obj = Chunk(
+                id=f"{doc_id}_chunk_{i}",
+                document_id=doc_id,
+                chunk_index=i,
+                content=para[:1000],  # Limit chunk size
+                chunk_type='paragraph',
+                embedding=[],  # Empty for now
+                position_3d=position_3d,
+                color="#666666",  # Gray - indicates processing
+                metadata={"status": "pending_enrichment"}
+            )
+            self.db.save_chunk(chunk_obj)
+
+        self.monitor.logger.info(f"📄 Instant document created: {title} ({len(paragraphs)} paragraphs)")
+        return doc_id
+
     def process_document(self, title: str, content: str, doc_type: str = "text") -> str:
         """Process a document: chunk it, generate embeddings, calculate positions with comprehensive monitoring"""
         doc_id = hashlib.md5(f"{title}{datetime.now().isoformat()}".encode()).hexdigest()[:12]
@@ -98,7 +134,7 @@ class DocumentProcessor:
                 chunk_type=chunk_data.get('type', 'paragraph'),
                 embedding=embeddings[i].tolist(),
                 position_3d=positions_3d[i].tolist(),
-                color=self._get_color_from_embedding(embeddings[i]),
+                color=self._get_chunk_color(embeddings[i].tolist()),
                 metadata=chunk_data.get('metadata', {}),
                 embedding_model=self.embedder.model_name,
                 tags=list(tag_results.keys()),
@@ -174,16 +210,58 @@ class DocumentProcessor:
             chunks.append({'text': '\n'.join(current_chunk), 'type': current_type, 'metadata': {}})
         return chunks
 
+    def _get_chunk_color(self, embedding: List[float]) -> str:
+        """Generate color from embedding using first 3 principal components"""
+        if not embedding or len(embedding) < 3:
+            return '#748ffc'  # Default purple
+
+        # Use first 3 dimensions as RGB basis
+        # Normalize to 0-1 range
+        r = (embedding[0] + 1) / 2 if len(embedding) > 0 else 0.5
+        g = (embedding[1] + 1) / 2 if len(embedding) > 1 else 0.5
+        b = (embedding[2] + 1) / 2 if len(embedding) > 2 else 0.5
+
+        # Apply subtle transformation to avoid muddy colors
+        # Boost the dominant channel
+        max_val = max(r, g, b)
+        if max_val > 0:
+            r = r / max_val * 0.8 + 0.2
+            g = g / max_val * 0.8 + 0.2
+            b = b / max_val * 0.8 + 0.2
+
+        # Convert to hex
+        r_hex = format(int(r * 255), '02x')
+        g_hex = format(int(g * 255), '02x')
+        b_hex = format(int(b * 255), '02x')
+
+        return f'#{r_hex}{g_hex}{b_hex}'
+
     def _calculate_3d_positions(self, embeddings: np.ndarray) -> np.ndarray:
-        """Calculate 3D positions from embeddings using a spiral layout."""
+        """Calculate 3D positions from embeddings using PCA dimensionality reduction."""
         n = len(embeddings)
-        positions = np.zeros((n, 3))
-        for i in range(n):
-            angle, radius, height = i * 0.5, 20 + i * 0.5, (i - n / 2) * 2
-            positions[i] = [radius * np.cos(angle), height, radius * np.sin(angle)]
-            if embeddings.shape[1] >= 3:
-                positions[i] += embeddings[i, :3] * 10
-        return positions
+
+        if n <= 3:
+            # For very few chunks, use simple spacing
+            positions = np.zeros((n, 3))
+            for i in range(n):
+                angle = i * 2 * np.pi / n
+                positions[i] = [20 * np.cos(angle), 20 * np.sin(angle), 0]
+            return positions
+
+        # Use PCA to reduce embeddings to 3D space
+        from sklearn.decomposition import PCA
+
+        # Reduce to 3 dimensions, preserving semantic relationships
+        pca = PCA(n_components=3)
+        positions_3d = pca.fit_transform(embeddings)
+
+        # Scale to reasonable viewing range (-50 to 50)
+        min_pos = positions_3d.min()
+        max_pos = positions_3d.max()
+        if max_pos > min_pos:
+            positions_3d = (positions_3d - min_pos) / (max_pos - min_pos) * 100 - 50
+
+        return positions_3d
 
     def _calculate_similarities(self, embeddings: np.ndarray) -> np.ndarray:
         """Calculate cosine similarities between embeddings."""

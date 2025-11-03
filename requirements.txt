@@ -10,6 +10,7 @@ aiofiles>=23.2.0
 
 # Data processing (lightweight)
 numpy>=1.24.0
+scikit-learn>=1.3.0
 
 # HTTP and API clients
 requests>=2.31.0
