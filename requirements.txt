@@ -22,6 +22,9 @@ google-generativeai>=0.3.0
 # OpenAI support (optional but lightweight)
 openai>=1.0.0
 
+# Supabase support (optional, for cloud storage)
+supabase>=2.0.0
+
 # Configuration
 python-dotenv>=1.0.0
 

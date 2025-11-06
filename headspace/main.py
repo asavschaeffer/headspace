@@ -26,8 +26,10 @@ from tag_engine import TagEngine
 from llm_chunker import LLMChunker
 
 # Configuration
-DATABASE_PATH = "headspace.db"
-DOCUMENTS_FOLDER = "documents"
+# Use persistent disk path on Render, fallback to local path
+# DATABASE_PATH is set via environment variable in render.yaml
+DATABASE_PATH = os.environ.get("DATABASE_PATH", "headspace.db")
+DOCUMENTS_FOLDER = os.environ.get("DOCUMENTS_FOLDER", "documents")
 STATIC_FOLDER = "static"
 
 # Ensure folders exist
@@ -263,6 +265,13 @@ def create_app():
 
     # Load initial documents
     load_all_documents(db, processor)
+    
+    # Create seed/demo data if database is empty
+    existing_docs = db.get_all_documents()
+    if not existing_docs:
+        print("\n🌱 Database is empty, creating demo content...")
+        from seed_data import create_seed_documents
+        create_seed_documents(processor, db)
 
     return app
 
@@ -288,4 +297,5 @@ if __name__ == "__main__":
     app = create_app()
 
     print("🚀 Starting API server...\n")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

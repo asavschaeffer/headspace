@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: headspace
+    env: python
+    branch: main # Production branch - change to 'develop' for staging
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m headspace.main
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PORT
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /persistent/headspace.db
+      - key: DOCUMENTS_FOLDER
+        value: /persistent/documents
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OLLAMA_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: STORAGE_MODE
+        value: auto
+    healthCheckPath: /api/health
+    autoDeploy: true
+# Note: Persistent disk must be configured in Render dashboard:
+# 1. Go to your service settings
+# 2. Click "Persistent Disk" → "Create Disk"
+# 3. Name: headspace-disk
+# 4. Mount Path: /persistent
+# 5. Size: 1GB (or more as needed)
+
+# For staging environment, create a separate service:
+# - Name: headspace-staging
+# - Branch: develop
+# - Use different database path: /persistent/headspace-staging.db
+

@@ -43,10 +43,28 @@ def get_monitor(request: Request):
     return request.app.state.monitor
 
 
+@router.get("/api/storage/status")
+async def storage_status():
+    """Get storage mode status"""
+    from headspace.services.storage_manager import StorageManager
+    storage_manager = StorageManager()
+    return {
+        "current_mode": storage_manager.get_mode(),
+        "cloud_available": storage_manager.can_use_cloud(),
+        "local_available": True
+    }
+
+
 @router.get("/")
 async def root():
     """Serve the main application"""
     return FileResponse("static/index.html")
+
+
+@router.get("/headspace.html")
+async def headspace():
+    """Serve the headspace application"""
+    return FileResponse("static/headspace.html")
 
 
 @router.get("/api/health")

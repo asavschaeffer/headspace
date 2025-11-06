@@ -645,6 +645,19 @@ function onCosmosClick(event) {
         const mesh = intersects[0].object;
         const chunk = mesh.userData && mesh.userData.chunk ? mesh.userData.chunk : mesh.userData;
 
+        // Check if chunk has a link URL
+        if (chunk.metadata && chunk.metadata.link_url) {
+            const linkUrl = chunk.metadata.link_url;
+            if (chunk.metadata.is_external_link) {
+                // External link - open in new tab
+                window.open(linkUrl, '_blank');
+            } else {
+                // Internal link - navigate
+                window.location.href = linkUrl;
+            }
+            return;
+        }
+
         state.setSelectedChunk(mesh);
         mesh.scale.setScalar(1.8);
         mesh.material.emissiveIntensity = 1.5;
@@ -679,7 +692,22 @@ function showCosmosInfo(chunk) {
 
     // Update attach button
     const attachBtn = document.getElementById('cosmos-attach-btn');
-    attachBtn.onclick = () => showAddModal(chunk.id);
+    
+    // Show link button if chunk has a link URL
+    if (chunk.metadata && chunk.metadata.link_url) {
+        attachBtn.textContent = '🔗 Follow Link';
+        attachBtn.onclick = () => {
+            const linkUrl = chunk.metadata.link_url;
+            if (chunk.metadata.is_external_link) {
+                window.open(linkUrl, '_blank');
+            } else {
+                window.location.href = linkUrl;
+            }
+        };
+    } else {
+        attachBtn.textContent = '+ Attach Document';
+        attachBtn.onclick = () => showAddModal(chunk.id);
+    }
 
     panel.classList.add('visible');
 }

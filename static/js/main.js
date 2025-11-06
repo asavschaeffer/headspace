@@ -3,11 +3,15 @@
 import { loadDocuments } from './document-manager.js';
 import { initCosmos, switchView } from './cosmos-renderer.js';
 import { showAddModal, hideAddModal, clearParentNode, handleFileUpload, addDocument } from './modal-manager.js';
+import { initStorageSelector } from './storage-manager.js';
 
 // Initialize app
 async function init() {
     console.log('🏁 App initializing...');
     try {
+        // Initialize storage selector
+        initStorageSelector();
+        
         await loadDocuments();
         console.log('📚 Documents loaded');
 

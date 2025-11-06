@@ -8,8 +8,8 @@
     "fallback_chunker": "structural"
   },
   "llm": {
-    "preferred_provider": "ollama",
-    "fallback_chain": ["ollama", "gemini", "openai", "mock"],
+    "preferred_provider": "gemini",
+    "fallback_chain": ["gemini", "openai", "ollama", "mock"],
     "providers": {
       "ollama": {
         "enabled": true,
@@ -42,8 +42,8 @@
     }
   },
   "embeddings": {
-    "preferred_provider": "ollama",
-    "fallback_chain": ["ollama", "gemini", "sentence-transformers", "mock"],
+    "preferred_provider": "gemini",
+    "fallback_chain": ["gemini", "sentence-transformers", "ollama", "mock"],
     "providers": {
       "ollama": {
         "enabled": true,

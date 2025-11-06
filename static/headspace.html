@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Headspace - Cosmic Knowledge System</title>
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/document-view.css">
+    <link rel="stylesheet" href="css/cosmos-view.css">
+    <link rel="stylesheet" href="css/animations.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="app-title">🌌 Headspace</div>
+                <div class="app-subtitle">Cosmic Knowledge System</div>
+            </div>
+
+            <!-- Storage Mode Selector -->
+            <div class="storage-selector" id="storage-selector">
+                <div class="storage-label">Storage Mode:</div>
+                <div class="storage-buttons">
+                    <button class="storage-btn active" data-mode="local" id="storage-local">
+                        💾 Local
+                    </button>
+                    <button class="storage-btn" data-mode="cloud" id="storage-cloud">
+                        ☁️ Cloud
+                    </button>
+                </div>
+                <div class="storage-status" id="storage-status">
+                    Using local storage
+                </div>
+            </div>
+
+            <div class="document-list" id="document-list">
+                <!-- Documents will be loaded here -->
+            </div>
+
+            <div class="add-document">
+                <button class="add-btn" onclick="window.appFunctions.showAddModal()">
+                    + Add Document
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="view-toggle">
+                <button class="view-btn active" onclick="window.appFunctions.switchView('document')">
+                    📄 Document
+                </button>
+                <button class="view-btn" onclick="window.appFunctions.switchView('cosmos')">
+                    🌌 Cosmos
+                </button>
+                <div style="flex: 1;"></div>
+                <span style="color: #666; font-size: 12px;" id="status-text">Ready</span>
+            </div>
+
+            <!-- Document View -->
+            <div id="document-view" class="active">
+                <div class="doc-container">
+                    <div class="breadcrumb" id="breadcrumb" style="display: none;">
+                        <!-- Breadcrumb will be dynamically generated -->
+                    </div>
+                    <div class="doc-header">
+                        <h1 class="doc-title-main" id="doc-title">Select a document</h1>
+                        <div style="color: #666; font-size: 14px;" id="doc-meta"></div>
+                    </div>
+                    <div id="chunks-container">
+                        <!-- Chunks will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cosmos View -->
+            <div id="cosmos-view">
+                <canvas id="cosmos-canvas"></canvas>
+
+                <!-- Breadcrumb in Cosmos -->
+                <div class="breadcrumb" id="cosmos-breadcrumb" style="position: absolute; top: 20px; left: 20px; max-width: 400px; display: none;">
+                    <!-- Breadcrumb will be dynamically generated -->
+                </div>
+
+                <!-- Cosmos Info Panel -->
+                <div id="cosmos-info">
+                    <div class="cosmos-info-title">Chunk Info</div>
+                    <div class="cosmos-info-id" id="cosmos-info-id">chunk_id</div>
+                    <div class="cosmos-info-meta" id="cosmos-info-meta">Type: paragraph</div>
+                    <div class="cosmos-info-text" id="cosmos-info-text">Hover over a chunk to see details...</div>
+                    <button class="cosmos-attach-btn" id="cosmos-attach-btn">+ Attach Document</button>
+                </div>
+
+                <div class="cosmos-controls">
+                    <div class="control-item">
+                        <input type="checkbox" id="show-connections" checked>
+                        <label for="show-connections">Connections</label>
+                    </div>
+                    <div class="control-item">
+                        <input type="checkbox" id="show-nebulae" checked>
+                        <label for="show-nebulae">Nebulae</label>
+                    </div>
+                    <div class="control-item">
+                        <input type="checkbox" id="enable-gravity">
+                        <label for="enable-gravity">Gravity</label>
+                    </div>
+                    <div class="control-item">
+                        <label>Speed:</label>
+                        <input type="range" id="animation-speed" min="0" max="2" step="0.1" value="1">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Document Modal -->
+    <div class="modal" id="add-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Add New Document</div>
+                <div class="modal-subtitle">Type text, paste content, or upload file</div>
+            </div>
+
+            <!-- Node Connection Fields -->
+            <div id="parent-node-container" style="display: none; margin-bottom: 15px;">
+                <div class="node-field">
+                    <div class="node-field-label">Parent Node:</div>
+                    <div class="node-field-value" id="parent-node-display">None</div>
+                    <button class="node-field-clear" onclick="window.appFunctions.clearParentNode()">Clear</button>
+                </div>
+                <div class="help-text">This document will be attached to the parent node above</div>
+            </div>
+
+            <div class="modal-input">
+                <input type="text" placeholder="Document Title" id="doc-title-input">
+            </div>
+            <div class="modal-input">
+                <label style="display: block; margin-bottom: 8px; color: #888; font-size: 12px;">
+                    Or upload file:
+                    <input type="file" id="file-upload-input" accept=".txt,.md,.py,.js,.rs,.java,.cpp"
+                           onchange="window.appFunctions.handleFileUpload(event)"
+                           style="margin-left: 10px; color: white;">
+                </label>
+                <textarea placeholder="Document content... (or upload file above)" id="doc-content-input" rows="10"></textarea>
+            </div>
+            <div class="modal-input">
+                <select id="doc-type-select" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white;">
+                    <option value="text">Text Document</option>
+                    <option value="code">Code</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn secondary" onclick="window.appFunctions.hideAddModal()">Cancel</button>
+                <button class="modal-btn primary" onclick="window.appFunctions.addDocument()">Add Document</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chunk Tooltip -->
+    <div class="chunk-tooltip" id="chunk-tooltip"></div>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <!-- Procedural Geometry Generator -->
+    <script src="js/procedural-geometry.js"></script>
+
+    <!-- Texture Generator -->
+    <script src="js/texture-generator.js"></script>
+
+    <!-- LOD Manager -->
+    <script src="js/lod-manager.js"></script>
+
+    <!-- Geometry Cache -->
+    <script src="js/geometry-cache.js"></script>
+
+    <!-- Application -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
+
