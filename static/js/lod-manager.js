@@ -145,4 +145,9 @@ class LODManager {
 }
 
 // Export for use in other modules
-window.LODManager = LODManager;
+if (typeof window !== 'undefined') {
+    window.LODManager = LODManager;
+}
+
+// ES module export
+export { LODManager };
