@@ -15,7 +15,14 @@ def setup_middleware(app: FastAPI):
     # Trusted host middleware for security
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["localhost", "127.0.0.1", "*.localhost", "testserver"]  # testserver for FastAPI TestClient
+        allowed_hosts=[
+            "localhost",
+            "127.0.0.1",
+            "*.localhost",
+            "testserver",
+            "*.onrender.com",  # Allow all Render domains
+            "asaschaeffer.com",  # Production domain
+        ]
     )
 
     # GZip compression for responses
