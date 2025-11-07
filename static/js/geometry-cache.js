@@ -241,10 +241,10 @@ class GeometryCache {
     }
 }
 
-// Export for use in other modules
+// ES module export
+export { GeometryCache };
+
+// Also expose on window for backwards compatibility
 if (typeof window !== 'undefined') {
     window.GeometryCache = GeometryCache;
 }
-
-// ES module export
-export { GeometryCache };

@@ -1,6 +1,7 @@
 // Configuration and Constants
 
-export const API_BASE = 'http://localhost:8000/api';
+// Use relative API paths so it works on any domain
+export const API_BASE = '/api';
 
 export const COLORS = {
     primary: '#667eea',
