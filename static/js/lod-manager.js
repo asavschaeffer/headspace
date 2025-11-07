@@ -144,10 +144,8 @@ class LODManager {
     }
 }
 
-// ES module export
+// ES Module Export
 export { LODManager };
 
 // Also expose on window for backwards compatibility
-if (typeof window !== 'undefined') {
-    window.LODManager = LODManager;
-}
+window.LODManager = LODManager;
