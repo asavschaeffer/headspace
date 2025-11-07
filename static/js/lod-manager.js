@@ -144,8 +144,5 @@ class LODManager {
     }
 }
 
-// ES Module Export
-export { LODManager };
-
-// Also expose on window for backwards compatibility
+// Expose on window
 window.LODManager = LODManager;

@@ -1,12 +1,9 @@
 // Cosmos Renderer - Three.js 3D Visualization
 // Note: This file uses THREE global from CDN script
+// Note: GeometryCache and LODManager are loaded as global scripts
 
 import { state } from './state.js';
 import { COSMOS_SETTINGS } from './config.js';
-import { GeometryCache } from "./geometry-cache.js";
-if (!window.GeometryCache) window.GeometryCache = GeometryCache;
-import { LODManager } from "./lod-manager.js";
-if (!window.LODManager) window.LODManager = LODManager;
 import { showAddModal } from './modal-manager.js';
 
 // Three.js variables

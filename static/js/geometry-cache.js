@@ -241,8 +241,5 @@ class GeometryCache {
     }
 }
 
-// ES Module Export
-export { GeometryCache };
-
-// Also expose on window for backwards compatibility
+// Expose on window
 window.GeometryCache = GeometryCache;
