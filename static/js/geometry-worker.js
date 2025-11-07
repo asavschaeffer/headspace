@@ -1,13 +1,20 @@
 // Geometry Worker - Off-thread geometry and texture generation
 // Prevents main thread blocking during expensive procedural generation
 
-// Load THREE.js first (required by geometry generators)
-importScripts('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+try {
+    // Load THREE.js first (required by geometry generators)
+    importScripts('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
 
-// Import the procedural geometry generator
-// Note: These are loaded as inline scripts in the worker context
-importScripts('/js/procedural-geometry.js');
-importScripts('/js/texture-generator.js');
+    // Import the procedural geometry generator
+    // Note: These are loaded as inline scripts in the worker context
+    importScripts('/js/procedural-geometry.js');
+    importScripts('/js/texture-generator.js');
+} catch (error) {
+    self.postMessage({
+        ready: false,
+        error: 'Failed to load worker scripts: ' + error.message
+    });
+}
 
 /**
  * Main worker message handler
@@ -18,7 +25,10 @@ self.onmessage = async (event) => {
     const message = event.data;
 
     if (!message || typeof message !== 'object') {
-        console.error('Invalid message format');
+        self.postMessage({
+            success: false,
+            error: 'Invalid message format'
+        });
         return;
     }
 
@@ -26,6 +36,12 @@ self.onmessage = async (event) => {
 
     try {
         if (action === 'generateGeometryTexture') {
+            if (!chunkId) {
+                throw new Error('Missing chunkId in message');
+            }
+            if (typeof detail !== 'number') {
+                throw new Error('Invalid detail parameter');
+            }
             generateGeometryWithTexture(chunkId, embedding, detail, tags);
         } else if (action === 'ping') {
             // Simple health check
@@ -40,8 +56,9 @@ self.onmessage = async (event) => {
     } catch (error) {
         self.postMessage({
             success: false,
-            chunkId,
-            error: error.message || 'Unknown error'
+            chunkId: chunkId || 'unknown',
+            error: error.message || 'Unknown error',
+            stack: error.stack
         });
     }
 };
