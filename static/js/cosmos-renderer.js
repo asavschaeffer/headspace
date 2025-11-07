@@ -931,11 +931,23 @@ function handleGeometryWorkerMessage(event) {
         return;
     }
 
+    // Handle worker startup message
+    if (message.ready) {
+        console.log('✓ Geometry worker ready:', message.message);
+        return;
+    }
+
+    // Handle worker initialization errors
+    if (message.ready === false) {
+        console.error('✗ Geometry worker initialization failed:', message.error);
+        return;
+    }
+
     const key = geometryKey(message.chunkId, message.detail);
     const entry = pendingGeometry.get(key);
 
     if (!message.success) {
-        console.warn(`Worker failed for chunk ${message.chunkId}:`, message.error);
+        console.warn(`Worker failed for chunk ${message.chunkId}:`, message.error || 'Unknown error', message.stack);
         if (entry) {
             fallbackToMainThread(entry, key);
         }
