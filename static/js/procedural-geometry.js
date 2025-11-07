@@ -223,5 +223,12 @@ class ProceduralGeometryGenerator {
     }
 }
 
-// Export for use in other modules
-window.ProceduralGeometryGenerator = ProceduralGeometryGenerator;
+// Export for use in other modules (only in main thread, not in Web Worker)
+if (typeof window !== 'undefined') {
+    window.ProceduralGeometryGenerator = ProceduralGeometryGenerator;
+}
+
+// Enable use in Web Worker context
+if (typeof self !== 'undefined') {
+    self.ProceduralGeometryGenerator = ProceduralGeometryGenerator;
+}
