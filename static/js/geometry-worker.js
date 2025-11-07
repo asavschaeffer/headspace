@@ -1,6 +1,9 @@
 // Geometry Worker - Off-thread geometry and texture generation
 // Prevents main thread blocking during expensive procedural generation
 
+// Load THREE.js first (required by geometry generators)
+importScripts('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+
 // Import the procedural geometry generator
 // Note: These are loaded as inline scripts in the worker context
 importScripts('/js/procedural-geometry.js');
