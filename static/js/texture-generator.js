@@ -198,5 +198,12 @@ class TextureGenerator {
     }
 }
 
-// Export for use in other modules
-window.TextureGenerator = TextureGenerator;
+// Export for use in other modules (only in main thread, not in Web Worker)
+if (typeof window !== 'undefined') {
+    window.TextureGenerator = TextureGenerator;
+}
+
+// Enable use in Web Worker context
+if (typeof self !== 'undefined') {
+    self.TextureGenerator = TextureGenerator;
+}
