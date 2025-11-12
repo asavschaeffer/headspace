@@ -391,7 +391,14 @@
                 log('SUCCESS', `Document created: ${docId}`);
                 log('DEBUG', `Status: ${result.status}`);
 
-                // Try to connect to enrichment stream
+                // If document is already enriched (sync processing), skip stream and fetch chunks
+                if (result.status === 'enriched') {
+                    log('INFO', '⚡ Document already enriched (synchronous processing), fetching chunks...');
+                    await fetchAllChunks(docId);
+                    return;
+                }
+
+                // Try to connect to enrichment stream for async processing
                 try {
                     log('INFO', '🔌 Connecting to real-time enrichment stream...');
                     enrichmentStream = new EnrichmentStreamListener(
@@ -442,7 +449,12 @@
                 const doc = await docResponse.json();
                 log('SUCCESS', `Got ${doc.chunks.length} chunks`);
                 visualizeChunks(doc.chunks);
-                fitCameraToScene();
+
+                // Fit camera after all animations complete
+                const maxStagger = (doc.chunks.length - 1) * 200 + 800; // Last chunk stagger + animation duration
+                setTimeout(() => {
+                    fitCameraToScene();
+                }, maxStagger);
             } catch (error) {
                 log('ERROR', `Failed to fetch chunks: ${error.message}`);
             }
@@ -450,78 +462,52 @@
 
         // ===== VISUALIZATION =====
         function visualizeChunks(chunks) {
-            log('INFO', '🎨 Creating geometry...');
+            log('INFO', '🎨 Creating geometry with animation...');
 
+            // Stagger chunk animations for visual effect
             chunks.forEach((chunk, idx) => {
-                try {
-                    // Parse position
-                    let pos = [0, 0, 0];
-                    if (chunk.position_3d) {
-                        if (Array.isArray(chunk.position_3d)) {
-                            pos = chunk.position_3d;
-                        } else if (typeof chunk.position_3d === 'string') {
+                setTimeout(() => {
+                    try {
+                        // Parse embedding if it's a string
+                        let embedding = chunk.embedding;
+                        if (typeof embedding === 'string') {
                             try {
-                                pos = JSON.parse(chunk.position_3d);
+                                embedding = JSON.parse(embedding);
                             } catch (e) {
-                                log('WARN', `Could not parse position for chunk ${idx}`);
+                                log('WARN', `Could not parse embedding for chunk ${chunk.id}`);
+                                embedding = [];
                             }
                         }
-                    }
 
-                    // Parse color
-                    let color = 0x748ffc;
-                    if (chunk.color && chunk.color.startsWith('#')) {
-                        color = parseInt(chunk.color.slice(1), 16);
-                    }
-
-                    // Parse embedding for geometry calculation
-                    let embedding = chunk.embedding || [];
-                    if (typeof embedding === 'string') {
-                        try {
-                            embedding = JSON.parse(embedding);
-                        } catch (e) {
-                            embedding = [];
+                        // Parse position_3d if it's a string
+                        let position_3d = chunk.position_3d;
+                        if (typeof position_3d === 'string') {
+                            try {
+                                position_3d = JSON.parse(position_3d);
+                            } catch (e) {
+                                position_3d = [0, 0, 0];
+                            }
                         }
+
+                        // Normalize chunk format for addChunkWithAnimation
+                        const normalizedChunk = {
+                            chunk_id: chunk.id,
+                            id: chunk.id,
+                            embedding: embedding,
+                            color: chunk.color,
+                            position_3d: position_3d,
+                            content: chunk.content,
+                            tags: chunk.tags
+                        };
+
+                        addChunkWithAnimation(normalizedChunk);
+                    } catch (error) {
+                        log('ERROR', `Failed to visualize chunk ${idx}: ${error.message}`);
                     }
-
-                    // Create geometry based on embedding
-                    let geometry;
-                    if (embedding && embedding.length > 0) {
-                        // Use embedding to determine geometry
-                        geometry = createGeometryFromEmbedding(embedding);
-                        log('DEBUG', `Chunk ${idx}: Geometry from embedding (dim=${embedding.length})`);
-                    } else {
-                        // Fallback to sphere
-                        geometry = new THREE.SphereGeometry(5, 32, 32);
-                        log('DEBUG', `Chunk ${idx}: Fallback sphere (no embedding)`);
-                    }
-
-                    const material = new THREE.MeshStandardMaterial({
-                        color: color,
-                        emissive: color,
-                        emissiveIntensity: 0.2,
-                        roughness: 0.7,
-                        metalness: 0.2
-                    });
-
-                    const mesh = new THREE.Mesh(geometry, material);
-                    mesh.position.set(pos[0], pos[1], pos[2]);
-                    mesh.userData = {
-                        chunkId: chunk.id,
-                        content: chunk.content,
-                        embedding: embedding
-                    };
-
-                    scene.add(mesh);
-                    chunkMeshes.set(chunk.id, mesh);
-
-                } catch (error) {
-                    log('ERROR', `Failed to create mesh for chunk ${idx}: ${error.message}`);
-                }
+                }, idx * 200); // 200ms stagger between chunks
             });
 
-            log('SUCCESS', `✨ Created ${chunkMeshes.size} geometries`);
-            updateStatusBar();
+            log('SUCCESS', `✨ Creating ${chunks.length} geometries (staggered)`);
         }
 
         /**
