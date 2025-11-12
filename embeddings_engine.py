@@ -1,9 +1,18 @@
 import json
 import requests
+import logging
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import numpy as np
 from config_manager import ConfigManager, ProviderType
+
+# Set up comprehensive logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class EmbeddingEngine:
     """Handles the generation of text embeddings using various models with centralized configuration."""
@@ -16,6 +25,7 @@ class EmbeddingEngine:
             config_manager: Centralized configuration manager
             preferred_provider: Optional preferred provider override
         """
+        logger.info(f"🚀 Initializing EmbeddingEngine (preferred_provider={preferred_provider})")
         self.config_manager = config_manager
         self.model_config = config_manager.get_embedding_config(preferred_provider)
         self.provider = self.model_config.provider
@@ -23,6 +33,11 @@ class EmbeddingEngine:
         self.api_key = self.model_config.api_key
         self.api_url = self.model_config.url
         self.embedding_dim = 384
+
+        logger.debug(f"Provider: {self.provider.value}")
+        logger.debug(f"Model: {self.model_name}")
+        logger.debug(f"API URL: {self.api_url}")
+        logger.debug(f"API Key present: {bool(self.api_key)}")
 
         # Initialize based on provider
         if self.provider == ProviderType.OLLAMA:
@@ -34,10 +49,10 @@ class EmbeddingEngine:
         elif self.provider == ProviderType.MOCK:
             self._init_mock()
         else:
-            print(f"⚠ Unknown provider: {self.provider}, defaulting to mock")
+            logger.warning(f"Unknown provider: {self.provider}, defaulting to mock")
             self._init_mock()
 
-        print(f"✅ EmbeddingEngine initialized: {self.provider.value} ({self.model_name})")
+        logger.info(f"✅ EmbeddingEngine ready: {self.provider.value} ({self.model_name}) [dim={self.embedding_dim}]")
 
     def _init_ollama(self):
         """Initialize Ollama backend"""
@@ -57,7 +72,9 @@ class EmbeddingEngine:
     def _init_gemini(self):
         """Initialize Gemini backend"""
         if not self.api_key or self.api_key == "YOUR_GEMINI_API_KEY":
-            print(f"  ⚠ Gemini API key not configured")
+            logger.error(f"❌ Gemini API key not configured")
+            raise ValueError("Gemini API key is required but not set")
+        logger.info(f"✓ Gemini initialized with API key (length={len(self.api_key)})")
 
     def _init_sentence_transformers(self):
         """Initialize sentence-transformers backend"""
@@ -89,24 +106,33 @@ class EmbeddingEngine:
             A numpy array of embeddings.
         """
         if not texts:
+            logger.warning("No texts provided for embedding")
             return np.array([])
 
-        print(f"Generating embeddings for {len(texts)} text chunk(s) using {self.provider.value}...")
+        start_time = time.time()
+        logger.info(f"📝 Generating embeddings for {len(texts)} chunk(s) using {self.provider.value}")
+        logger.debug(f"Text samples: {[t[:50] + '...' if len(t) > 50 else t for t in texts[:2]]}")
 
         try:
             if self.provider == ProviderType.OLLAMA:
-                return self._embed_with_ollama(texts)
+                result = self._embed_with_ollama(texts)
             elif self.provider == ProviderType.GEMINI:
-                return self._embed_with_gemini(texts)
+                result = self._embed_with_gemini(texts)
             elif self.provider == ProviderType.SENTENCE_TRANSFORMERS:
-                return self._embed_with_sentence_transformers(texts)
+                result = self._embed_with_sentence_transformers(texts)
             elif self.provider == ProviderType.MOCK:
-                return self._embed_with_mock(texts)
+                result = self._embed_with_mock(texts)
             else:
-                return self._embed_with_mock(texts)
+                result = self._embed_with_mock(texts)
+
+            elapsed = time.time() - start_time
+            logger.info(f"✅ Successfully generated {len(result)} embeddings in {elapsed:.2f}s")
+            return result
         except Exception as e:
-            print(f"Error with {self.provider.value}: {e}")
+            elapsed = time.time() - start_time
+            logger.error(f"❌ Error with {self.provider.value} after {elapsed:.2f}s: {e}", exc_info=True)
             # Try fallback to next provider in chain
+            logger.info(f"Attempting fallback...")
             return self._try_fallback_embeddings(texts)
 
     def _embed_with_ollama(self, texts: List[str]) -> np.ndarray:
@@ -155,19 +181,26 @@ class EmbeddingEngine:
     def _embed_with_gemini(self, texts: List[str]) -> np.ndarray:
         """Generate embeddings using Gemini API"""
         if not self.api_key or self.api_key == "YOUR_GEMINI_API_KEY":
-            print(f"  Gemini API key not configured")
+            logger.error(f"❌ Gemini API key not configured")
             raise ValueError("Gemini API key not configured")
+
+        logger.debug(f"Starting Gemini embedding for {len(texts)} texts")
 
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:batchEmbedContents?key={self.api_key}"
+            logger.debug(f"API URL: {url.replace(self.api_key, '***MASKED***')}")
 
             # Process in batches (Gemini limit is 100)
             all_embeddings = []
             batch_size = 100
+            num_batches = (len(texts) + batch_size - 1) // batch_size
 
-            for i in range(0, len(texts), batch_size):
-                batch = texts[i:i + batch_size]
-                print(f"    Batch {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1}")
+            for batch_idx in range(num_batches):
+                start_idx = batch_idx * batch_size
+                end_idx = min((batch_idx + 1) * batch_size, len(texts))
+                batch = texts[start_idx:end_idx]
+
+                logger.info(f"Processing batch {batch_idx + 1}/{num_batches} ({len(batch)} texts)")
 
                 payload = {
                     "requests": [
@@ -179,29 +212,44 @@ class EmbeddingEngine:
                     ]
                 }
 
+                logger.debug(f"Sending request with {len(batch)} items")
+                batch_start = time.time()
                 response = requests.post(url, json=payload, timeout=60)
+                batch_elapsed = time.time() - batch_start
+                logger.debug(f"Response received in {batch_elapsed:.2f}s, status={response.status_code}")
 
                 if response.status_code != 200:
-                    print(f"  Gemini API error: {response.status_code}")
-                    print(f"  Response: {response.text[:200]}")
+                    logger.error(f"❌ Gemini API error: {response.status_code}")
+                    logger.error(f"Response body: {response.text[:500]}")
                     raise requests.RequestException(f"Gemini API error: {response.status_code}")
 
-                result = response.json()
+                try:
+                    result = response.json()
+                    logger.debug(f"Response parsed successfully")
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ Failed to parse JSON response: {e}")
+                    logger.error(f"Response text: {response.text[:500]}")
+                    raise
 
                 # Extract embeddings
-                for embedding_obj in result.get('embeddings', []):
+                embeddings_in_response = result.get('embeddings', [])
+                logger.debug(f"Found {len(embeddings_in_response)} embeddings in response")
+
+                for idx, embedding_obj in enumerate(embeddings_in_response):
                     values = embedding_obj.get('values', [])
                     if values:
                         all_embeddings.append(values)
+                        logger.debug(f"  Embedding {idx}: dimension={len(values)}")
                     else:
-                        print(f"  Missing values in Gemini response")
-                        raise ValueError("Missing values in Gemini response")
+                        logger.error(f"❌ Missing values in embedding {idx}")
+                        raise ValueError(f"Missing values in embedding {idx}")
 
-            print(f"  ✓ Generated {len(all_embeddings)} embeddings via Gemini")
+            logger.info(f"✅ Generated {len(all_embeddings)} embeddings via Gemini")
+            logger.debug(f"Final embeddings shape: {np.array(all_embeddings).shape}")
             return np.array(all_embeddings)
 
         except Exception as e:
-            print(f"  Gemini embedding error: {e}")
+            logger.error(f"❌ Gemini embedding error: {e}", exc_info=True)
             raise e
 
     def _embed_with_sentence_transformers(self, texts: List[str]) -> np.ndarray:
@@ -246,25 +294,33 @@ class EmbeddingEngine:
 
     def _try_fallback_embeddings(self, texts: List[str]) -> np.ndarray:
         """Try fallback through the provider chain"""
-        print("Trying fallback through embedding provider chain...")
-        
+        logger.warning("⚠️ Attempting fallback through embedding provider chain...")
+
         # Get fallback chain from config
-        fallback_chain = self.config_manager.config.get("embeddings", {}).get("fallback_chain", ["ollama", "gemini", "sentence-transformers", "mock"])
+        fallback_chain = self.config_manager.config.get("embeddings", {}).get("fallback_chain", ["gemini", "sentence-transformers", "ollama", "mock"])
         current_provider = self.provider.value
-        
+        logger.debug(f"Fallback chain: {fallback_chain}")
+        logger.debug(f"Current provider: {current_provider}")
+
         # Find current provider in chain and try next ones
         try:
             current_index = fallback_chain.index(current_provider)
             for provider_name in fallback_chain[current_index + 1:]:
-                if self.config_manager.is_provider_available(provider_name):
-                    print(f"Trying fallback to {provider_name}...")
+                logger.info(f"Trying fallback to {provider_name}...")
+                try:
                     # Create temporary embedding engine with fallback config
                     temp_engine = EmbeddingEngine(self.config_manager, provider_name)
-                    return temp_engine.generate_embeddings(texts)
-        except (ValueError, IndexError):
-            pass
-        
+                    result = temp_engine.generate_embeddings(texts)
+                    logger.info(f"✅ Fallback to {provider_name} succeeded")
+                    return result
+                except Exception as e:
+                    logger.warning(f"Fallback to {provider_name} failed: {e}")
+                    continue
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Could not find provider in fallback chain: {e}")
+
         # If all else fails, use mock embeddings
+        logger.warning("🔄 All fallbacks failed, using mock embeddings")
         return self._embed_with_mock(texts)
 
     def get_embedding_dim(self) -> int:

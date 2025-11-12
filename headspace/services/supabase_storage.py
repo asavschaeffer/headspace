@@ -137,11 +137,11 @@ class SupabaseStorage:
                 "content": chunk.content,
                 "chunk_type": chunk.chunk_type,
                 "embedding": embedding_json,  # JSONB will parse the JSON string
-                "position_3d": json.dumps(chunk.position_3d) if chunk.position_3d else None,
+                "position_3d": chunk.position_3d if chunk.position_3d else None,  # Send as list/dict, not JSON string
                 "color": chunk.color,
-                "metadata": json.dumps(chunk.metadata) if chunk.metadata else "{}",
-                "tags": json.dumps(chunk.tags) if chunk.tags else "[]",
-                "tag_confidence": json.dumps(chunk.tag_confidence) if chunk.tag_confidence else "{}",
+                "metadata": chunk.metadata if chunk.metadata else {},  # Send as dict, not JSON string
+                "tags": chunk.tags if chunk.tags else [],  # Send as list, not JSON string
+                "tag_confidence": chunk.tag_confidence if chunk.tag_confidence else {},  # Send as dict, not JSON string
                 "reasoning": chunk.reasoning or "",
                 "shape_3d": getattr(chunk, "shape_3d", "sphere"),
                 "texture": getattr(chunk, "texture", "smooth"),
@@ -172,45 +172,50 @@ class SupabaseStorage:
                 else:
                     print(f"⚠️  Retrieved chunk {row.get('id')} WITHOUT embedding")
                 
-                # Handle position_3d
+                # Handle position_3d (handle both string and list)
                 position_3d = []
                 if row.get("position_3d"):
                     try:
                         if isinstance(row["position_3d"], str):
-                            position_3d = json.loads(row["position_3d"])
+                            # Try to parse as JSON, handle double-encoded strings
+                            parsed = json.loads(row["position_3d"])
+                            position_3d = parsed if isinstance(parsed, list) else []
                         elif isinstance(row["position_3d"], list):
                             position_3d = row["position_3d"]
                     except (json.JSONDecodeError, TypeError):
                         position_3d = []
-                
-                # Handle metadata
+
+                # Handle metadata (handle both string and dict)
                 metadata = {}
                 if row.get("metadata"):
                     try:
                         if isinstance(row["metadata"], str):
-                            metadata = json.loads(row["metadata"])
+                            parsed = json.loads(row["metadata"])
+                            metadata = parsed if isinstance(parsed, dict) else {}
                         elif isinstance(row["metadata"], dict):
                             metadata = row["metadata"]
                     except (json.JSONDecodeError, TypeError):
                         metadata = {}
-                
-                # Handle tags
+
+                # Handle tags (handle both string and list)
                 tags = []
                 if row.get("tags"):
                     try:
                         if isinstance(row["tags"], str):
-                            tags = json.loads(row["tags"])
+                            parsed = json.loads(row["tags"])
+                            tags = parsed if isinstance(parsed, list) else []
                         elif isinstance(row["tags"], list):
                             tags = row["tags"]
                     except (json.JSONDecodeError, TypeError):
                         tags = []
-                
-                # Handle tag_confidence
+
+                # Handle tag_confidence (handle both string and dict)
                 tag_confidence = {}
                 if row.get("tag_confidence"):
                     try:
                         if isinstance(row["tag_confidence"], str):
-                            tag_confidence = json.loads(row["tag_confidence"])
+                            parsed = json.loads(row["tag_confidence"])
+                            tag_confidence = parsed if isinstance(parsed, dict) else {}
                         elif isinstance(row["tag_confidence"], dict):
                             tag_confidence = row["tag_confidence"]
                     except (json.JSONDecodeError, TypeError):
@@ -257,42 +262,50 @@ class SupabaseStorage:
             chunks = []
             for row in result.data:
                 embedding = self._deserialize_embedding(row.get("embedding"))
-                
+
+                # Handle position_3d (handle both string and list)
                 position_3d = []
                 if row.get("position_3d"):
                     try:
                         if isinstance(row["position_3d"], str):
-                            position_3d = json.loads(row["position_3d"])
+                            parsed = json.loads(row["position_3d"])
+                            position_3d = parsed if isinstance(parsed, list) else []
                         elif isinstance(row["position_3d"], list):
                             position_3d = row["position_3d"]
                     except (json.JSONDecodeError, TypeError):
                         position_3d = []
-                
+
+                # Handle metadata (handle both string and dict)
                 metadata = {}
                 if row.get("metadata"):
                     try:
                         if isinstance(row["metadata"], str):
-                            metadata = json.loads(row["metadata"])
+                            parsed = json.loads(row["metadata"])
+                            metadata = parsed if isinstance(parsed, dict) else {}
                         elif isinstance(row["metadata"], dict):
                             metadata = row["metadata"]
                     except (json.JSONDecodeError, TypeError):
                         metadata = {}
-                
+
+                # Handle tags (handle both string and list)
                 tags = []
                 if row.get("tags"):
                     try:
                         if isinstance(row["tags"], str):
-                            tags = json.loads(row["tags"])
+                            parsed = json.loads(row["tags"])
+                            tags = parsed if isinstance(parsed, list) else []
                         elif isinstance(row["tags"], list):
                             tags = row["tags"]
                     except (json.JSONDecodeError, TypeError):
                         tags = []
-                
+
+                # Handle tag_confidence (handle both string and dict)
                 tag_confidence = {}
                 if row.get("tag_confidence"):
                     try:
                         if isinstance(row["tag_confidence"], str):
-                            tag_confidence = json.loads(row["tag_confidence"])
+                            parsed = json.loads(row["tag_confidence"])
+                            tag_confidence = parsed if isinstance(parsed, dict) else {}
                         elif isinstance(row["tag_confidence"], dict):
                             tag_confidence = row["tag_confidence"]
                     except (json.JSONDecodeError, TypeError):

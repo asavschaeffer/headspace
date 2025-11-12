@@ -282,38 +282,23 @@ async def create_document(
     processor=Depends(get_processor),
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
-    """Create a new document with instant response and background enrichment"""
+    """Create a new document with full synchronous enrichment and embeddings via Gemini"""
     try:
-        # Estimate document size (rough chunk count)
-        estimated_chunks = len([p for p in doc.content.split('\n\n') if p.strip()])
-        
-        # For small documents (< 10 chunks), enrich synchronously for instant visualization
-        # For larger documents, use background enrichment
-        if estimated_chunks <= 10 and len(doc.content) < 5000:
-            processor.monitor.logger.info(f"📄 Small document detected ({estimated_chunks} chunks), enriching synchronously")
-            # Use full processing pipeline for small docs
-            doc_id = processor.process_document(doc.title, doc.content, doc.doc_type)
-            return {
-                "id": doc_id,
-                "status": "enriched",
-                "message": "Document created and enriched"
-            }
-        else:
-            # Phase 1: Instant document creation (< 100ms)
-            doc_id = processor.process_document_instant(doc.title, doc.content, doc.doc_type)
+        processor.monitor.logger.info(f"📄 Creating document: {doc.title}")
+        processor.monitor.logger.debug(f"Content size: {len(doc.content)} chars, type: {doc.doc_type}")
 
-            # Phase 2: Queue background enrichment
-            background_tasks.add_task(
-                enrich_document_background,
-                processor, doc_id, doc.content, doc.doc_type
-            )
+        # Always use synchronous processing with Gemini embeddings
+        # This ensures embeddings are generated immediately and stored correctly
+        doc_id = processor.process_document(doc.title, doc.content, doc.doc_type)
 
-            return {
-                "id": doc_id, 
-                "status": "processing",
-                "message": "Document created, enrichment in progress"
-            }
+        processor.monitor.logger.info(f"✅ Document created and enriched: {doc_id}")
+        return {
+            "id": doc_id,
+            "status": "enriched",
+            "message": "Document created and enriched with Gemini embeddings"
+        }
     except Exception as e:
+        processor.monitor.logger.error(f"❌ Failed to create document: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create document: {str(e)}")
 
 

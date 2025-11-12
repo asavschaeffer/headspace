@@ -23,40 +23,9 @@ class DocumentProcessor:
         self.monitor = monitor
 
     def process_document_instant(self, title: str, content: str, doc_type: str = "text") -> str:
-        """Instantly create document with basic paragraph chunks - no API calls"""
-        doc_id = hashlib.md5(f"{title}{datetime.now().isoformat()}".encode()).hexdigest()[:12]
-        document = Document(
-            id=doc_id, title=title, content=content, doc_type=doc_type,
-            created_at=datetime.now(), updated_at=datetime.now(),
-            metadata={"word_count": len(content.split()), "status": "processing"}
-        )
-        self.db.save_document(document)
-
-        # Simple paragraph splitting - instant, no API calls
-        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
-        if not paragraphs:
-            paragraphs = [content]
-
-        # Create basic chunks with placeholder embeddings
-        for i, para in enumerate(paragraphs[:50]):  # Limit to first 50 paragraphs for safety
-            # Generate random 3D position for instant visualization
-            position_3d = (np.random.randn(3) * 50).tolist()
-
-            chunk_obj = Chunk(
-                id=f"{doc_id}_chunk_{i}",
-                document_id=doc_id,
-                chunk_index=i,
-                content=para[:1000],  # Limit chunk size
-                chunk_type='paragraph',
-                embedding=[],  # Empty for now
-                position_3d=position_3d,
-                color="#666666",  # Gray - indicates processing
-                metadata={"status": "pending_enrichment"}
-            )
-            self.db.save_chunk(chunk_obj)
-
-        self.monitor.logger.info(f"📄 Instant document created: {title} ({len(paragraphs)} paragraphs)")
-        return doc_id
+        """DEPRECATED: Use process_document instead. Kept for compatibility only."""
+        self.monitor.logger.warning(f"⚠️  process_document_instant called - using full sync processing instead")
+        return self.process_document(title, content, doc_type)
 
     def process_document(self, title: str, content: str, doc_type: str = "text") -> str:
         """Process a document: chunk it, generate embeddings, calculate positions with comprehensive monitoring"""
