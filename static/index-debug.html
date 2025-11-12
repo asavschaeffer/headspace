@@ -221,6 +221,7 @@
         let selectedDocumentId = null;
         let selectedNebulaId = null;
         let geometryGenerator = null;
+        let rotationCenter = new THREE.Vector3(0, 0, 0); // Global rotation center
 
         function initScene() {
             const canvas = document.getElementById('canvas');
@@ -243,7 +244,6 @@
             // Simple camera controls (mouse drag to rotate)
             let isDragging = false;
             let previousMousePosition = { x: 0, y: 0 };
-            let rotationCenter = new THREE.Vector3(0, 0, 0); // Center of rotation
 
             canvas.addEventListener('mousedown', (e) => {
                 isDragging = true;
