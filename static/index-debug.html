@@ -6,6 +6,7 @@
     <title>Headspace - Debug Mode</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="js/procedural-geometry.js"></script>
+    <script src="js/enrichment-stream.js"></script>
     <style>
         * {
             margin: 0;
@@ -344,7 +345,9 @@
             });
         }
 
-        // ===== API CALLS =====
+        // ===== API CALLS & STREAMING =====
+        let enrichmentStream = null;
+
         async function processDocument() {
             const title = document.getElementById('document-title').value;
             const content = document.getElementById('document-content').value;
@@ -384,24 +387,64 @@
                 }
 
                 const result = await response.json();
-                log('SUCCESS', `Document created: ${result.id}`);
+                const docId = result.id;
+                log('SUCCESS', `Document created: ${docId}`);
                 log('DEBUG', `Status: ${result.status}`);
 
-                // Fetch the document with chunks
-                log('INFO', '📥 Fetching chunks...');
-                const docResponse = await fetch(`/api/documents/${result.id}`);
-                const doc = await docResponse.json();
+                // Try to connect to enrichment stream
+                try {
+                    log('INFO', '🔌 Connecting to real-time enrichment stream...');
+                    enrichmentStream = new EnrichmentStreamListener(
+                        docId,
+                        // onChunkEnriched callback
+                        (chunk) => {
+                            log('INFO', `📌 Chunk ${chunk.chunk_index} enriched in real-time`);
+                            addChunkWithAnimation(chunk);
+                        },
+                        // onProgress callback
+                        (progress, total) => {
+                            log('DEBUG', `Progress: ${progress}/${total} chunks`);
+                            document.getElementById('status-bar').textContent =
+                                `Chunks: ${chunkMeshes.size} | Progress: ${progress}/${total}`;
+                        },
+                        // onComplete callback
+                        () => {
+                            log('SUCCESS', '✨ All chunks enriched!');
+                            fitCameraToScene();
+                        },
+                        // onError callback
+                        (error) => {
+                            log('WARN', `Stream error (falling back to fetch): ${error.message}`);
+                            // Fallback to fetching all chunks
+                            fetchAllChunks(docId);
+                        }
+                    );
 
-                log('SUCCESS', `Got ${doc.chunks.length} chunks`);
+                    await enrichmentStream.connect();
+                    log('SUCCESS', '✅ Connected to enrichment stream');
 
-                // Visualize chunks
-                visualizeChunks(doc.chunks);
-                fitCameraToScene();
+                } catch (streamError) {
+                    log('WARN', `Stream not available, using polling instead: ${streamError.message}`);
+                    fetchAllChunks(docId);
+                }
 
             } catch (error) {
                 log('ERROR', `Processing failed: ${error.message}`);
             } finally {
                 btn.disabled = false;
+            }
+        }
+
+        async function fetchAllChunks(docId) {
+            log('INFO', '📥 Fetching all chunks...');
+            try {
+                const docResponse = await fetch(`/api/documents/${docId}`);
+                const doc = await docResponse.json();
+                log('SUCCESS', `Got ${doc.chunks.length} chunks`);
+                visualizeChunks(doc.chunks);
+                fitCameraToScene();
+            } catch (error) {
+                log('ERROR', `Failed to fetch chunks: ${error.message}`);
             }
         }
 
@@ -526,6 +569,110 @@
             const chunks = chunkMeshes.size;
             document.getElementById('status-bar').textContent =
                 `Chunks: ${chunks} | Embeddings: ${chunks} | Geometry: ${chunks}`;
+        }
+
+        /**
+         * Add a chunk to the visualization with animated appearance
+         * @param {Object} chunk - Chunk object from enrichment stream
+         */
+        function addChunkWithAnimation(chunk) {
+            if (!chunk.chunk_id && !chunk.id) {
+                log('WARN', 'Chunk missing ID');
+                return;
+            }
+
+            try {
+                const chunkId = chunk.chunk_id || chunk.id;
+
+                // Create geometry from embedding
+                let geometry;
+                if (chunk.embedding && chunk.embedding.length > 0) {
+                    geometry = createGeometryFromEmbedding(chunk.embedding);
+                } else {
+                    log('WARN', `Chunk ${chunkId} has no embedding, using sphere`);
+                    geometry = new THREE.SphereGeometry(5, 32, 32);
+                }
+
+                // Parse color
+                let color = 0x748ffc; // Default purple
+                if (chunk.color && chunk.color.startsWith('#')) {
+                    color = parseInt(chunk.color.slice(1), 16);
+                }
+
+                const material = new THREE.MeshStandardMaterial({
+                    color: color,
+                    emissive: color,
+                    emissiveIntensity: 0.2,
+                    roughness: 0.7,
+                    metalness: 0.2
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+
+                // Set position from 3D coordinates
+                let finalPos = [0, 0, 0];
+                if (chunk.position_3d && Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3) {
+                    finalPos = chunk.position_3d;
+                }
+                mesh.position.set(finalPos[0], finalPos[1], finalPos[2]);
+
+                // Store metadata on mesh
+                mesh.userData = {
+                    chunkId: chunkId,
+                    content: chunk.content || '',
+                    embedding: chunk.embedding || [],
+                    tags: chunk.tags || []
+                };
+
+                // Animate in: start small and transparent at origin
+                mesh.scale.set(0.1, 0.1, 0.1);
+                material.transparent = true;
+                material.opacity = 0;
+
+                // Add to scene and map
+                scene.add(mesh);
+                chunkMeshes.set(chunkId, mesh);
+
+                // Animate to final scale and position
+                const startScale = new THREE.Vector3(0.1, 0.1, 0.1);
+                const endScale = new THREE.Vector3(1, 1, 1);
+                const startPos = new THREE.Vector3(0, 0, 0);
+                const endPos = new THREE.Vector3(finalPos[0], finalPos[1], finalPos[2]);
+
+                const startTime = performance.now();
+                const duration = 800; // ms
+
+                function animateChunk(currentTime) {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+
+                    // Easing function (ease-out)
+                    const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+                    // Animate scale
+                    mesh.scale.lerpVectors(startScale, endScale, easeProgress);
+
+                    // Animate position
+                    mesh.position.lerpVectors(startPos, endPos, easeProgress);
+
+                    // Animate opacity
+                    material.opacity = easeProgress;
+
+                    if (progress < 1) {
+                        requestAnimationFrame(animateChunk);
+                    } else {
+                        material.transparent = false;
+                    }
+                }
+
+                requestAnimationFrame(animateChunk);
+
+                log('DEBUG', `Added chunk ${chunkId} with animation`);
+                updateStatusBar();
+
+            } catch (error) {
+                log('ERROR', `Failed to add chunk: ${error.message}`);
+            }
         }
 
         function focusOnChunk(mesh) {
