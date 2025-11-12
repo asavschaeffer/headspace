@@ -213,6 +213,9 @@
         // ===== THREE.JS SETUP =====
         let scene, camera, renderer, controls;
         let chunkMeshes = new Map();
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let selectedMesh = null;
 
         function initScene() {
             const canvas = document.getElementById('canvas');
@@ -315,6 +318,23 @@
                 camera.aspect = canvas.clientWidth / canvas.clientHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+            });
+
+            // Click handler for chunk selection
+            canvas.addEventListener('click', (event) => {
+                if (event.button !== 0 || event.ctrlKey || event.metaKey) return; // Only left click, not drag
+
+                const rect = canvas.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(Array.from(chunkMeshes.values()));
+
+                if (intersects.length > 0) {
+                    const mesh = intersects[0].object;
+                    focusOnChunk(mesh);
+                }
             });
         }
 
@@ -514,6 +534,51 @@
             const chunks = chunkMeshes.size;
             document.getElementById('status-bar').textContent =
                 `Chunks: ${chunks} | Embeddings: ${chunks} | Geometry: ${chunks}`;
+        }
+
+        function focusOnChunk(mesh) {
+            // Deselect previous
+            if (selectedMesh) {
+                selectedMesh.material.emissiveIntensity = 0.2;
+            }
+
+            // Select new
+            selectedMesh = mesh;
+            mesh.material.emissiveIntensity = 0.8;
+
+            const chunkId = mesh.userData.chunkId;
+            const content = mesh.userData.content;
+
+            log('INFO', `📌 Selected chunk: ${chunkId}`);
+            log('DEBUG', `Content: ${content.substring(0, 80)}...`);
+
+            // Animate camera to focus on chunk
+            const targetPos = mesh.position.clone();
+            const distance = 25; // How close to zoom
+            const direction = targetPos.clone().normalize();
+            const cameraTarget = targetPos.clone().add(direction.multiplyScalar(distance));
+
+            // Smooth animation to new position
+            const startPos = camera.position.clone();
+            const startTime = Date.now();
+            const duration = 600; // ms
+
+            function animateCamera() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = progress < 0.5
+                    ? 2 * progress * progress
+                    : -1 + (4 - 2 * progress) * progress;
+
+                camera.position.lerpVectors(startPos, cameraTarget, easeProgress);
+                camera.lookAt(targetPos);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateCamera);
+                }
+            }
+
+            animateCamera();
         }
 
         // ===== INITIALIZATION =====
