@@ -10,8 +10,17 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
+# Load environment variables from .env file if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not required, but recommended
+
 # Import services
 from headspace.services.database import DatabaseManager
+from headspace.services.storage_manager import StorageManager
+from headspace.services.supabase_storage import SupabaseStorage
 from headspace.services.document_processor import DocumentProcessor
 
 # Import API components
@@ -59,10 +68,37 @@ def initialize_services():
         'ollama_url': os.environ.get('OLLAMA_URL', 'http://localhost:11434')
     })
 
-    # Initialize database
-    print("\n📊 Initializing Database...")
-    db = DatabaseManager(DATABASE_PATH)
-    print("✅ Database initialized")
+    # Initialize storage (local or cloud)
+    print("\n📊 Initializing Storage...")
+    storage_manager = StorageManager()
+    
+    if storage_manager.is_cloud():
+        print("☁️  Using Supabase cloud storage")
+        supabase_url = os.environ.get("SUPABASE_URL")
+        supabase_key = os.environ.get("SUPABASE_KEY")
+        user_id = os.environ.get("USER_ID", "anonymous")
+        
+        if not supabase_url or not supabase_key:
+            print("⚠️  Supabase credentials missing, falling back to local storage")
+            db = DatabaseManager(DATABASE_PATH)
+        else:
+            try:
+                db = SupabaseStorage(supabase_url, supabase_key, user_id)
+                # Test connection
+                if db.test_connection():
+                    print("✅ Supabase connection successful")
+                else:
+                    print("⚠️  Supabase connection test failed, falling back to local storage")
+                    db = DatabaseManager(DATABASE_PATH)
+            except Exception as e:
+                print(f"⚠️  Failed to initialize Supabase: {e}")
+                print("   Falling back to local storage")
+                db = DatabaseManager(DATABASE_PATH)
+    else:
+        print("💾 Using local SQLite storage")
+        db = DatabaseManager(DATABASE_PATH)
+    
+    print(f"✅ Storage initialized ({storage_manager.get_mode()})")
 
     # Initialize embedding engine with status monitoring
     print("\n🧠 Initializing Embedding Engine...")

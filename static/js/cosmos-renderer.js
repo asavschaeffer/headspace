@@ -85,6 +85,13 @@ const nebulaFragmentShader = `
     }
 `;
 
+/**
+ * Get the chunk meshes map for external use (e.g., enrichment streaming)
+ */
+export function getChunkMeshes() {
+    return chunkMeshes;
+}
+
 export async function initCosmos() {
     updateStatus('Initializing cosmos...');
     try {

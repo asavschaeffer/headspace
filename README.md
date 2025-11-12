@@ -151,7 +151,7 @@ python headspace/main.py
 **Backend**:
 - Python 3.11+
 - FastAPI (web framework)
-- SQLite (database)
+- SQLite (local database) / Supabase (cloud database)
 - NumPy (embeddings & positioning)
 
 **Frontend**:
@@ -219,6 +219,28 @@ python headspace/main.py
    - `GEMINI_API_KEY` - Google Gemini (recommended, free tier available)
    - `OPENAI_API_KEY` - OpenAI GPT models
    - `OLLAMA_URL` - Local Ollama (optional, for offline use)
+
+### Cloud Storage (Supabase - Optional)
+
+For cloud storage and embedding data access:
+
+1. **Set up Supabase** (see [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for detailed instructions):
+   - Create a project at https://supabase.com
+   - Run `supabase_schema.sql` in the SQL Editor
+   - Get your project URL and anon key
+
+2. **Add to `.env`**:
+   ```env
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_KEY=your-anon-key
+   ```
+
+3. **Test the setup**:
+   ```bash
+   python test_supabase_setup.py
+   ```
+
+The app will automatically use cloud storage when Supabase credentials are configured. Otherwise, it defaults to local SQLite storage.
 
 ### Dependency Options
 

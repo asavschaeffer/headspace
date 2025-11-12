@@ -5,10 +5,11 @@ FastAPI endpoints for document management and visualization
 
 import requests
 import asyncio
+import json
 from pathlib import Path
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, HTTPException, File, UploadFile, WebSocket, Depends, Request, BackgroundTasks
+from fastapi import APIRouter, HTTPException, File, UploadFile, WebSocket, Depends, Request, BackgroundTasks, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from headspace.models.api_models import (
@@ -18,6 +19,7 @@ from headspace.models.api_models import (
     ChunkResponse,
     ChunkAttachmentRequest
 )
+from headspace.api.enrichment_events import enrichment_event_bus, EnrichmentEvent
 
 
 router = APIRouter()
@@ -154,11 +156,23 @@ async def detailed_health(
 async def enrich_document_background(processor, doc_id: str, content: str, doc_type: str):
     """Background task to enrich document chunks with embeddings and tags"""
     try:
+        processor.monitor.logger.info(f"🔄 Starting enrichment for document {doc_id}")
+
+        # Emit enrichment started event
+        await enrichment_event_bus.emit(EnrichmentEvent(
+            event_type="started",
+            doc_id=doc_id,
+            timestamp=datetime.now().isoformat()
+        ))
+
         # Get existing chunks created by instant processor
         chunks = processor.db.get_chunks_by_document(doc_id)
 
         if not chunks:
+            processor.monitor.logger.warning(f"No chunks found for document {doc_id}")
             return
+
+        processor.monitor.logger.info(f"📊 Enriching {len(chunks)} chunks for document {doc_id}")
 
         # Extract chunk texts for batch processing
         chunk_texts = [chunk.content for chunk in chunks]
@@ -168,20 +182,25 @@ async def enrich_document_background(processor, doc_id: str, content: str, doc_t
             embeddings = processor.embedder.generate_embeddings(chunk_texts)
             positions_3d = processor._calculate_3d_positions(embeddings)
 
+            processor.monitor.logger.info(f"✅ Generated {len(embeddings)} embeddings, updating chunks...")
+
             # Update each chunk with its embedding and calculated position
+            enriched_count = 0
             for i, chunk in enumerate(chunks):
-                # Generate tags
+                # Generate tags (non-blocking, can fail silently)
                 try:
                     tag_results = processor.tag_engine.generate_tags(chunk.content)
                     tags = tag_results.get('keywords', [])
-                except:
+                except Exception as tag_error:
+                    processor.monitor.logger.debug(f"Tag generation failed for chunk {i}: {tag_error}")
                     tags = []
 
                 # Generate color from embedding
                 color = processor._get_chunk_color(embeddings[i].tolist())
+                embedding_list = embeddings[i].tolist()
 
                 # Update chunk with enriched data
-                chunk.embedding = embeddings[i].tolist()
+                chunk.embedding = embedding_list
                 chunk.position_3d = positions_3d[i].tolist()
                 chunk.color = color
                 chunk.metadata = {
@@ -190,21 +209,71 @@ async def enrich_document_background(processor, doc_id: str, content: str, doc_t
                     "tags": tags
                 }
                 processor.db.save_chunk(chunk)
+                enriched_count += 1
 
-                # Small delay to avoid overwhelming the system
-                await asyncio.sleep(0.1)
+                # Emit event for each enriched chunk (for real-time visualization)
+                await enrichment_event_bus.emit(EnrichmentEvent(
+                    event_type="chunk_enriched",
+                    doc_id=doc_id,
+                    chunk_id=chunk.id,
+                    chunk_index=i,
+                    embedding=embedding_list,
+                    color=color,
+                    position_3d=chunk.position_3d,
+                    progress=int((enriched_count / len(chunks)) * 100),
+                    total_chunks=len(chunks),
+                    timestamp=datetime.now().isoformat()
+                ))
+
+                # Log progress for large documents
+                if (i + 1) % 10 == 0:
+                    processor.monitor.logger.debug(f"  Progress: {i + 1}/{len(chunks)} chunks enriched")
+
+            processor.monitor.logger.info(f"✅ Enriched {enriched_count}/{len(chunks)} chunks for document {doc_id}")
 
         except Exception as e:
-            processor.monitor.logger.error(f"Enrichment failed for {doc_id}: {e}")
+            processor.monitor.logger.error(f"❌ Enrichment failed for {doc_id}: {e}")
+            import traceback
+            processor.monitor.logger.error(traceback.format_exc())
+
+            # Emit error event
+            await enrichment_event_bus.emit(EnrichmentEvent(
+                event_type="error",
+                doc_id=doc_id,
+                error=str(e),
+                timestamp=datetime.now().isoformat()
+            ))
+
+            # Update document status to indicate failure
+            doc = processor.db.get_document(doc_id)
+            if doc:
+                doc.metadata["status"] = "enrichment_failed"
+                doc.metadata["error"] = str(e)
+                processor.db.save_document(doc)
+            return
 
         # Update document status
         doc = processor.db.get_document(doc_id)
         if doc:
             doc.metadata["status"] = "enriched"
+            doc.metadata["enriched_at"] = datetime.now().isoformat()
             processor.db.save_document(doc)
 
+            # Emit completion event
+            await enrichment_event_bus.emit(EnrichmentEvent(
+                event_type="completed",
+                doc_id=doc_id,
+                progress=100,
+                total_chunks=len(chunks),
+                timestamp=datetime.now().isoformat()
+            ))
+
+            processor.monitor.logger.info(f"✅ Document {doc_id} enrichment complete")
+
     except Exception as e:
-        processor.monitor.logger.error(f"Background enrichment failed: {e}")
+        processor.monitor.logger.error(f"❌ Background enrichment failed for {doc_id}: {e}")
+        import traceback
+        processor.monitor.logger.error(traceback.format_exc())
 
 
 @router.post("/api/documents")
@@ -215,18 +284,70 @@ async def create_document(
 ):
     """Create a new document with instant response and background enrichment"""
     try:
-        # Phase 1: Instant document creation (< 100ms)
-        doc_id = processor.process_document_instant(doc.title, doc.content, doc.doc_type)
+        # Estimate document size (rough chunk count)
+        estimated_chunks = len([p for p in doc.content.split('\n\n') if p.strip()])
+        
+        # For small documents (< 10 chunks), enrich synchronously for instant visualization
+        # For larger documents, use background enrichment
+        if estimated_chunks <= 10 and len(doc.content) < 5000:
+            processor.monitor.logger.info(f"📄 Small document detected ({estimated_chunks} chunks), enriching synchronously")
+            # Use full processing pipeline for small docs
+            doc_id = processor.process_document(doc.title, doc.content, doc.doc_type)
+            return {
+                "id": doc_id,
+                "status": "enriched",
+                "message": "Document created and enriched"
+            }
+        else:
+            # Phase 1: Instant document creation (< 100ms)
+            doc_id = processor.process_document_instant(doc.title, doc.content, doc.doc_type)
 
-        # Phase 2: Queue background enrichment
-        background_tasks.add_task(
-            enrich_document_background,
-            processor, doc_id, doc.content, doc.doc_type
-        )
+            # Phase 2: Queue background enrichment
+            background_tasks.add_task(
+                enrich_document_background,
+                processor, doc_id, doc.content, doc.doc_type
+            )
 
-        return {"id": doc_id, "message": "Document created, enrichment in progress"}
+            return {
+                "id": doc_id, 
+                "status": "processing",
+                "message": "Document created, enrichment in progress"
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create document: {str(e)}")
+
+
+@router.get("/api/documents/{doc_id}/status")
+async def get_document_status(doc_id: str, db=Depends(get_db)):
+    """Get document enrichment status"""
+    try:
+        doc = db.get_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Check chunk enrichment status
+        chunks = db.get_chunks_by_document(doc_id)
+        enriched_chunks = sum(1 for c in chunks if c.embedding and len(c.embedding) > 0)
+        total_chunks = len(chunks)
+        
+        status = doc.metadata.get("status", "unknown")
+        is_enriched = status == "enriched" and enriched_chunks == total_chunks
+        
+        return {
+            "document_id": doc_id,
+            "status": status,
+            "is_enriched": is_enriched,
+            "chunks": {
+                "total": total_chunks,
+                "enriched": enriched_chunks,
+                "pending": total_chunks - enriched_chunks
+            },
+            "enriched_at": doc.metadata.get("enriched_at")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get document status: {str(e)}")
 
 
 @router.get("/api/documents")
@@ -442,9 +563,31 @@ async def get_chunk_attachments(chunk_id: str, db=Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.websocket("/ws/enrichment/{doc_id}")
+async def websocket_enrichment_stream(websocket: WebSocket, doc_id: str):
+    """
+    WebSocket endpoint for real-time enrichment streaming
+    Sends embedding and shape data as chunks are enriched
+    """
+    await websocket.accept()
+    queue = await enrichment_event_bus.subscribe(doc_id)
+
+    try:
+        while True:
+            # Get event from queue
+            event = await queue.get()
+            # Send to client
+            await websocket.send_json(event.to_json())
+    except WebSocketDisconnect:
+        await enrichment_event_bus.unsubscribe(doc_id, queue)
+    except Exception as e:
+        print(f"WebSocket error for {doc_id}: {e}")
+        await enrichment_event_bus.unsubscribe(doc_id, queue)
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket for real-time updates"""
+    """WebSocket for real-time updates (legacy, kept for compatibility)"""
     await websocket.accept()
     try:
         while True:

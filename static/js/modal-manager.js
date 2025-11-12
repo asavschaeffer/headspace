@@ -4,6 +4,7 @@ import { state } from './state.js';
 import { createDocument, attachDocumentToChunk } from './api.js';
 import { loadDocuments, loadDocument } from './document-manager.js';
 import { updateStatus } from './utils.js';
+import { getChunkMeshes } from './cosmos-renderer.js';
 
 export function showAddModal(chunkId = null) {
     document.getElementById('add-modal').classList.add('active');
@@ -84,20 +85,33 @@ export async function addDocument() {
 
     try {
         const result = await createDocument(title, content, docType);
+        const docId = result.id;
+        const enrichmentStatus = result.status; // "enriched" or "processing"
 
         // If there's a parent chunk, attach the new document to it
         if (state.parentChunkId) {
             updateStatus('Attaching to parent chunk...');
-            await attachDocumentToChunk(state.parentChunkId, result.id);
+            await attachDocumentToChunk(state.parentChunkId, docId);
         }
 
         hideAddModal();
-        updateStatus('Reloading documents...');
+        updateStatus('Loading document...');
         await loadDocuments();
+        await loadDocument(docId);
 
-        await loadDocument(result.id);
+        // If document is being enriched in background, start enrichment streaming
+        if (enrichmentStatus === 'processing') {
+            updateStatus('Starting real-time enrichment stream...');
+            console.log(`📡 Starting enrichment stream for ${docId}`);
 
-        updateStatus(state.parentChunkId ? 'Document added and attached!' : 'Document added successfully!');
+            // Get chunk meshes from cosmos renderer
+            const chunkMeshes = getChunkMeshes();
+
+            // Start enrichment streaming (will connect to WebSocket)
+            window.startEnrichmentStreaming(docId, chunkMeshes);
+        } else {
+            updateStatus(state.parentChunkId ? 'Document added and attached!' : 'Document added successfully!');
+        }
     } catch (error) {
         console.error('Failed to add document:', error);
         alert('Failed to add document: ' + error.message);
