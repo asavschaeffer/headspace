@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Headspace - Debug Mode</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@r128/examples/js/controls/OrbitControls.js"></script>
     <style>
         * {
             margin: 0;
@@ -229,10 +228,45 @@
             renderer.setSize(canvas.clientWidth, canvas.clientHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
 
-            controls = new THREE.OrbitControls(camera, canvas);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.autoRotate = false;
+            // Simple camera controls (mouse drag to rotate)
+            let isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const deltaX = e.clientX - previousMousePosition.x;
+                    const deltaY = e.clientY - previousMousePosition.y;
+
+                    // Rotate camera around scene center
+                    const radius = 100;
+                    const phi = Math.atan2(camera.position.z, camera.position.x) + deltaX * 0.01;
+                    const theta = Math.acos(camera.position.y / radius) + deltaY * 0.01;
+
+                    camera.position.x = radius * Math.sin(theta) * Math.cos(phi);
+                    camera.position.y = radius * Math.cos(theta);
+                    camera.position.z = radius * Math.sin(theta) * Math.sin(phi);
+                    camera.lookAt(0, 0, 0);
+
+                    previousMousePosition = { x: e.clientX, y: e.clientY };
+                }
+            });
+
+            canvas.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoom = e.deltaY > 0 ? 1.1 : 0.9;
+                camera.position.multiplyScalar(zoom);
+            }, false);
+
+            controls = { update: () => {} }; // Dummy controls object
 
             // Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
