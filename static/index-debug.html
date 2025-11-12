@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Headspace - Debug Mode</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="js/procedural-geometry.js"></script>
     <style>
         * {
             margin: 0;
@@ -216,9 +217,14 @@
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
         let selectedMesh = null;
+        let geometryGenerator = null;
 
         function initScene() {
             const canvas = document.getElementById('canvas');
+
+            // Initialize procedural geometry generator
+            geometryGenerator = new ProceduralGeometryGenerator();
+            log('INFO', 'Procedural geometry generator initialized');
 
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x001a33);
@@ -477,35 +483,21 @@
 
         /**
          * Create interesting geometry from embedding vector
-         * This is the key math that makes the shapes!
+         * Uses sophisticated spherical harmonics deformation
          */
         function createGeometryFromEmbedding(embedding) {
-            const dim = embedding.length;
-            const mag = Math.sqrt(embedding.reduce((sum, x) => sum + x * x, 0));
-            const normalized = embedding.map(x => x / (mag || 1));
-
-            // Use embedding statistics to determine shape
-            const mean = embedding.reduce((a, b) => a + b) / dim;
-            const variance = embedding.reduce((sum, x) => sum + (x - mean) ** 2, 0) / dim;
-            const skewness = normalized.slice(0, 3).reduce((a, b) => a + b ** 3, 0);
-
-            // Different shapes based on embedding characteristics
-            if (variance < 0.1) {
-                // Low variance = smooth sphere
+            if (!geometryGenerator || !embedding || embedding.length === 0) {
+                log('WARN', 'Using fallback sphere');
                 return new THREE.SphereGeometry(5, 32, 32);
-            } else if (variance < 0.3) {
-                // Medium variance = icosahedron
-                return new THREE.IcosahedronGeometry(5, 3);
-            } else if (variance < 0.6) {
-                // Higher variance = cube
-                return new THREE.BoxGeometry(8, 8, 8, 3, 3, 3);
-            } else if (Math.abs(skewness) > 0.5) {
-                // Skewed = torus
-                return new THREE.TorusGeometry(5, 2, 16, 100);
-            } else {
-                // Default = octahedron
-                return new THREE.OctahedronGeometry(5, 2);
             }
+
+            // Generate unique geometry from embedding using spherical harmonics
+            const geometry = geometryGenerator.generatePlanetaryGeometry(embedding);
+
+            // Scale to appropriate size
+            geometry.scale(5, 5, 5);
+
+            return geometry;
         }
 
         function fitCameraToScene() {
