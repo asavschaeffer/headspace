@@ -218,6 +218,8 @@
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
         let selectedMesh = null;
+        let selectedDocumentId = null;
+        let selectedNebulaId = null;
         let geometryGenerator = null;
 
         function initScene() {
@@ -241,10 +243,13 @@
             // Simple camera controls (mouse drag to rotate)
             let isDragging = false;
             let previousMousePosition = { x: 0, y: 0 };
+            let rotationCenter = new THREE.Vector3(0, 0, 0); // Center of rotation
 
             canvas.addEventListener('mousedown', (e) => {
                 isDragging = true;
                 previousMousePosition = { x: e.clientX, y: e.clientY };
+                // Update rotation center based on selection hierarchy
+                updateRotationCenter();
             });
 
             canvas.addEventListener('mousemove', (e) => {
@@ -252,15 +257,19 @@
                     const deltaX = e.clientX - previousMousePosition.x;
                     const deltaY = e.clientY - previousMousePosition.y;
 
-                    // Rotate camera around scene center
-                    const radius = 100;
-                    const phi = Math.atan2(camera.position.z, camera.position.x) + deltaX * 0.01;
-                    const theta = Math.acos(camera.position.y / radius) + deltaY * 0.01;
+                    // Rotate camera around rotation center (selected chunk or origin)
+                    const relativePos = camera.position.clone().sub(rotationCenter);
+                    const radius = relativePos.length();
 
-                    camera.position.x = radius * Math.sin(theta) * Math.cos(phi);
-                    camera.position.y = radius * Math.cos(theta);
-                    camera.position.z = radius * Math.sin(theta) * Math.sin(phi);
-                    camera.lookAt(0, 0, 0);
+                    const phi = Math.atan2(relativePos.z, relativePos.x) + deltaX * 0.01;
+                    const theta = Math.acos(relativePos.y / (radius || 1)) + deltaY * 0.01;
+
+                    relativePos.x = radius * Math.sin(theta) * Math.cos(phi);
+                    relativePos.y = radius * Math.cos(theta);
+                    relativePos.z = radius * Math.sin(theta) * Math.sin(phi);
+
+                    camera.position.copy(relativePos.add(rotationCenter));
+                    camera.lookAt(rotationCenter);
 
                     previousMousePosition = { x: e.clientX, y: e.clientY };
                 }
@@ -327,7 +336,7 @@
                 renderer.setSize(canvas.clientWidth, canvas.clientHeight);
             });
 
-            // Click handler for chunk selection
+            // Click handler for chunk selection/deselection
             canvas.addEventListener('click', (event) => {
                 if (event.button !== 0 || event.ctrlKey || event.metaKey) return; // Only left click, not drag
 
@@ -341,6 +350,9 @@
                 if (intersects.length > 0) {
                     const mesh = intersects[0].object;
                     focusOnChunk(mesh);
+                } else {
+                    // Clicked empty space - deselect all
+                    deselectAll();
                 }
             });
         }
@@ -558,6 +570,59 @@
         }
 
         /**
+         * Calculate centroid of a set of chunks
+         */
+        function calculateCentroid(meshArray) {
+            if (meshArray.length === 0) {
+                return new THREE.Vector3(0, 0, 0);
+            }
+
+            const sum = new THREE.Vector3(0, 0, 0);
+            meshArray.forEach(mesh => sum.add(mesh.position));
+            return sum.divideScalar(meshArray.length);
+        }
+
+        /**
+         * Update rotation center based on selection hierarchy:
+         * 1. Chunk selected → center on chunk
+         * 2. Document selected → center on document's chunks
+         * 3. Nebula selected → center on nebula's chunks
+         * 4. Nothing selected → center on all chunks (centroid)
+         */
+        function updateRotationCenter() {
+            if (selectedMesh) {
+                // Chunk selected: rotate around that chunk
+                rotationCenter.copy(selectedMesh.position);
+                log('DEBUG', `🎯 Rotation center: chunk (${rotationCenter.x.toFixed(1)}, ${rotationCenter.y.toFixed(1)}, ${rotationCenter.z.toFixed(1)})`);
+            } else if (selectedDocumentId) {
+                // Document selected: rotate around centroid of all chunks in document
+                const docChunks = Array.from(chunkMeshes.values()).filter(
+                    mesh => mesh.userData.documentId === selectedDocumentId
+                );
+                if (docChunks.length > 0) {
+                    rotationCenter.copy(calculateCentroid(docChunks));
+                    log('DEBUG', `📄 Rotation center: document centroid (${docChunks.length} chunks)`);
+                }
+            } else if (selectedNebulaId) {
+                // Nebula selected: rotate around centroid of all chunks in nebula
+                const nebulaChunks = Array.from(chunkMeshes.values()).filter(
+                    mesh => mesh.userData.nebulaId === selectedNebulaId
+                );
+                if (nebulaChunks.length > 0) {
+                    rotationCenter.copy(calculateCentroid(nebulaChunks));
+                    log('DEBUG', `☁️ Rotation center: nebula centroid (${nebulaChunks.length} chunks)`);
+                }
+            } else {
+                // Nothing selected: rotate around centroid of ALL chunks
+                const allChunks = Array.from(chunkMeshes.values());
+                if (allChunks.length > 0) {
+                    rotationCenter.copy(calculateCentroid(allChunks));
+                    log('DEBUG', `🌌 Rotation center: cosmos centroid (${allChunks.length} chunks)`);
+                }
+            }
+        }
+
+        /**
          * Add a chunk to the visualization with animated appearance
          * @param {Object} chunk - Chunk object from enrichment stream
          */
@@ -602,9 +667,11 @@
                 }
                 mesh.position.set(finalPos[0], finalPos[1], finalPos[2]);
 
-                // Store metadata on mesh
+                // Store metadata on mesh (include document/nebula for hierarchical selection)
                 mesh.userData = {
                     chunkId: chunkId,
+                    documentId: chunk.document_id || chunk.documentId,
+                    nebulaId: chunk.nebula_id || chunk.nebulaId,
                     content: chunk.content || '',
                     embedding: chunk.embedding || [],
                     tags: chunk.tags || []
@@ -661,20 +728,41 @@
             }
         }
 
+        /**
+         * Deselect all selections
+         */
+        function deselectAll() {
+            if (selectedMesh) {
+                selectedMesh.material.emissiveIntensity = 0.2;
+                selectedMesh = null;
+            }
+            selectedDocumentId = null;
+            selectedNebulaId = null;
+            log('INFO', '◇ Deselected all');
+            updateRotationCenter();
+        }
+
+        /**
+         * Focus on a specific chunk
+         */
         function focusOnChunk(mesh) {
-            // Deselect previous
+            // Deselect previous mesh
             if (selectedMesh) {
                 selectedMesh.material.emissiveIntensity = 0.2;
             }
 
-            // Select new
+            // Select new chunk (also selects its document)
             selectedMesh = mesh;
+            selectedDocumentId = mesh.userData.documentId;
+            selectedNebulaId = mesh.userData.nebulaId;
             mesh.material.emissiveIntensity = 0.8;
 
             const chunkId = mesh.userData.chunkId;
+            const docId = mesh.userData.documentId;
             const content = mesh.userData.content;
 
             log('INFO', `📌 Selected chunk: ${chunkId}`);
+            if (docId) log('DEBUG', `  Document: ${docId}`);
             log('DEBUG', `Content: ${content.substring(0, 80)}...`);
 
             // Animate camera to focus on chunk
@@ -704,6 +792,92 @@
             }
 
             animateCamera();
+        }
+
+        /**
+         * Focus on a document (all its chunks)
+         */
+        function focusOnDocument(documentId) {
+            deselectAll();
+            selectedDocumentId = documentId;
+
+            // Find and highlight all chunks in document
+            const docChunks = Array.from(chunkMeshes.values()).filter(
+                mesh => mesh.userData.documentId === documentId
+            );
+
+            log('INFO', `📄 Selected document: ${documentId} (${docChunks.length} chunks)`);
+
+            // Animate camera to document centroid
+            const centroid = calculateCentroid(docChunks);
+            const distance = 50;
+            const direction = centroid.clone().normalize();
+            const cameraTarget = centroid.clone().add(direction.multiplyScalar(distance));
+
+            const startPos = camera.position.clone();
+            const startTime = performance.now();
+            const duration = 600;
+
+            function animateCamera(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = progress < 0.5
+                    ? 2 * progress * progress
+                    : -1 + (4 - 2 * progress) * progress;
+
+                camera.position.lerpVectors(startPos, cameraTarget, easeProgress);
+                camera.lookAt(centroid);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateCamera);
+                }
+            }
+
+            requestAnimationFrame(animateCamera);
+            updateRotationCenter();
+        }
+
+        /**
+         * Focus on a nebula (all its documents)
+         */
+        function focusOnNebula(nebulaId) {
+            deselectAll();
+            selectedNebulaId = nebulaId;
+
+            // Find and highlight all chunks in nebula
+            const nebulaChunks = Array.from(chunkMeshes.values()).filter(
+                mesh => mesh.userData.nebulaId === nebulaId
+            );
+
+            log('INFO', `☁️ Selected nebula: ${nebulaId} (${nebulaChunks.length} chunks)`);
+
+            // Animate camera to nebula centroid
+            const centroid = calculateCentroid(nebulaChunks);
+            const distance = 80;
+            const direction = centroid.clone().normalize();
+            const cameraTarget = centroid.clone().add(direction.multiplyScalar(distance));
+
+            const startPos = camera.position.clone();
+            const startTime = performance.now();
+            const duration = 600;
+
+            function animateCamera(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = progress < 0.5
+                    ? 2 * progress * progress
+                    : -1 + (4 - 2 * progress) * progress;
+
+                camera.position.lerpVectors(startPos, cameraTarget, easeProgress);
+                camera.lookAt(centroid);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateCamera);
+                }
+            }
+
+            requestAnimationFrame(animateCamera);
+            updateRotationCenter();
         }
 
         // ===== INITIALIZATION =====
