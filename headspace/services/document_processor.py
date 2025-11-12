@@ -103,6 +103,7 @@ class DocumentProcessor:
                 chunk_type=chunk_data.get('type', 'paragraph'),
                 embedding=embeddings[i].tolist(),
                 position_3d=positions_3d[i].tolist(),
+                umap_coordinates=positions_3d[i].tolist(),
                 color=self._get_chunk_color(embeddings[i].tolist()),
                 metadata=chunk_data.get('metadata', {}),
                 embedding_model=self.embedder.model_name,

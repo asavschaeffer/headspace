@@ -3,7 +3,7 @@ Enrichment Event System for Real-Time Streaming
 Manages WebSocket connections for live embedding calculation feedback
 """
 
-from typing import Dict, List, Set, Callable
+from typing import Dict, List, Set, Callable, Optional
 from dataclasses import dataclass, asdict
 import asyncio
 import json
@@ -24,6 +24,11 @@ class EnrichmentEvent:
     total_chunks: int = 0
     error: str = ""
     timestamp: str = ""
+    cluster_id: Optional[int] = None
+    cluster_confidence: Optional[float] = None
+    cluster_label: Optional[str] = None
+    umap_coordinates: List[float] = None
+    nearest_chunk_ids: List[str] = None
 
     def to_json(self):
         """Convert to JSON-serializable dict"""

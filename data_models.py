@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 class Document(BaseModel):
@@ -32,6 +32,11 @@ class Chunk(BaseModel):
     embedding_model: str = ""
     timestamp_created: datetime = Field(default_factory=datetime.now)
     timestamp_modified: datetime = Field(default_factory=datetime.now)
+    cluster_id: Optional[int] = None
+    cluster_confidence: Optional[float] = None
+    cluster_label: Optional[str] = None
+    umap_coordinates: List[float] = Field(default_factory=list)
+    nearest_chunk_ids: List[str] = Field(default_factory=list)
 
 class ChunkConnection(BaseModel):
     from_chunk_id: str

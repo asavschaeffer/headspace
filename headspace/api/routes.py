@@ -418,7 +418,12 @@ async def get_visualization_data(
                 reasoning=chunk.reasoning,
                 shape_3d=processor._get_shape_from_tags(chunk.tags),
                 embedding=chunk.embedding,  # Include embedding for procedural geometry
-                metadata=chunk.metadata
+                metadata=chunk.metadata,
+                cluster_id=chunk.cluster_id,
+                cluster_confidence=chunk.cluster_confidence,
+                cluster_label=chunk.cluster_label,
+                umap_coordinates=chunk.umap_coordinates or chunk.position_3d,
+                nearest_chunk_ids=chunk.nearest_chunk_ids
             ))
 
         all_connections.extend([c.model_dump() for c in connections])
@@ -428,6 +433,26 @@ async def get_visualization_data(
         chunks=all_chunks,
         connections=all_connections
     )
+
+
+@router.get("/api/clusters")
+async def get_clusters(db=Depends(get_db)):
+    """Return aggregate cluster metadata for visualization legends."""
+    try:
+        cluster_records = db.get_cluster_metadata()
+        response = []
+        for record in cluster_records:
+            cluster_id = record.get("cluster_id")
+            response.append({
+                "cluster_id": cluster_id,
+                "label": record.get("label"),
+                "size": record.get("chunk_count", record.get("size", 0)),
+                "color": record.get("color") or ("#E8E8E8" if cluster_id is None else None),
+                "updated_at": record.get("updated_at")
+            })
+        return response
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load cluster metadata: {exc}")
 
 
 @router.delete("/api/documents/{doc_id}")

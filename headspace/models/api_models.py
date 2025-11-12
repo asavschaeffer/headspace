@@ -3,7 +3,7 @@ API Models for Headspace System
 Pydantic models for request/response validation
 """
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pydantic import BaseModel, Field, validator
 
 
@@ -14,13 +14,18 @@ class ChunkResponse(BaseModel):
     chunk_index: int
     content: str
     chunk_type: str
-    position_3d: List[float]
+    position_3d: List[float] = Field(default_factory=list)
     color: str
-    tags: List[str]
+    tags: List[str] = Field(default_factory=list)
     reasoning: str
     shape_3d: str
-    embedding: List[float] = []  # Embedding vector for procedural geometry
-    metadata: Dict = {}
+    embedding: List[float] = Field(default_factory=list)  # Embedding vector for procedural geometry
+    metadata: Dict = Field(default_factory=dict)
+    cluster_id: Optional[int] = None
+    cluster_confidence: Optional[float] = None
+    cluster_label: Optional[str] = None
+    umap_coordinates: List[float] = Field(default_factory=list)
+    nearest_chunk_ids: List[str] = Field(default_factory=list)
 
 
 class DocumentResponse(BaseModel):
