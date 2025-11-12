@@ -8,11 +8,46 @@ import hashlib
 import numpy as np
 from datetime import datetime
 from typing import List, Dict
+from sklearn.neighbors import NearestNeighbors
+from sklearn.feature_extraction.text import TfidfVectorizer
 from data_models import Document, Chunk, ChunkConnection
 
 
 class DocumentProcessor:
     """Processes documents into chunks with embeddings and spatial positioning"""
+
+    CLUSTER_COLOR_PALETTE = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#7f7f7f",
+        "#bcbd22",
+        "#17becf",
+        "#aec7e8",
+        "#ffbb78",
+        "#98df8a",
+        "#ff9896",
+        "#c5b0d5",
+        "#c49c94",
+        "#f7b6d2",
+        "#c7c7c7",
+        "#dbdb8d",
+        "#9edae5",
+        "#393b79",
+        "#637939",
+        "#8c6d31",
+        "#843c39",
+        "#7b4173",
+        "#5254a3",
+        "#8ca252",
+        "#bd9e39",
+        "#ad494a",
+        "#a55194",
+    ]
 
     def __init__(self, db, embedder, tag_engine, llm_chunker, config_manager, monitor):
         self.db = db
@@ -115,6 +150,7 @@ class DocumentProcessor:
             saved_chunks.append(chunk_obj)
 
         self._create_connections(saved_chunks, embeddings)
+        self._apply_semantic_layout(saved_chunks, embeddings)
         return doc_id
 
     def _chunk_structural(self, content: str, doc_type: str) -> List[Dict]:
@@ -248,6 +284,134 @@ class DocumentProcessor:
                         sim = dot / (norm1 * norm2)
                         similarities[i][j] = similarities[j][i] = sim
         return similarities
+
+    def _apply_semantic_layout(self, chunks: List[Chunk], embeddings: np.ndarray):
+        """Apply UMAP + HDBSCAN layout to the given chunks for small-scale visualization."""
+        if not chunks:
+            return
+
+        num_chunks = len(chunks)
+        embeddings_array = np.array(embeddings, dtype=np.float32)
+
+        if embeddings_array.ndim != 2 or embeddings_array.shape[0] != num_chunks:
+            self.monitor.logger.debug("Embedding array shape mismatch; skipping semantic layout.")
+            return
+
+        if num_chunks < 2:
+            for chunk in chunks:
+                coords = chunk.position_3d or chunk.umap_coordinates or [0.0, 0.0, 0.0]
+                chunk.umap_coordinates = coords
+                chunk.cluster_id = None
+                chunk.cluster_confidence = None
+                chunk.cluster_label = None
+                chunk.nearest_chunk_ids = []
+                chunk.metadata["cluster_label"] = None
+                self.db.save_chunk(chunk)
+            return
+
+        try:
+            import umap
+            import hdbscan
+        except ImportError:
+            self.monitor.logger.warning("UMAP/HDBSCAN not installed; skipping semantic layout.")
+            return
+
+        n_neighbors = max(2, min(5, num_chunks - 1))
+        min_dist = 0.05 if num_chunks <= 10 else 0.1
+
+        try:
+            reducer = umap.UMAP(
+                n_components=3,
+                metric="cosine",
+                n_neighbors=n_neighbors,
+                min_dist=min_dist,
+                random_state=42,
+            )
+            umap_coords = reducer.fit_transform(embeddings_array)
+        except Exception as exc:
+            self.monitor.logger.warning(f"UMAP computation failed ({exc}); retaining PCA layout.")
+            return
+
+        min_cluster_size = max(2, min(5, num_chunks))
+        min_samples = max(1, min(3, num_chunks // 2 or 1))
+
+        try:
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
+                metric="euclidean",
+                cluster_selection_method="eom",
+            )
+            clusterer.fit(umap_coords)
+            labels = clusterer.labels_
+            probabilities = clusterer.probabilities_
+        except Exception as exc:
+            self.monitor.logger.warning(f"HDBSCAN failed ({exc}); marking all chunks as noise.")
+            labels = np.full(num_chunks, -1, dtype=int)
+            probabilities = np.zeros(num_chunks, dtype=float)
+
+        try:
+            neighbor_count = min(num_chunks, 5)
+            nn_model = NearestNeighbors(metric="cosine", algorithm="auto", n_neighbors=neighbor_count)
+            nn_model.fit(embeddings_array)
+            _, neighbor_indices = nn_model.kneighbors(embeddings_array, return_distance=True)
+        except Exception as exc:
+            self.monitor.logger.debug(f"Nearest neighbor computation failed ({exc}); using empty neighbor lists.")
+            neighbor_indices = np.array([[]] * num_chunks)
+
+        try:
+            texts = [chunk.content for chunk in chunks]
+            vectorizer = TfidfVectorizer(max_features=50, stop_words="english")
+            tfidf_matrix = vectorizer.fit_transform(texts)
+            feature_names = vectorizer.get_feature_names_out()
+            cluster_labels = {}
+
+            for cluster_id in np.unique(labels):
+                if cluster_id < 0:
+                    continue
+                indices = np.where(labels == cluster_id)[0]
+                if indices.size == 0:
+                    continue
+                cluster_tfidf = tfidf_matrix[indices].mean(axis=0)
+                scores = np.asarray(cluster_tfidf).ravel()
+                top_indices = scores.argsort()[::-1][:3]
+                terms = [feature_names[idx] for idx in top_indices if scores[idx] > 0]
+                if terms:
+                    cluster_labels[cluster_id] = ", ".join(terms)
+        except Exception as exc:
+            self.monitor.logger.debug(f"TF-IDF cluster labeling failed ({exc}); using fallback labels.")
+            cluster_labels = {}
+
+        for idx, chunk in enumerate(chunks):
+            coords = umap_coords[idx].tolist()
+            chunk.umap_coordinates = coords
+            chunk.position_3d = coords
+
+            label_val = int(labels[idx]) if idx < len(labels) else -1
+            if label_val >= 0:
+                chunk.cluster_id = label_val
+                chunk.cluster_confidence = float(probabilities[idx]) if idx < len(probabilities) else None
+                chunk.cluster_label = cluster_labels.get(label_val, f"Cluster {label_val}")
+                chunk.color = self.CLUSTER_COLOR_PALETTE[label_val % len(self.CLUSTER_COLOR_PALETTE)]
+            else:
+                chunk.cluster_id = None
+                chunk.cluster_confidence = None
+                chunk.cluster_label = None
+
+            neighbors = []
+            if neighbor_indices.size and idx < len(neighbor_indices):
+                for neighbor_idx in neighbor_indices[idx]:
+                    neighbor_idx = int(neighbor_idx)
+                    if neighbor_idx == idx or neighbor_idx < 0 or neighbor_idx >= num_chunks:
+                        continue
+                    neighbor_id = chunks[neighbor_idx].id
+                    if neighbor_id not in neighbors:
+                        neighbors.append(neighbor_id)
+            chunk.nearest_chunk_ids = neighbors[:4]
+
+            chunk.metadata["cluster_label"] = chunk.cluster_label
+
+            self.db.save_chunk(chunk)
 
     def _get_color_from_embedding(self, embedding: np.ndarray) -> str:
         """Generate a hex color from an embedding vector."""
