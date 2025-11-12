@@ -229,7 +229,7 @@ async def enrich_document_background(processor, doc_id: str, content: str, doc_t
                 if (i + 1) % 10 == 0:
                     processor.monitor.logger.debug(f"  Progress: {i + 1}/{len(chunks)} chunks enriched")
 
-            processor._apply_semantic_layout(chunks, embeddings)
+            processor._apply_semantic_layout(chunks, embeddings, fallback_positions=positions_3d)
             processor.monitor.logger.info(f"✅ Enriched {enriched_count}/{len(chunks)} chunks for document {doc_id}")
 
         except Exception as e:

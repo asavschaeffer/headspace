@@ -7,7 +7,7 @@ import time
 import hashlib
 import numpy as np
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 from sklearn.neighbors import NearestNeighbors
 from sklearn.feature_extraction.text import TfidfVectorizer
 from data_models import Document, Chunk, ChunkConnection
@@ -150,7 +150,7 @@ class DocumentProcessor:
             saved_chunks.append(chunk_obj)
 
         self._create_connections(saved_chunks, embeddings)
-        self._apply_semantic_layout(saved_chunks, embeddings)
+        self._apply_semantic_layout(saved_chunks, embeddings, fallback_positions=positions_3d)
         return doc_id
 
     def _chunk_structural(self, content: str, doc_type: str) -> List[Dict]:
@@ -285,7 +285,12 @@ class DocumentProcessor:
                         similarities[i][j] = similarities[j][i] = sim
         return similarities
 
-    def _apply_semantic_layout(self, chunks: List[Chunk], embeddings: np.ndarray):
+    def _apply_semantic_layout(
+        self,
+        chunks: List[Chunk],
+        embeddings: np.ndarray,
+        fallback_positions: Optional[np.ndarray] = None,
+    ):
         """Apply UMAP + HDBSCAN layout to the given chunks for small-scale visualization."""
         if not chunks:
             return
@@ -330,7 +335,31 @@ class DocumentProcessor:
             umap_coords = reducer.fit_transform(embeddings_array)
         except Exception as exc:
             self.monitor.logger.warning(f"UMAP computation failed ({exc}); retaining PCA layout.")
-            return
+            if fallback_positions is not None:
+                umap_coords = np.array(fallback_positions, dtype=np.float32)
+            else:
+                return
+
+        if umap_coords.shape[1] != 3:
+            self.monitor.logger.debug("UMAP did not return 3D coordinates; using fallback positions.")
+            if fallback_positions is not None:
+                umap_coords = np.array(fallback_positions, dtype=np.float32)
+            else:
+                return
+
+        ranges = np.ptp(umap_coords, axis=0)
+        max_range = float(np.max(ranges)) if ranges.size else 0.0
+        if max_range <= 1e-6:
+            if fallback_positions is not None:
+                self.monitor.logger.debug("UMAP coordinates collapsed; reverting to fallback positions.")
+                umap_coords = np.array(fallback_positions, dtype=np.float32)
+            else:
+                self.monitor.logger.debug("UMAP coordinates collapsed and no fallback provided; keeping origin.")
+                umap_coords = np.zeros_like(umap_coords)
+        else:
+            centered = umap_coords - umap_coords.mean(axis=0)
+            scale = 50.0 / max_range
+            umap_coords = centered * scale
 
         min_cluster_size = max(2, min(5, num_chunks))
         min_samples = max(1, min(3, num_chunks // 2 or 1))
