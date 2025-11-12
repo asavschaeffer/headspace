@@ -375,14 +375,6 @@
             log('DEBUG', `Content length: ${content.length} chars`);
 
             try {
-                // Clear existing meshes
-                chunkMeshes.forEach(mesh => {
-                    scene.remove(mesh);
-                    mesh.geometry.dispose();
-                    mesh.material.dispose();
-                });
-                chunkMeshes.clear();
-
                 log('INFO', '🚀 Sending to API...');
                 const response = await fetch('/api/documents', {
                     method: 'POST',
@@ -406,7 +398,7 @@
                 // If document is already enriched (sync processing), skip stream and fetch chunks
                 if (result.status === 'enriched') {
                     log('INFO', '⚡ Document already enriched (synchronous processing), fetching chunks...');
-                    await fetchAllChunks(docId);
+                    await fetchAllVisualizationData();
                     return;
                 }
 
@@ -444,7 +436,7 @@
 
                 } catch (streamError) {
                     log('WARN', `Stream not available, using polling instead: ${streamError.message}`);
-                    fetchAllChunks(docId);
+                    fetchAllVisualizationData();
                 }
 
             } catch (error) {
@@ -454,91 +446,102 @@
             }
         }
 
-        async function fetchAllChunks(docId) {
-            log('INFO', '📥 Fetching all chunks...');
+        async function fetchAllVisualizationData() {
+            log('INFO', '📥 Fetching full visualization dataset...');
             try {
-                const docResponse = await fetch(`/api/documents/${docId}`);
-                const doc = await docResponse.json();
-                log('SUCCESS', `Got ${doc.chunks.length} chunks`);
-                visualizeChunks(doc.chunks);
-
-                // Fit camera after all animations complete
-                const maxStagger = (doc.chunks.length - 1) * 200 + 800; // Last chunk stagger + animation duration
-                setTimeout(() => {
-                    fitCameraToScene();
-                }, maxStagger);
+                const response = await fetch('/api/visualization');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const payload = await response.json();
+                const chunks = payload.chunks || [];
+                log('SUCCESS', `Fetched ${chunks.length} chunks across ${payload.documents?.length ?? 0} documents`);
+                upsertChunks(chunks);
+                fitCameraToScene();
             } catch (error) {
-                log('ERROR', `Failed to fetch chunks: ${error.message}`);
+                log('ERROR', `Failed to fetch visualization data: ${error.message}`);
             }
         }
 
         // ===== VISUALIZATION =====
-        function visualizeChunks(chunks) {
-            log('INFO', '🎨 Creating geometry with animation...');
+        function upsertChunks(chunks) {
+            if (!Array.isArray(chunks)) return;
+            let added = 0;
+            let updated = 0;
 
-            // Stagger chunk animations for visual effect
-            chunks.forEach((chunk, idx) => {
-                setTimeout(() => {
-                    try {
-                        // Parse embedding if it's a string
-                        let embedding = chunk.embedding;
-                        if (typeof embedding === 'string') {
-                            try {
-                                embedding = JSON.parse(embedding);
-                            } catch (e) {
-                                log('WARN', `Could not parse embedding for chunk ${chunk.id}`);
-                                embedding = [];
-                            }
-                        }
+            chunks.forEach((chunk) => {
+                try {
+                    const parsed = normalizeChunkPayload(chunk);
+                    if (!parsed) return;
 
-                        // Parse position_3d if it's a string
-                        let position_3d = chunk.position_3d;
-                        if (typeof position_3d === 'string') {
-                            try {
-                                position_3d = JSON.parse(position_3d);
-                            } catch (e) {
-                                position_3d = [0, 0, 0];
-                            }
-                        }
-
-                        // Parse UMAP coordinates if available
-                        let umapCoordinates = chunk.umap_coordinates;
-                        if (typeof umapCoordinates === 'string') {
-                            try {
-                                umapCoordinates = JSON.parse(umapCoordinates);
-                            } catch (e) {
-                                umapCoordinates = null;
-                            }
-                        }
-
-                        const finalCoordinates = Array.isArray(umapCoordinates) && umapCoordinates.length === 3
-                            ? umapCoordinates
-                            : position_3d;
-
-                        // Normalize chunk format for addChunkWithAnimation
-                        const normalizedChunk = {
-                            chunk_id: chunk.id,
-                            id: chunk.id,
-                            embedding: embedding,
-                            color: chunk.color,
-                            position_3d: finalCoordinates,
-                            content: chunk.content,
-                            tags: chunk.tags,
-                            cluster_id: chunk.cluster_id ?? null,
-                            cluster_label: chunk.cluster_label ?? null,
-                            cluster_confidence: chunk.cluster_confidence ?? null,
-                            nearest_chunk_ids: Array.isArray(chunk.nearest_chunk_ids) ? chunk.nearest_chunk_ids : [],
-                            umap_coordinates: finalCoordinates
-                        };
-
-                        addChunkWithAnimation(normalizedChunk);
-                    } catch (error) {
-                        log('ERROR', `Failed to visualize chunk ${idx}: ${error.message}`);
+                    if (chunkMeshes.has(parsed.id)) {
+                        updateExistingChunk(parsed);
+                        updated += 1;
+                    } else {
+                        addChunkWithAnimation(parsed);
+                        added += 1;
                     }
-                }, idx * 200); // 200ms stagger between chunks
+                } catch (error) {
+                    log('ERROR', `Failed to upsert chunk ${chunk?.id ?? 'unknown'}: ${error.message}`);
+                }
             });
 
-            log('SUCCESS', `✨ Creating ${chunks.length} geometries (staggered)`);
+            log('SUCCESS', `Upserted chunks | added: ${added} updated: ${updated} total: ${chunkMeshes.size}`);
+        }
+
+        function normalizeChunkPayload(chunk) {
+            if (!chunk || (!chunk.id && !chunk.chunk_id)) return null;
+
+            // Parse embedding if it's a string
+            let embedding = chunk.embedding;
+            if (typeof embedding === 'string') {
+                try {
+                    embedding = JSON.parse(embedding);
+                } catch (e) {
+                    log('WARN', `Could not parse embedding for chunk ${chunk.id ?? chunk.chunk_id}`);
+                    embedding = [];
+                }
+            }
+
+            // Parse coordinates
+            let position3d = chunk.position_3d;
+            if (typeof position3d === 'string') {
+                try {
+                    position3d = JSON.parse(position3d);
+                } catch (e) {
+                    position3d = [0, 0, 0];
+                }
+            }
+
+            let umapCoordinates = chunk.umap_coordinates;
+            if (typeof umapCoordinates === 'string') {
+                try {
+                    umapCoordinates = JSON.parse(umapCoordinates);
+                } catch (e) {
+                    umapCoordinates = null;
+                }
+            }
+
+            const finalCoordinates = Array.isArray(umapCoordinates) && umapCoordinates.length === 3
+                ? umapCoordinates
+                : position3d;
+
+            return {
+                chunk_id: chunk.id || chunk.chunk_id,
+                id: chunk.id || chunk.chunk_id,
+                embedding: Array.isArray(embedding) ? embedding : [],
+                color: chunk.color,
+                position_3d: Array.isArray(finalCoordinates) ? finalCoordinates : [0, 0, 0],
+                content: chunk.content || '',
+                tags: Array.isArray(chunk.tags) ? chunk.tags : [],
+                cluster_id: chunk.cluster_id ?? null,
+                cluster_label: chunk.cluster_label ?? null,
+                cluster_confidence: chunk.cluster_confidence ?? null,
+                nearest_chunk_ids: Array.isArray(chunk.nearest_chunk_ids) ? chunk.nearest_chunk_ids : [],
+                umap_coordinates: Array.isArray(finalCoordinates) ? finalCoordinates : [0, 0, 0],
+                document_id: chunk.document_id || chunk.documentId,
+                chunk_index: chunk.chunk_index ?? chunk.chunkIndex ?? 0
+            };
         }
 
         /**
@@ -653,26 +656,23 @@
          * @param {Object} chunk - Chunk object from enrichment stream
          */
         function addChunkWithAnimation(chunk) {
-            if (!chunk.chunk_id && !chunk.id) {
+            if (!chunk || !chunk.id) {
                 log('WARN', 'Chunk missing ID');
                 return;
             }
 
+            if (chunkMeshes.has(chunk.id)) {
+                updateExistingChunk(chunk);
+                return;
+            }
+
             try {
-                const chunkId = chunk.chunk_id || chunk.id;
+                const geometry = (chunk.embedding && chunk.embedding.length > 0)
+                    ? createGeometryFromEmbedding(chunk.embedding)
+                    : new THREE.SphereGeometry(5, 32, 32);
 
-                // Create geometry from embedding
-                let geometry;
-                if (chunk.embedding && chunk.embedding.length > 0) {
-                    geometry = createGeometryFromEmbedding(chunk.embedding);
-                } else {
-                    log('WARN', `Chunk ${chunkId} has no embedding, using sphere`);
-                    geometry = new THREE.SphereGeometry(5, 32, 32);
-                }
-
-                // Parse color
-                let color = 0x748ffc; // Default purple
-                if (chunk.color && chunk.color.startsWith('#')) {
+                let color = 0x748ffc;
+                if (chunk.color && typeof chunk.color === 'string' && chunk.color.startsWith('#')) {
                     color = parseInt(chunk.color.slice(1), 16);
                 }
 
@@ -685,78 +685,99 @@
                 });
 
                 const mesh = new THREE.Mesh(geometry, material);
-
-                // Set position from 3D coordinates
-                let finalPos = [0, 0, 0];
-                if (chunk.position_3d && Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3) {
-                    finalPos = chunk.position_3d;
-                }
+                const finalPos = chunk.position_3d && chunk.position_3d.length === 3 ? chunk.position_3d : [0, 0, 0];
                 mesh.position.set(finalPos[0], finalPos[1], finalPos[2]);
 
-                // Store metadata on mesh (include document/nebula for hierarchical selection)
-                mesh.userData = {
-                    chunkId: chunkId,
-                    documentId: chunk.document_id || chunk.documentId,
-                    nebulaId: chunk.nebula_id || chunk.nebulaId,
-                    content: chunk.content || '',
-                    embedding: chunk.embedding || [],
-                    tags: chunk.tags || [],
-                    clusterId: chunk.cluster_id ?? null,
-                    clusterLabel: chunk.cluster_label ?? null,
-                    clusterConfidence: chunk.cluster_confidence ?? null,
-                    nearestChunkIds: Array.isArray(chunk.nearest_chunk_ids) ? chunk.nearest_chunk_ids : [],
-                    umapCoordinates: Array.isArray(chunk.umap_coordinates) ? chunk.umap_coordinates : chunk.position_3d || []
-                };
+                mesh.userData = buildChunkUserData(chunk);
 
-                // Animate in: start small and transparent at origin
                 mesh.scale.set(0.1, 0.1, 0.1);
                 material.transparent = true;
                 material.opacity = 0;
 
-                // Add to scene and map
                 scene.add(mesh);
-                chunkMeshes.set(chunkId, mesh);
+                chunkMeshes.set(chunk.id, mesh);
 
-                // Animate to final scale and position
-                const startScale = new THREE.Vector3(0.1, 0.1, 0.1);
-                const endScale = new THREE.Vector3(1, 1, 1);
-                const startPos = new THREE.Vector3(0, 0, 0);
-                const endPos = new THREE.Vector3(finalPos[0], finalPos[1], finalPos[2]);
+                animateChunkIntoPlace(mesh, material, finalPos);
 
-                const startTime = performance.now();
-                const duration = 800; // ms
-
-                function animateChunk(currentTime) {
-                    const elapsed = currentTime - startTime;
-                    const progress = Math.min(elapsed / duration, 1);
-
-                    // Easing function (ease-out)
-                    const easeProgress = 1 - Math.pow(1 - progress, 3);
-
-                    // Animate scale
-                    mesh.scale.lerpVectors(startScale, endScale, easeProgress);
-
-                    // Animate position
-                    mesh.position.lerpVectors(startPos, endPos, easeProgress);
-
-                    // Animate opacity
-                    material.opacity = easeProgress;
-
-                    if (progress < 1) {
-                        requestAnimationFrame(animateChunk);
-                    } else {
-                        material.transparent = false;
-                    }
-                }
-
-                requestAnimationFrame(animateChunk);
-
-                log('DEBUG', `Added chunk ${chunkId} with animation`);
+                log('DEBUG', `Added chunk ${chunk.id} with animation`);
                 updateStatusBar();
 
             } catch (error) {
                 log('ERROR', `Failed to add chunk: ${error.message}`);
             }
+        }
+
+        function updateExistingChunk(chunk) {
+            const mesh = chunkMeshes.get(chunk.id);
+            if (!mesh) return;
+
+            // Update geometry if embedding changed
+            if (chunk.embedding && chunk.embedding.length > 0) {
+                const newGeometry = createGeometryFromEmbedding(chunk.embedding);
+                mesh.geometry.dispose();
+                mesh.geometry = newGeometry;
+            }
+
+            // Update color
+            if (chunk.color && typeof chunk.color === 'string' && chunk.color.startsWith('#')) {
+                const parsed = parseInt(chunk.color.slice(1), 16);
+                mesh.material.color.setHex(parsed);
+                mesh.material.emissive.setHex(parsed);
+            }
+
+            if (chunk.position_3d && chunk.position_3d.length === 3) {
+                mesh.position.set(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2]);
+            }
+
+            mesh.userData = {
+                ...mesh.userData,
+                ...buildChunkUserData(chunk),
+            };
+        }
+
+        function buildChunkUserData(chunk) {
+            return {
+                chunkId: chunk.id,
+                documentId: chunk.document_id || chunk.documentId,
+                nebulaId: chunk.nebula_id || chunk.nebulaId,
+                content: chunk.content || '',
+                embedding: chunk.embedding || [],
+                tags: chunk.tags || [],
+                clusterId: chunk.cluster_id ?? null,
+                clusterLabel: chunk.cluster_label ?? null,
+                clusterConfidence: chunk.cluster_confidence ?? null,
+                nearestChunkIds: Array.isArray(chunk.nearest_chunk_ids) ? chunk.nearest_chunk_ids : [],
+                umapCoordinates: Array.isArray(chunk.umap_coordinates) ? chunk.umap_coordinates : chunk.position_3d || [],
+                chunkIndex: chunk.chunk_index ?? 0,
+            };
+        }
+
+        function animateChunkIntoPlace(mesh, material, finalPos) {
+            const startScale = new THREE.Vector3(0.1, 0.1, 0.1);
+            const endScale = new THREE.Vector3(1, 1, 1);
+            const startPos = new THREE.Vector3(0, 0, 0);
+            const endPos = new THREE.Vector3(finalPos[0], finalPos[1], finalPos[2]);
+
+            const startTime = performance.now();
+            const duration = 800;
+
+            function animate(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+                mesh.scale.lerpVectors(startScale, endScale, easeProgress);
+                mesh.position.lerpVectors(startPos, endPos, easeProgress);
+                material.opacity = easeProgress;
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    material.transparent = false;
+                }
+            }
+
+            requestAnimationFrame(animate);
         }
 
         /**
@@ -931,6 +952,9 @@
             log('INFO', '🎬 Initializing Headspace Debug Mode');
             initScene();
             log('SUCCESS', 'Ready! Enter a document and click "Process & Visualize"');
+
+            // Initial dataset load on page open
+            fetchAllVisualizationData();
 
             document.getElementById('process-btn').addEventListener('click', processDocument);
             document.getElementById('document-content').addEventListener('keydown', (e) => {
