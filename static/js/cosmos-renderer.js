@@ -313,43 +313,8 @@ export function updateCosmosData() {
     connectionLines.forEach(line => scene.remove(line));
     connectionLines = [];
 
-    // Create home planet if home document exists
-    const homeDoc = state.chunks.find(chunk => chunk.metadata && chunk.metadata.is_home);
-    if (homeDoc) {
-        console.log('🏠 Creating home planet');
-        try {
-            const homePlanetGenerator = new HomePlanetGenerator();
-            const homePlanet = homePlanetGenerator.generateHomePlanet();
-            homePlanet.position.set(0, 0, 0);
-            homePlanet.userData = {
-                chunk: homeDoc,
-                chunkId: homeDoc.id,
-                isHomePlanet: true,
-                clickHandler: () => {
-                    console.log('🏠 Home planet clicked - navigating to index');
-                    window.location.href = 'http://asaschaeffer.com/index.html';
-                }
-            };
-
-            scene.add(homePlanet);
-            chunkMeshes.set(homeDoc.id, homePlanet);
-
-            // Adjust camera to frame home planet at center
-            if (state.chunks.length <= 3) {
-                camera.position.set(0, 0, 80);
-                controls.target.set(0, 0, 0);
-                controls.update();
-            }
-        } catch (error) {
-            console.error('Failed to create home planet:', error);
-        }
-    }
-
-    // Create chunk meshes (non-home chunks)
+    // Create chunk meshes
     state.chunks.forEach((chunk) => {
-        // Skip home chunk (already rendered)
-        if (chunk.metadata && chunk.metadata.is_home) return;
-
         const geometry = createPlaceholderGeometry(chunk);
         const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
@@ -683,13 +648,6 @@ function onCosmosClick(event) {
     if (intersects.length > 0) {
         const mesh = intersects[0].object;
         const chunk = mesh.userData && mesh.userData.chunk ? mesh.userData.chunk : mesh.userData;
-
-        // Check if home planet was clicked
-        if (mesh.userData && mesh.userData.isHomePlanet) {
-            console.log('🏠 Home planet clicked - navigating home');
-            window.location.href = 'http://asaschaeffer.com/index.html';
-            return;
-        }
 
         // Check if chunk has a link URL
         if (chunk.metadata && chunk.metadata.link_url) {

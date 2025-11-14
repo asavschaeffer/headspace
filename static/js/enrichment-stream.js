@@ -253,10 +253,7 @@ class ShapeMorphingAnimator {
  * Integration with Cosmos Renderer
  * Call this to start streaming enrichment and update shapes in real-time
  */
-function startEnrichmentStreaming(docId, chunkMeshMap, allChunks = []) {
-    // Track enriched chunks with embeddings for final positioning
-    const enrichedChunks = [];
-
+function startEnrichmentStreaming(docId, chunkMeshMap) {
     const enrichmentListener = new EnrichmentStreamListener(
         docId,
         // onChunkEnriched - Update shape with new embedding
@@ -270,14 +267,6 @@ function startEnrichmentStreaming(docId, chunkMeshMap, allChunks = []) {
                 return;
             }
 
-            // Store for final positioning
-            enrichedChunks.push({
-                id: chunk_id,
-                embedding,
-                initialPosition: position_3d,
-                mesh
-            });
-
             console.log(`🎨 Morphing shape for chunk ${chunk_id}`);
 
             // Update color
@@ -285,7 +274,7 @@ function startEnrichmentStreaming(docId, chunkMeshMap, allChunks = []) {
                 mesh.material.color.setStyle(color);
             }
 
-            // Update position to intermediate location
+            // Update position
             mesh.position.set(position_3d[0], position_3d[1], position_3d[2]);
 
             // Morph geometry from placeholder to final shape
@@ -306,54 +295,14 @@ function startEnrichmentStreaming(docId, chunkMeshMap, allChunks = []) {
             console.log(`📊 Progress: ${percent}%`);
         },
 
-        // onComplete - Enrichment finished, animate chunks to semantic positions
-        async (data) => {
+        // onComplete - Enrichment finished
+        (data) => {
             const { total_chunks, elapsed_seconds } = data;
             const statusEl = document.getElementById('status-text');
-
-            console.log(`✨ Enrichment complete! Now positioning planets in semantic space...`);
             if (statusEl) {
-                statusEl.textContent = `🚀 Floating to semantic position...`;
+                statusEl.textContent = `✨ Enrichment complete! (${total_chunks} chunks in ${elapsed_seconds.toFixed(1)}s)`;
             }
-
-            // Calculate final positions based on similarity to existing chunks
-            // Combine all existing chunks with enriched ones for similarity calculation
-            const allChunksForPositioning = [
-                ...allChunks.filter(c => c.embedding && c.embedding.length > 0),
-                ...enrichedChunks
-            ];
-
-            // Animate each enriched chunk to its final semantic position
-            const animationPromises = enrichedChunks.map(async (enrichedChunk) => {
-                try {
-                    // Calculate final position based on similarity
-                    const finalPos = window.calculatePositionFromNeighbors(
-                        enrichedChunk.embedding,
-                        allChunksForPositioning.filter(c => c.id !== enrichedChunk.id)
-                    );
-
-                    // Animate mesh from current position to final position
-                    const startPos = [
-                        enrichedChunk.mesh.position.x,
-                        enrichedChunk.mesh.position.y,
-                        enrichedChunk.mesh.position.z
-                    ];
-
-                    console.log(`🌌 Moving ${enrichedChunk.id} to semantic position`);
-                    await window.animatePositionTransition(enrichedChunk.mesh, startPos, finalPos, 1500);
-                } catch (error) {
-                    console.error(`Failed to position chunk ${enrichedChunk.id}:`, error);
-                }
-            });
-
-            // Wait for all animations to complete
-            await Promise.all(animationPromises);
-
-            // Final status
-            if (statusEl) {
-                statusEl.textContent = `✨ All ${total_chunks} planets materialized! (${elapsed_seconds.toFixed(1)}s)`;
-            }
-            console.log(`✅ All ${total_chunks} shapes positioned in semantic space!`);
+            console.log(`✅ All ${total_chunks} shapes materialized!`);
         },
 
         // onError - Error occurred

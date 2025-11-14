@@ -301,18 +301,13 @@ def create_app():
 
     # Load initial documents
     load_all_documents(db, processor)
-
+    
     # Create seed/demo data if database is empty
     existing_docs = db.get_all_documents()
     if not existing_docs:
-        print("\n🌱 Database is empty, seeding Headspace with example documents...")
-        try:
-            from seed_headspace import seed_headspace
-            seed_headspace(db, processor, monitor)
-        except Exception as e:
-            print(f"⚠️  Failed to seed documents: {e}")
-            import traceback
-            print(traceback.format_exc())
+        print("\n🌱 Database is empty, creating demo content...")
+        from seed_data import create_seed_documents
+        create_seed_documents(processor, db)
 
     return app
 
