@@ -107,8 +107,8 @@ export async function addDocument() {
             // Get chunk meshes from cosmos renderer
             const chunkMeshes = getChunkMeshes();
 
-            // Start enrichment streaming (will connect to WebSocket)
-            window.startEnrichmentStreaming(docId, chunkMeshes);
+            // Start enrichment streaming with all chunks for similarity-based positioning
+            window.startEnrichmentStreaming(docId, chunkMeshes, state.chunks);
         } else {
             updateStatus(state.parentChunkId ? 'Document added and attached!' : 'Document added successfully!');
         }
