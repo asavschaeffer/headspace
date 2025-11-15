@@ -6,7 +6,7 @@ Implements cloud storage for Headspace using Supabase
 import json
 import numpy as np
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from supabase import create_client, Client
 from data_models import Document, Chunk, ChunkConnection
 
@@ -117,18 +117,89 @@ class SupabaseStorage:
             print(f"Warning: Failed to deserialize embedding: {e}")
             return []
     
+    def _ensure_list(self, value: Any) -> Optional[list]:
+        """Coerce value into a JSON-serialisable list."""
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else None
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return None
+        return None
+
+    def _ensure_dict(self, value: Any) -> Optional[dict]:
+        """Coerce value into a JSON-serialisable dict."""
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else None
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return None
+        return None
+
+    def _serialise_timestamp(self, value: Any) -> str:
+        """Convert timestamp values to ISO strings for Supabase."""
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.isoformat()
+        if isinstance(value, str):
+            return value
+        return datetime.now(timezone.utc).isoformat()
+
+    def _parse_timestamp(self, value: Any) -> datetime:
+        """Parse ISO timestamp strings back into datetime objects."""
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except (ValueError, TypeError):
+                return datetime.now(timezone.utc)
+        return datetime.now(timezone.utc)
+
     def save_chunk(self, chunk: Chunk) -> str:
         """Save chunk to Supabase"""
         try:
             # Serialize embedding properly
             embedding_json = self._serialize_embedding(chunk.embedding)
-            
+
             # Debug logging
             if embedding_json:
                 print(f"💾 Saving chunk {chunk.id} with embedding ({len(chunk.embedding) if chunk.embedding else 0} dims)")
             else:
                 print(f"⚠️  Saving chunk {chunk.id} WITHOUT embedding")
-            
+
+            # Prepare common fields
+            position_3d = self._ensure_list(getattr(chunk, "position_3d", None))
+            umap_json = self._ensure_list(getattr(chunk, "umap_coordinates", None))
+            nearest_ids_json = self._ensure_list(getattr(chunk, "nearest_chunk_ids", None)) or []
+            metadata_dict = self._ensure_dict(getattr(chunk, "metadata", None)) or {}
+            tags_list = self._ensure_list(getattr(chunk, "tags", None)) or []
+            tag_confidence_dict = self._ensure_dict(getattr(chunk, "tag_confidence", None)) or {}
+
+            # Shape information can be a dict or string; store as dict when possible
+            shape_payload = getattr(chunk, "shape_3d", None)
+            if isinstance(shape_payload, str):
+                try:
+                    parsed_shape = json.loads(shape_payload)
+                    shape_payload = parsed_shape
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    # keep original string for backwards compatibility
+                    pass
+
+            texture_value = getattr(chunk, "texture", "smooth")
+
             data = {
                 "id": chunk.id,
                 "document_id": chunk.document_id,
@@ -137,17 +208,25 @@ class SupabaseStorage:
                 "content": chunk.content,
                 "chunk_type": chunk.chunk_type,
                 "embedding": embedding_json,  # JSONB will parse the JSON string
-                "position_3d": chunk.position_3d if chunk.position_3d else None,  # Send as list/dict, not JSON string
+                "position_3d": position_3d,
                 "color": chunk.color,
-                "metadata": chunk.metadata if chunk.metadata else {},  # Send as dict, not JSON string
-                "tags": chunk.tags if chunk.tags else [],  # Send as list, not JSON string
-                "tag_confidence": chunk.tag_confidence if chunk.tag_confidence else {},  # Send as dict, not JSON string
+                "metadata": metadata_dict,  # Send as dict, not JSON string
+                "tags": tags_list,  # Send as list, not JSON string
+                "tag_confidence": tag_confidence_dict,  # Send as dict, not JSON string
                 "reasoning": chunk.reasoning or "",
-                "shape_3d": getattr(chunk, "shape_3d", "sphere"),
-                "texture": getattr(chunk, "texture", "smooth"),
-                "embedding_model": getattr(chunk, "embedding_model", "") or ""
+                "shape_3d": shape_payload if shape_payload is not None else "sphere",
+                "texture": texture_value,
+                "embedding_model": getattr(chunk, "embedding_model", "") or "",
+                # New semantic layout and clustering fields
+                "umap_coordinates": umap_json,
+                "cluster_id": getattr(chunk, "cluster_id", None),
+                "cluster_confidence": getattr(chunk, "cluster_confidence", None),
+                "cluster_label": getattr(chunk, "cluster_label", None),
+                "nearest_chunk_ids": nearest_ids_json,
+                "timestamp_created": self._serialise_timestamp(getattr(chunk, "timestamp_created", None)),
+                "timestamp_modified": self._serialise_timestamp(getattr(chunk, "timestamp_modified", datetime.now(timezone.utc)))
             }
-            
+
             result = self.client.table("chunks").upsert(data).execute()
             print(f"✅ Chunk {chunk.id} saved to Supabase")
             return chunk.id
@@ -165,62 +244,31 @@ class SupabaseStorage:
             for row in result.data:
                 # Deserialize embedding properly
                 embedding = self._deserialize_embedding(row.get("embedding"))
-                
+
                 # Debug logging
                 if embedding:
                     print(f"📖 Retrieved chunk {row.get('id')} with embedding ({len(embedding)} dims)")
                 else:
                     print(f"⚠️  Retrieved chunk {row.get('id')} WITHOUT embedding")
-                
-                # Handle position_3d (handle both string and list)
-                position_3d = []
-                if row.get("position_3d"):
-                    try:
-                        if isinstance(row["position_3d"], str):
-                            # Try to parse as JSON, handle double-encoded strings
-                            parsed = json.loads(row["position_3d"])
-                            position_3d = parsed if isinstance(parsed, list) else []
-                        elif isinstance(row["position_3d"], list):
-                            position_3d = row["position_3d"]
-                    except (json.JSONDecodeError, TypeError):
-                        position_3d = []
 
-                # Handle metadata (handle both string and dict)
-                metadata = {}
-                if row.get("metadata"):
-                    try:
-                        if isinstance(row["metadata"], str):
-                            parsed = json.loads(row["metadata"])
-                            metadata = parsed if isinstance(parsed, dict) else {}
-                        elif isinstance(row["metadata"], dict):
-                            metadata = row["metadata"]
-                    except (json.JSONDecodeError, TypeError):
-                        metadata = {}
+                position_3d = self._ensure_list(row.get("position_3d")) or []
+                metadata = self._ensure_dict(row.get("metadata")) or {}
+                tags = self._ensure_list(row.get("tags")) or []
+                tag_confidence = self._ensure_dict(row.get("tag_confidence")) or {}
+                umap_coordinates = self._ensure_list(row.get("umap_coordinates")) or []
+                nearest_chunk_ids = self._ensure_list(row.get("nearest_chunk_ids")) or []
 
-                # Handle tags (handle both string and list)
-                tags = []
-                if row.get("tags"):
-                    try:
-                        if isinstance(row["tags"], str):
-                            parsed = json.loads(row["tags"])
-                            tags = parsed if isinstance(parsed, list) else []
-                        elif isinstance(row["tags"], list):
-                            tags = row["tags"]
-                    except (json.JSONDecodeError, TypeError):
-                        tags = []
+                timestamp_created = self._parse_timestamp(row.get("timestamp_created"))
+                timestamp_modified = self._parse_timestamp(row.get("timestamp_modified"))
 
-                # Handle tag_confidence (handle both string and dict)
-                tag_confidence = {}
-                if row.get("tag_confidence"):
+                shape_payload = row.get("shape_3d", "sphere")
+                if isinstance(shape_payload, str):
                     try:
-                        if isinstance(row["tag_confidence"], str):
-                            parsed = json.loads(row["tag_confidence"])
-                            tag_confidence = parsed if isinstance(parsed, dict) else {}
-                        elif isinstance(row["tag_confidence"], dict):
-                            tag_confidence = row["tag_confidence"]
-                    except (json.JSONDecodeError, TypeError):
-                        tag_confidence = {}
-                
+                        parsed_shape = json.loads(shape_payload)
+                        shape_payload = parsed_shape
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
+
                 chunk = Chunk(
                     id=row["id"],
                     document_id=row["document_id"],
@@ -234,9 +282,17 @@ class SupabaseStorage:
                     tags=tags,
                     tag_confidence=tag_confidence,
                     reasoning=row.get("reasoning", ""),
-                    shape_3d=row.get("shape_3d", "sphere"),
+                    shape_3d=shape_payload,
                     texture=row.get("texture", "smooth"),
-                    embedding_model=row.get("embedding_model", "")
+                    embedding_model=row.get("embedding_model", ""),
+                    # New semantic layout and clustering fields
+                    umap_coordinates=umap_coordinates,
+                    cluster_id=row.get("cluster_id"),
+                    cluster_confidence=row.get("cluster_confidence"),
+                    cluster_label=row.get("cluster_label"),
+                    nearest_chunk_ids=nearest_chunk_ids,
+                    timestamp_created=timestamp_created,
+                    timestamp_modified=timestamp_modified
                 )
                 chunks.append(chunk)
             return chunks
@@ -263,54 +319,24 @@ class SupabaseStorage:
             for row in result.data:
                 embedding = self._deserialize_embedding(row.get("embedding"))
 
-                # Handle position_3d (handle both string and list)
-                position_3d = []
-                if row.get("position_3d"):
-                    try:
-                        if isinstance(row["position_3d"], str):
-                            parsed = json.loads(row["position_3d"])
-                            position_3d = parsed if isinstance(parsed, list) else []
-                        elif isinstance(row["position_3d"], list):
-                            position_3d = row["position_3d"]
-                    except (json.JSONDecodeError, TypeError):
-                        position_3d = []
+                position_3d = self._ensure_list(row.get("position_3d")) or []
+                metadata = self._ensure_dict(row.get("metadata")) or {}
+                tags = self._ensure_list(row.get("tags")) or []
+                tag_confidence = self._ensure_dict(row.get("tag_confidence")) or {}
+                umap_coordinates = self._ensure_list(row.get("umap_coordinates")) or []
+                nearest_chunk_ids = self._ensure_list(row.get("nearest_chunk_ids")) or []
 
-                # Handle metadata (handle both string and dict)
-                metadata = {}
-                if row.get("metadata"):
-                    try:
-                        if isinstance(row["metadata"], str):
-                            parsed = json.loads(row["metadata"])
-                            metadata = parsed if isinstance(parsed, dict) else {}
-                        elif isinstance(row["metadata"], dict):
-                            metadata = row["metadata"]
-                    except (json.JSONDecodeError, TypeError):
-                        metadata = {}
+                timestamp_created = self._parse_timestamp(row.get("timestamp_created"))
+                timestamp_modified = self._parse_timestamp(row.get("timestamp_modified"))
 
-                # Handle tags (handle both string and list)
-                tags = []
-                if row.get("tags"):
+                shape_payload = row.get("shape_3d", "sphere")
+                if isinstance(shape_payload, str):
                     try:
-                        if isinstance(row["tags"], str):
-                            parsed = json.loads(row["tags"])
-                            tags = parsed if isinstance(parsed, list) else []
-                        elif isinstance(row["tags"], list):
-                            tags = row["tags"]
-                    except (json.JSONDecodeError, TypeError):
-                        tags = []
+                        parsed_shape = json.loads(shape_payload)
+                        shape_payload = parsed_shape
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
 
-                # Handle tag_confidence (handle both string and dict)
-                tag_confidence = {}
-                if row.get("tag_confidence"):
-                    try:
-                        if isinstance(row["tag_confidence"], str):
-                            parsed = json.loads(row["tag_confidence"])
-                            tag_confidence = parsed if isinstance(parsed, dict) else {}
-                        elif isinstance(row["tag_confidence"], dict):
-                            tag_confidence = row["tag_confidence"]
-                    except (json.JSONDecodeError, TypeError):
-                        tag_confidence = {}
-                
                 chunk = Chunk(
                     id=row["id"],
                     document_id=row["document_id"],
@@ -324,9 +350,17 @@ class SupabaseStorage:
                     tags=tags,
                     tag_confidence=tag_confidence,
                     reasoning=row.get("reasoning", ""),
-                    shape_3d=row.get("shape_3d", "sphere"),
+                    shape_3d=shape_payload,
                     texture=row.get("texture", "smooth"),
-                    embedding_model=row.get("embedding_model", "")
+                    embedding_model=row.get("embedding_model", ""),
+                    # New semantic layout and clustering fields
+                    umap_coordinates=umap_coordinates,
+                    cluster_id=row.get("cluster_id"),
+                    cluster_confidence=row.get("cluster_confidence"),
+                    cluster_label=row.get("cluster_label"),
+                    nearest_chunk_ids=nearest_chunk_ids,
+                    timestamp_created=timestamp_created,
+                    timestamp_modified=timestamp_modified
                 )
                 chunks.append(chunk)
             return chunks

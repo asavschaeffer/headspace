@@ -58,6 +58,65 @@ class ProceduralGeometryGenerator {
         // Recalculate normals for proper lighting
         geometry.computeVertexNormals();
 
+        // Scale to match visual expectations
+        geometry.scale(3.4, 3.4, 3.4);
+
+        return geometry;
+    }
+
+    /**
+     * Creates a planetary geometry from a deterministic server-provided signature.
+     * @param {Object} signature - Procedural signature generated server-side.
+     * @returns {THREE.BufferGeometry}
+     */
+    generatePlanetaryGeometryFromSignature(signature) {
+        if (!signature || typeof signature !== 'object') {
+            return new THREE.SphereGeometry(1, this.sphereDetail, this.sphereDetail);
+        }
+
+        const detail = signature.detail ?? this.sphereDetail;
+        const deformationScale = signature.deformation_scale ?? this.deformationScale;
+        const harmonics = Array.isArray(signature.harmonics) ? signature.harmonics : [];
+        const noiseLevels = signature.noise && Array.isArray(signature.noise.levels)
+            ? signature.noise.levels
+            : [];
+        const smoothing = signature.smoothing ?? this.smoothingFactor;
+
+        if (signature.type === 'sphere' || harmonics.length === 0) {
+            const sphereGeometry = new THREE.SphereGeometry(1, detail, detail);
+            const sphereScale = signature.scale ?? 3.4;
+            sphereGeometry.scale(sphereScale, sphereScale, sphereScale);
+            return sphereGeometry;
+        }
+
+        const geometry = new THREE.SphereGeometry(1, detail, detail);
+        const positions = geometry.attributes.position;
+        const vertex = new THREE.Vector3();
+
+        for (let i = 0; i < positions.count; i++) {
+            vertex.fromBufferAttribute(positions, i);
+            const spherical = new THREE.Spherical();
+            spherical.setFromVector3(vertex);
+
+            const deformation = this.calculateSignatureDeformation(
+                spherical.theta,
+                spherical.phi,
+                harmonics,
+                noiseLevels
+            );
+
+            spherical.radius *= (1 + deformation * deformationScale);
+            vertex.setFromSpherical(spherical);
+            positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+        }
+
+        if (smoothing > 0) {
+            this.smoothWithOverrides(geometry, detail, smoothing);
+        }
+        geometry.computeVertexNormals();
+        const targetScale = signature.scale ?? 3.4;
+        geometry.scale(targetScale, targetScale, targetScale);
+
         return geometry;
     }
 
@@ -148,6 +207,50 @@ class ProceduralGeometryGenerator {
         return embedding.map(val => {
             return 2 * ((val - min) / (max - min)) - 1;
         });
+    }
+
+    /**
+     * Calculate deformation using a server-provided signature.
+     */
+    calculateSignatureDeformation(theta, phi, harmonics, noiseLevels) {
+        let deformation = 0;
+
+        for (const harmonic of harmonics) {
+            const frequency = harmonic.frequency ?? 1;
+            const amplitude = harmonic.amplitude ?? 0;
+            const phase = harmonic.phase ?? 0;
+            const variability = harmonic.variability ?? 0;
+
+            const basePattern = Math.sin(frequency * theta + phase) * Math.cos(frequency * phi);
+            deformation += basePattern * amplitude;
+
+            if (variability !== 0) {
+                const variationPattern = Math.sin(frequency * 1.5 * theta + phase) * Math.cos(frequency * 1.5 * phi);
+                deformation += variationPattern * variability * 0.5;
+            }
+        }
+
+        if (noiseLevels.length) {
+            const n1 = (noiseLevels[0] ?? 0) * Math.sin(theta * 2) * Math.cos(phi * 2);
+            const n2 = (noiseLevels[1] ?? 0) * Math.cos(theta * 3) * Math.sin(phi * 3);
+            const n3 = (noiseLevels[2] ?? 0) * Math.sin(theta * 4 + phi);
+            const n4 = (noiseLevels[3] ?? 0) * Math.cos(theta * 5 - phi);
+            deformation += (n1 + n2 + n3 + n4) * 0.12;
+        }
+
+        return deformation;
+    }
+
+    smoothWithOverrides(geometry, detail, smoothing) {
+        const originalDetail = this.sphereDetail;
+        const originalSmoothing = this.smoothingFactor;
+
+        this.sphereDetail = detail;
+        this.smoothingFactor = smoothing;
+        this.smoothGeometry(geometry);
+
+        this.sphereDetail = originalDetail;
+        this.smoothingFactor = originalSmoothing;
     }
 
     /**

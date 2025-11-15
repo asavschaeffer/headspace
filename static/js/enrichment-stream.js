@@ -147,14 +147,22 @@ class EnrichmentStreamListener {
     }
 }
 
+let geometryGeneratorInstance = null;
+function getGeometryGenerator() {
+    if (!geometryGeneratorInstance && typeof window !== 'undefined' && window.ProceduralGeometryGenerator) {
+        geometryGeneratorInstance = new window.ProceduralGeometryGenerator();
+    }
+    return geometryGeneratorInstance;
+}
+
 /**
  * Shape Morphing Animation
  * Animates the transformation of a chunk's geometry from placeholder sphere to final deformed shape
  */
 class ShapeMorphingAnimator {
-    constructor(chunkMesh, targetEmbedding, duration = 1500) {
+    constructor(chunkMesh, targetSignature, duration = 1500) {
         this.mesh = chunkMesh;
-        this.targetEmbedding = targetEmbedding;
+        this.targetSignature = targetSignature;
         this.duration = duration; // milliseconds
         this.startTime = null;
         this.originalGeometry = null;
@@ -177,12 +185,22 @@ class ShapeMorphingAnimator {
             // Store original geometry
             this.originalGeometry = this.mesh.geometry.clone();
 
-            // Generate target geometry from embedding
-            this.targetGeometry = this.geometryGenerator.generatePlanetaryGeometry(this.targetEmbedding);
+            // Generate target geometry from server signature
+            if (this.targetSignature && typeof this.targetSignature === 'object' &&
+                typeof this.geometryGenerator.generatePlanetaryGeometryFromSignature === 'function') {
+                this.targetGeometry = this.geometryGenerator.generatePlanetaryGeometryFromSignature(this.targetSignature);
+            } else if (Array.isArray(this.targetSignature) && this.targetSignature.length) {
+                this.targetGeometry = this.geometryGenerator.generatePlanetaryGeometry(this.targetSignature);
+            } else {
+                this.targetGeometry = this.geometryGenerator.generatePlanetaryGeometry([]);
+            }
 
             // Ensure both geometries have same vertex count
             if (this.originalGeometry.attributes.position.count !== this.targetGeometry.attributes.position.count) {
                 console.warn('Geometry vertex count mismatch, using target geometry directly');
+                if (this.mesh.geometry && typeof this.mesh.geometry.dispose === 'function') {
+                    this.mesh.geometry.dispose();
+                }
                 this.mesh.geometry = this.targetGeometry;
                 resolve();
                 return;
@@ -202,7 +220,14 @@ class ShapeMorphingAnimator {
                     this.animationFrameId = requestAnimationFrame(animate);
                 } else {
                     this.isAnimating = false;
+                    if (this.mesh.geometry && typeof this.mesh.geometry.dispose === 'function') {
+                        this.mesh.geometry.dispose();
+                    }
                     this.mesh.geometry = this.targetGeometry;
+                    if (this.originalGeometry && typeof this.originalGeometry.dispose === 'function') {
+                        this.originalGeometry.dispose();
+                        this.originalGeometry = null;
+                    }
                     resolve();
                 }
             };
@@ -274,7 +299,7 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
         docId,
         // onChunkEnriched - Update shape with new embedding
         async (chunkData) => {
-            const { chunk_id, embedding, color, position_3d, umap_coordinates, stage } = chunkData;
+            const { chunk_id, color, position_3d, umap_coordinates, stage, shape_3d } = chunkData;
 
             // Get the mesh for this chunk
             const mesh = chunkMeshMap.get(chunk_id);
@@ -286,8 +311,14 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
             console.log(`🎨 Morphing shape for chunk ${chunk_id}`);
 
             // Update color
-            if (mesh.material && mesh.material.color) {
+            if (color && mesh.material && mesh.material.color) {
                 mesh.material.color.setStyle(color);
+                if (mesh.material.emissive && typeof THREE !== 'undefined') {
+                    const emissiveColor = new THREE.Color(color);
+                    emissiveColor.multiplyScalar(0.25);
+                    mesh.material.emissive.copy(emissiveColor);
+                }
+                mesh.material.needsUpdate = true;
             }
 
             // Update position
@@ -297,11 +328,40 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                 mesh.position.set(umap_coordinates[0], umap_coordinates[1], umap_coordinates[2]);
             }
 
-            if (stage === 'chunk_enriched' && embedding && embedding.length) {
+            mesh.userData = {
+                ...mesh.userData,
+                shapeSignature: shape_3d || mesh.userData?.shapeSignature,
+            };
+            if (mesh.userData && mesh.userData.chunk) {
+                mesh.userData.chunk = {
+                    ...mesh.userData.chunk,
+                    color: color || mesh.userData.chunk.color,
+                    position_3d: position_3d || mesh.userData.chunk.position_3d,
+                    umap_coordinates: umap_coordinates || mesh.userData.chunk.umap_coordinates,
+                    shape_3d: shape_3d || mesh.userData.chunk.shape_3d,
+                };
+            }
+
+            if (shape_3d && stage === 'chunk_enriched') {
                 // Morph geometry from placeholder to final shape
-                const animator = new ShapeMorphingAnimator(mesh, embedding);
+                const animator = new ShapeMorphingAnimator(mesh, shape_3d);
                 await animator.start();
                 addShapeCompletionGlow(mesh);
+            } else if (shape_3d && stage === 'chunk_layout_updated') {
+                const generator = getGeometryGenerator();
+                if (generator && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
+                    try {
+                        const newGeometry = generator.generatePlanetaryGeometryFromSignature(shape_3d);
+                        if (newGeometry) {
+                            if (mesh.geometry && typeof mesh.geometry.dispose === 'function') {
+                                mesh.geometry.dispose();
+                            }
+                            mesh.geometry = newGeometry;
+                        }
+                    } catch (error) {
+                        console.warn('Failed to update geometry during layout stage', error);
+                    }
+                }
             }
         },
 

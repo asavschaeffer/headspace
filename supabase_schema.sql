@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS chunks (
     shape_3d TEXT DEFAULT 'sphere',
     texture TEXT DEFAULT 'smooth',
     embedding_model TEXT DEFAULT '',  -- Track which model generated the embedding
+    -- Semantic layout and clustering fields
+    umap_coordinates JSONB,  -- UMAP-reduced 2D coordinates [x, y]
+    cluster_id INTEGER,  -- HDBSCAN cluster assignment
+    cluster_confidence REAL,  -- Confidence score for cluster assignment (0.0-1.0)
+    cluster_label TEXT,  -- Human-readable cluster name/label
+    nearest_chunk_ids JSONB DEFAULT '[]',  -- List of semantically nearest chunk IDs
+    timestamp_created TIMESTAMPTZ DEFAULT NOW(),  -- When chunk was created
+    timestamp_modified TIMESTAMPTZ DEFAULT NOW(),  -- When chunk was last modified
     CONSTRAINT fk_document FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
     -- Note: No foreign key to auth.users since user_id is TEXT (supports "anonymous" and custom IDs)
     -- Row Level Security (RLS) policies below handle user isolation
@@ -87,6 +95,8 @@ CREATE TABLE IF NOT EXISTS attachments (
 CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_user ON chunks(user_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_cluster ON chunks(cluster_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_created ON chunks(timestamp_created DESC);
 CREATE INDEX IF NOT EXISTS idx_connections_from ON connections(from_chunk_id);
 CREATE INDEX IF NOT EXISTS idx_connections_to ON connections(to_chunk_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_chunk ON attachments(chunk_id);

@@ -7,7 +7,7 @@ import requests
 import asyncio
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, HTTPException, File, UploadFile, WebSocket, Depends, Request, BackgroundTasks, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -165,7 +165,7 @@ async def enrich_document_background(processor, doc_id: str):
             doc_id=doc_id,
             total_chunks=total_chunks,
             progress=0,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         ))
 
         loop = asyncio.get_running_loop()
@@ -186,9 +186,10 @@ async def enrich_document_background(processor, doc_id: str):
                 cluster_confidence=chunk.cluster_confidence,
                 cluster_label=chunk.cluster_label,
                 nearest_chunk_ids=chunk.nearest_chunk_ids,
+                shape_3d=chunk.shape_3d,
                 progress=progress,
                 total_chunks=total,
-                timestamp=datetime.now().isoformat()
+                timestamp=datetime.now(timezone.utc).isoformat()
             )
             loop.create_task(enrichment_event_bus.emit(event))
 
@@ -199,7 +200,7 @@ async def enrich_document_background(processor, doc_id: str):
             doc_id=doc_id,
             progress=100,
             total_chunks=total_chunks,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         ))
         processor.monitor.logger.info(f"✅ Document {doc_id} enrichment complete")
 
@@ -211,7 +212,7 @@ async def enrich_document_background(processor, doc_id: str):
             event_type="error",
             doc_id=doc_id,
             error=str(e),
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         ))
         doc = processor.db.get_document(doc_id)
         if doc:
@@ -362,8 +363,8 @@ async def get_visualization_data(
                 color=chunk.color,
                 tags=chunk.tags,
                 reasoning=chunk.reasoning,
-                shape_3d=processor._get_shape_from_tags(chunk.tags),
-                embedding=chunk.embedding,  # Include embedding for procedural geometry
+                shape_3d=chunk.shape_3d,
+                embedding=chunk.embedding,
                 metadata=chunk.metadata,
                 cluster_id=chunk.cluster_id,
                 cluster_confidence=chunk.cluster_confidence,

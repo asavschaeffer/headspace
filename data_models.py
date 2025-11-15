@@ -1,6 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import List, Dict, Any, Optional, Union
+from datetime import datetime, timezone
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
 
 class Document(BaseModel):
     id: str
@@ -27,11 +31,11 @@ class Chunk(BaseModel):
     tags: List[str] = Field(default_factory=list)
     tag_confidence: Dict[str, float] = Field(default_factory=dict)
     texture: str = "smooth"
-    shape_3d: str = "sphere"
+    shape_3d: Any = Field(default_factory=lambda: {"type": "sphere"})
     reasoning: str = ""
     embedding_model: str = ""
-    timestamp_created: datetime = Field(default_factory=datetime.now)
-    timestamp_modified: datetime = Field(default_factory=datetime.now)
+    timestamp_created: datetime = Field(default_factory=_now_utc)
+    timestamp_modified: datetime = Field(default_factory=_now_utc)
     cluster_id: Optional[int] = None
     cluster_confidence: Optional[float] = None
     cluster_label: Optional[str] = None

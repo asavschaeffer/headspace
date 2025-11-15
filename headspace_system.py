@@ -13,7 +13,7 @@ import time
 import requests
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Union
 from data_models import Document, Chunk, ChunkConnection
 import asyncio
 from fastapi import FastAPI, HTTPException, File, UploadFile, WebSocket, Request
@@ -611,7 +611,7 @@ class ChunkResponse(BaseModel):
     color: str
     tags: List[str]
     reasoning: str
-    shape_3d: str
+    shape_3d: Union[str, Dict[str, Any]]
     metadata: Dict = {}
 
 class DocumentResponse(BaseModel):
@@ -982,7 +982,7 @@ async def get_visualization_data():
                 color=chunk.color,
                 tags=chunk.tags,
                 reasoning=chunk.reasoning,
-                shape_3d=processor._get_shape_from_tags(chunk.tags),
+                shape_3d=chunk.shape_3d,
                 metadata=chunk.metadata
             ))
 

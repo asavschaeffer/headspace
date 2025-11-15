@@ -3,7 +3,7 @@ API Models for Headspace System
 Pydantic models for request/response validation
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union, Any
 from pydantic import BaseModel, Field, validator
 
 
@@ -18,7 +18,7 @@ class ChunkResponse(BaseModel):
     color: str
     tags: List[str] = Field(default_factory=list)
     reasoning: str
-    shape_3d: str
+    shape_3d: Union[str, Dict[str, Any]]
     embedding: List[float] = Field(default_factory=list)  # Embedding vector for procedural geometry
     metadata: Dict = Field(default_factory=dict)
     cluster_id: Optional[int] = None

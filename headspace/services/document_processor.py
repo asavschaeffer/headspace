@@ -7,11 +7,12 @@ import time
 import math
 import hashlib
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Callable
 from sklearn.neighbors import NearestNeighbors
 from sklearn.feature_extraction.text import TfidfVectorizer
 from data_models import Document, Chunk, ChunkConnection
+from headspace.services.shape_signature import ShapeSignatureBuilder
 
 
 class DocumentProcessor:
@@ -57,6 +58,7 @@ class DocumentProcessor:
         self.llm_chunker = llm_chunker
         self.config_manager = config_manager
         self.monitor = monitor
+        self.shape_generator = ShapeSignatureBuilder()
 
     def _chunk_document(self, content: str, doc_type: str) -> List[Dict]:
         """Chunk content into structured segments using configured strategy."""
@@ -112,14 +114,14 @@ class DocumentProcessor:
 
     def create_document_placeholders(self, title: str, content: str, doc_type: str = "text") -> tuple[str, List[Chunk]]:
         """Create a document and chunk placeholders prior to enrichment."""
-        doc_id = hashlib.md5(f"{title}{datetime.now().isoformat()}".encode()).hexdigest()[:12]
+        doc_id = hashlib.md5(f"{title}{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()[:12]
         document = Document(
             id=doc_id,
             title=title,
             content=content,
             doc_type=doc_type,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             metadata={
                 "word_count": len(content.split()),
                 "status": "processing",
@@ -158,7 +160,7 @@ class DocumentProcessor:
             saved_chunks.append(placeholder)
 
         document.metadata["chunk_count"] = len(chunks_data)
-        document.updated_at = datetime.now()
+        document.updated_at = datetime.now(timezone.utc)
         self.db.save_document(document)
 
         self._create_sequential_connections(saved_chunks)
@@ -217,17 +219,22 @@ class DocumentProcessor:
             position_vector = positions_3d[i].tolist()
 
             chunk.embedding = embedding_vector
-            chunk.position_3d = position_vector
-            chunk.umap_coordinates = position_vector
             chunk.color = self._get_chunk_color(embedding_vector)
             chunk.tags = list(tag_results.keys())
             chunk.tag_confidence = tag_results
+            shape_signature = self.shape_generator.build(embedding_vector, chunk.id, chunk.tags)
+            chunk.shape_3d = shape_signature
+            if isinstance(shape_signature, dict):
+                chunk.texture = shape_signature.get("texture", chunk.texture)
+            chunk.position_3d = position_vector
+            chunk.umap_coordinates = position_vector
             chunk.embedding_model = self.embedder.model_name
             chunk.metadata = {
                 **chunk.metadata,
                 "status": "enriching",
+                "shape_version": shape_signature["version"] if isinstance(shape_signature, dict) and "version" in shape_signature else chunk.metadata.get("shape_version"),
             }
-            chunk.timestamp_modified = datetime.now()
+            chunk.timestamp_modified = datetime.now(timezone.utc)
             self.db.save_chunk(chunk)
             saved_chunks.append(chunk)
 
@@ -248,9 +255,9 @@ class DocumentProcessor:
 
         # Update document metadata
         document.metadata["status"] = "enriched"
-        document.metadata["enriched_at"] = datetime.now().isoformat()
+        document.metadata["enriched_at"] = datetime.now(timezone.utc).isoformat()
         document.metadata["chunk_count"] = total_chunks
-        document.updated_at = datetime.now()
+        document.updated_at = datetime.now(timezone.utc)
         self.db.save_document(document)
 
     def process_document_instant(self, title: str, content: str, doc_type: str = "text") -> str:
@@ -422,6 +429,7 @@ class DocumentProcessor:
                 chunk.cluster_label = None
                 chunk.nearest_chunk_ids = []
                 chunk.metadata["cluster_label"] = None
+                chunk.timestamp_modified = datetime.now(timezone.utc)
                 self.db.save_chunk(chunk)
             return
 
@@ -433,7 +441,7 @@ class DocumentProcessor:
             return
 
         n_neighbors = max(2, min(5, num_chunks - 1))
-        min_dist = 0.05 if num_chunks <= 10 else 0.1
+        min_dist = 0.5
 
         try:
             reducer = umap.UMAP(
@@ -443,34 +451,35 @@ class DocumentProcessor:
                 min_dist=min_dist,
                 random_state=42,
             )
-            umap_coords = reducer.fit_transform(embeddings_array)
+            raw_umap_coords = reducer.fit_transform(embeddings_array)
         except Exception as exc:
             self.monitor.logger.warning(f"UMAP computation failed ({exc}); retaining PCA layout.")
             if fallback_positions is not None:
-                umap_coords = np.array(fallback_positions, dtype=np.float32)
+                raw_umap_coords = np.array(fallback_positions, dtype=np.float32)
             else:
                 return
 
-        if umap_coords.shape[1] != 3:
+        if raw_umap_coords.shape[1] != 3:
             self.monitor.logger.debug("UMAP did not return 3D coordinates; using fallback positions.")
             if fallback_positions is not None:
-                umap_coords = np.array(fallback_positions, dtype=np.float32)
+                raw_umap_coords = np.array(fallback_positions, dtype=np.float32)
             else:
                 return
 
-        ranges = np.ptp(umap_coords, axis=0)
+        scaled_coords = np.array(raw_umap_coords, dtype=np.float32, copy=True)
+        ranges = np.ptp(scaled_coords, axis=0)
         max_range = float(np.max(ranges)) if ranges.size else 0.0
         if max_range <= 1e-6:
             if fallback_positions is not None:
                 self.monitor.logger.debug("UMAP coordinates collapsed; reverting to fallback positions.")
-                umap_coords = np.array(fallback_positions, dtype=np.float32)
+                scaled_coords = np.array(fallback_positions, dtype=np.float32)
             else:
                 self.monitor.logger.debug("UMAP coordinates collapsed and no fallback provided; keeping origin.")
-                umap_coords = np.zeros_like(umap_coords)
+                scaled_coords = np.zeros_like(scaled_coords)
         else:
-            centered = umap_coords - umap_coords.mean(axis=0)
+            centered = scaled_coords - scaled_coords.mean(axis=0)
             scale = 50.0 / max_range
-            umap_coords = centered * scale
+            scaled_coords = centered * scale
 
         min_cluster_size = max(2, min(5, num_chunks))
         min_samples = max(1, min(3, num_chunks // 2 or 1))
@@ -482,7 +491,7 @@ class DocumentProcessor:
                 metric="euclidean",
                 cluster_selection_method="eom",
             )
-            clusterer.fit(umap_coords)
+            clusterer.fit(scaled_coords)
             labels = clusterer.labels_
             probabilities = clusterer.probabilities_
         except Exception as exc:
@@ -523,9 +532,10 @@ class DocumentProcessor:
             cluster_labels = {}
 
         for idx, chunk in enumerate(chunks):
-            coords = umap_coords[idx].tolist()
-            chunk.umap_coordinates = coords
-            chunk.position_3d = coords
+            raw_coords = raw_umap_coords[idx].tolist()
+            scaled = scaled_coords[idx].tolist()
+            chunk.umap_coordinates = raw_coords
+            chunk.position_3d = scaled
 
             label_val = int(labels[idx]) if idx < len(labels) else -1
             if label_val >= 0:
@@ -550,6 +560,9 @@ class DocumentProcessor:
             chunk.nearest_chunk_ids = neighbors[:4]
 
             chunk.metadata["cluster_label"] = chunk.cluster_label
+            chunk.metadata["position_scale"] = 50.0
+            chunk.metadata["umap_min_dist"] = min_dist
+            chunk.timestamp_modified = datetime.now(timezone.utc)
 
             self.db.save_chunk(chunk)
 

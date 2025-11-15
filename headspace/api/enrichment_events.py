@@ -3,7 +3,7 @@ Enrichment Event System for Real-Time Streaming
 Manages WebSocket connections for live embedding calculation feedback
 """
 
-from typing import Dict, List, Set, Callable, Optional
+from typing import Dict, List, Set, Callable, Optional, Any
 from dataclasses import dataclass, asdict
 import asyncio
 import json
@@ -29,6 +29,7 @@ class EnrichmentEvent:
     cluster_label: Optional[str] = None
     umap_coordinates: List[float] = None
     nearest_chunk_ids: List[str] = None
+    shape_3d: Any = None
 
     def to_json(self):
         """Convert to JSON-serializable dict"""

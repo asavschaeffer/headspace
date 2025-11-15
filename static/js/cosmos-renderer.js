@@ -14,6 +14,14 @@ const chunkMeshes = new Map();
 const customObjects = [];
 let frameCount = 0;
 const LOD_UPDATE_INTERVAL = 30;
+let geometryGeneratorInstance = null;
+
+function getGeometryGenerator() {
+    if (!geometryGeneratorInstance && typeof window !== 'undefined' && window.ProceduralGeometryGenerator) {
+        geometryGeneratorInstance = new window.ProceduralGeometryGenerator();
+    }
+    return geometryGeneratorInstance;
+}
 
 function getStatusElement() {
     return document.getElementById('status-text');
@@ -149,36 +157,39 @@ function materialSupportsEmissive(material) {
 
 function createChunkMaterial(chunk) {
     const baseColor = chunk?.color ? new THREE.Color(chunk.color) : new THREE.Color('#748ffc');
-    const emissive = baseColor.clone().multiplyScalar(0.35);
+    const emissive = baseColor.clone().multiplyScalar(0.3);
 
     return new THREE.MeshStandardMaterial({
-        color: new THREE.Color(0xffffff),
-        vertexColors: true,
+        color: baseColor,
+        vertexColors: false,
         emissive,
         emissiveIntensity: 0.55,
-        metalness: 0.15,
-        roughness: 0.7,
+        metalness: 0.2,
+        roughness: 0.65,
         transparent: true,
         opacity: 0.97
     });
 }
 
 function createPlaceholderGeometry(chunk) {
-    const geometry = new THREE.IcosahedronGeometry(3.4, 2);
-    const baseColor = chunk?.color ? new THREE.Color(chunk.color) : new THREE.Color('#88a6ff');
-    const vertexCount = geometry.attributes.position.count;
-    const colors = new Float32Array(vertexCount * 3);
-
-    for (let i = 0; i < vertexCount; i++) {
-        const idx = i * 3;
-        colors[idx] = baseColor.r;
-        colors[idx + 1] = baseColor.g;
-        colors[idx + 2] = baseColor.b;
-    }
-
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geometry.computeVertexNormals();
+    const signature = chunk?.shape_3d && typeof chunk.shape_3d === 'object' ? chunk.shape_3d : {};
+    const detail = signature.detail ?? 16;
+    const scale = signature.scale ?? 3.4;
+    const geometry = new THREE.SphereGeometry(1, detail, detail);
+    geometry.scale(scale, scale, scale);
     return geometry;
+}
+
+function createGeometryForChunk(chunk) {
+    const generator = getGeometryGenerator();
+    if (generator && chunk?.shape_3d && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
+        try {
+            return generator.generatePlanetaryGeometryFromSignature(chunk.shape_3d);
+        } catch (error) {
+            console.warn('Failed to generate geometry from signature', error);
+        }
+    }
+    return createPlaceholderGeometry(chunk);
 }
 
 export function updateCosmosData() {
@@ -197,7 +208,7 @@ export function updateCosmosData() {
 
     const chunks = state.chunks || [];
     chunks.forEach((chunk) => {
-        const geometry = createPlaceholderGeometry(chunk);
+        const geometry = createGeometryForChunk(chunk);
         const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
 
@@ -214,7 +225,8 @@ export function updateCosmosData() {
             chunk,
             chunkId: chunk.id,
             documentId: chunk.document_id,
-            clickHandler: chunk.metadata?.link_url ? () => handleChunkLink(chunk) : null
+            clickHandler: chunk.metadata?.link_url ? () => handleChunkLink(chunk) : null,
+            shapeSignature: chunk.shape_3d
         };
 
         scene.add(mesh);
