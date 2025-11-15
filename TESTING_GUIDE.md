@@ -7,7 +7,7 @@
 python headspace/main.py
 ```
 
-### 2. Test Small Document (Synchronous Enrichment)
+### 2. Test Small Document (Asynchronous Enrichment)
 ```bash
 curl -X POST http://localhost:8000/api/documents \
   -H "Content-Type: application/json" \
@@ -18,9 +18,9 @@ curl -X POST http://localhost:8000/api/documents \
   }'
 ```
 
-**Expected**: Should return `"status": "enriched"` immediately with embeddings ready.
+**Expected**: Returns `"status": "processing"` with an `"id"`. Placeholders appear immediately in the visualization while enrichment runs in the background.
 
-### 3. Test Large Document (Synchronous by Default)
+### 3. Test Large Document
 ```bash
 curl -X POST http://localhost:8000/api/documents \
   -H "Content-Type: application/json" \
@@ -31,7 +31,7 @@ curl -X POST http://localhost:8000/api/documents \
   }'
 ```
 
-**Expected**: Returns `"status": "enriched"` and `"id": "xxx"`. If you re-enable asynchronous enrichment, this response will revert to `"processing"`.
+**Expected**: Returns `"status": "processing"` with the document ID. The websocket stream will report chunk-by-chunk updates.
 
 ### 4. Check Enrichment Status
 ```bash
@@ -39,135 +39,97 @@ curl -X POST http://localhost:8000/api/documents \
 curl http://localhost:8000/api/documents/DOC_ID/status
 ```
 
-**Expected**: Returns enrichment summary:
+**Expected**: Shows progress until enrichment finishes:
 ```json
 {
   "document_id": "...",
-  "status": "enriched",
-  "is_enriched": true,
+  "status": "processing" | "enriched",
+  "is_enriched": false | true,
   "chunks": {
     "total": 20,
-    "enriched": 20,
-    "pending": 0
+    "enriched": <value>,
+    "pending": <value>
   }
 }
 ```
 
-### 5. Test WebSocket Stream (Optional / Async Mode)
+### 5. Test WebSocket Stream (Real-time Updates)
 ```javascript
-// In browser console or Node.js
-const ws = new WebSocket('ws://localhost:8000/ws/enrichment/DOC_ID');
+const docId = "DOC_ID";
+const ws = new WebSocket(`ws://localhost:8000/ws/enrichment/${docId}`);
 
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
   console.log('Enrichment event:', data);
-  
-  if (data.event_type === 'chunk_enriched') {
-    console.log(`Chunk ${data.chunk_index} enriched!`);
-    console.log(`Progress: ${data.progress}%`);
-    console.log(`Embedding dims: ${data.embedding?.length || 0}`);
-  }
-  
-  if (data.event_type === 'completed') {
-    console.log('✅ Enrichment complete!');
-    ws.close();
-  }
-};
-
-ws.onerror = (error) => {
-  console.error('WebSocket error:', error);
 };
 ```
 
-If background enrichment is disabled (default), the socket closes immediately because the document is already enriched. Re-enable asynchronous processing to see chunk-by-chunk events in real time.
+Events:
+- `started` – placeholders queued
+- `chunk_enriched` – embedding + geometry morph for a chunk
+- `chunk_layout_updated` – UMAP/cluster update for final positioning
+- `completed` – all chunks finished
 
 ### 6. Check Server Logs
-Watch for these log messages:
+Watch for:
 ```
-🔄 Starting enrichment for document xxx
-📊 Enriching 20 chunks for document xxx
-✅ Generated 20 embeddings, updating chunks...
-✅ Enriched 20/20 chunks for document xxx
-✅ Document xxx enrichment complete
+🔄 Starting enrichment for document ...
+✅ Generated N embeddings
+✅ Document ... enrichment complete
 ```
 
 ### 7. Verify Embeddings in Database
 ```bash
-# For SQLite (local)
-sqlite3 headspace.db "SELECT id, length(embedding) as embed_size FROM chunks WHERE document_id='DOC_ID' LIMIT 5;"
-
-# For Supabase - check in dashboard Table Editor
+sqlite3 headspace.db "SELECT id, length(embedding) as embed_size FROM chunks WHERE document_id='DOC_ID';"
 ```
 
 ## Expected Behavior
 
-### Small Documents (< 10 chunks)
-- ✅ Instant enrichment
-- ✅ Embeddings available immediately
-- ✅ 3D shapes render correctly
-- ✅ No "No embedding provided" warnings
+### Placeholders
+- Document metadata shows `status: processing`
+- Chunks appear in cosmos with temporary positions/colors
 
-### Large Documents (> 10 chunks)
-- ✅ Instant document creation
-- ✅ Background enrichment starts
-- ✅ WebSocket events stream in real-time
-- ✅ Status endpoint shows progress
-- ✅ Embeddings appear as they're generated
+### During Enrichment
+- Websocket events stream chunk-by-chunk
+- Shapes morph and move as events arrive
+- Progress bar/status text updates in UI
+
+### After Completion
+- Document metadata switches to `status: enriched`
+- Final UMAP positions and clusters are stored
+- Progress reaches 100% and websocket sends `completed`
 
 ## Troubleshooting
 
-### Issue: "No embedding provided" warnings
-**Check**:
-1. Are embeddings being generated? (check logs)
-2. Is enrichment completing? (check status endpoint)
-3. Are chunks being saved? (check database)
+### Issue: No WebSocket Events
+- Confirm document status via `/api/documents/{id}/status`
+- Check server logs for enrichment errors
+- Ensure frontend includes `js/enrichment-stream.js`
 
-### Issue: WebSocket not receiving events
-**Check**:
-1. Is WebSocket connected? (`ws.readyState === 1`)
-2. Is enrichment running? (check logs)
-3. Is doc_id correct? (must match document ID)
+### Issue: Chunks Stay at Placeholder Positions
+- Ensure `chunk_layout_updated` events arrive (check console)
+- Verify backend UMAP dependencies (`umap-learn`, `hdbscan`) are installed
 
-### Issue: Enrichment stuck at 0%
-**Check**:
-1. Is embedding engine working? (check `/api/health/models`)
-2. Are there errors in logs?
-3. Is Supabase connection working? (if using cloud)
+### Issue: Planets Render Black
+- Confirm home planet light and ambient lights are loading (see console warnings)
+- Ensure Three.js scripts load without CDN errors
 
 ## Frontend Integration Example
 
 ```javascript
-// Connect to WebSocket when document is created
-async function createDocument(title, content) {
+async function createThought(title, content) {
   const response = await fetch('/api/documents', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, content, doc_type: 'text' })
   });
-  
   const { id, status } = await response.json();
-  
+
+  await refreshCosmos(id); // fetch placeholders
   if (status === 'processing') {
-    // Connect to WebSocket for real-time updates
-    const ws = new WebSocket(`ws://localhost:8000/ws/enrichment/${id}`);
-    
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      
-      if (data.event_type === 'chunk_enriched') {
-        // Update 3D visualization with new chunk
-        updateChunkInVisualization(data);
-      }
-      
-      if (data.event_type === 'completed') {
-        // Refresh entire visualization
-        refreshVisualization();
-        ws.close();
-      }
-    };
+    const chunkMeshes = getChunkMeshes();
+    window.startEnrichmentStreaming(id, chunkMeshes);
   }
-  
-  return id;
 }
 ```
 

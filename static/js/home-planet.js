@@ -61,6 +61,11 @@ class HomePlanetGenerator {
             spark.scale.setScalar(pulse);
         };
 
+        // Add lighting emanating from the peak
+        const peakLight = new THREE.PointLight(0xffffff, 1.8, 220, 2);
+        peakLight.position.set(0, this.sphereRadius + this.peakHeight * 0.8, 0);
+        group.add(peakLight);
+
         // Create animated fog particles around planet
         const fogParticles = this.createFogParticles();
         group.add(fogParticles);

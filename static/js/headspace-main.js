@@ -179,10 +179,19 @@ async function handleThoughtSubmit(event) {
     try {
         const result = await createDocumentViaApi(title, content);
         const docId = result.id;
-        setStatus('Sculpting its planetary shell…');
+        const status = result.status || 'enriched';
+
+        setStatus(status === 'processing' ? 'Awaiting live enrichment…' : 'Sculpting its planetary shell…');
         await refreshCosmos(docId);
+
+        const chunkMeshes = getChunkMeshes();
+        if (status === 'processing' && window.startEnrichmentStreaming) {
+            window.startEnrichmentStreaming(docId, chunkMeshes);
+        } else {
+            setStatus('Thought anchored in orbit ✨');
+        }
+
         closeModal(true);
-        setStatus('Thought anchored in orbit ✨');
     } catch (error) {
         console.error('Failed to create document', error);
         showFeedback('Launch failed. Please try again.');

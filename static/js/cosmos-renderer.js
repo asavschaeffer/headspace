@@ -64,6 +64,8 @@ export async function initCosmos() {
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
 
     // Controls
     controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -139,6 +141,10 @@ function createStarfield() {
     const stars = new THREE.Points(geometry, material);
     stars.name = 'starfield';
     scene.add(stars);
+}
+
+function materialSupportsEmissive(material) {
+    return material && ('emissive' in material) && ('emissiveIntensity' in material);
 }
 
 function createChunkMaterial(chunk) {
@@ -292,7 +298,7 @@ function animateCosmos(time = 0) {
     chunkMeshes.forEach((mesh, index) => {
         mesh.rotation.y += 0.0008;
         mesh.rotation.x += 0.0004;
-        if (mesh.material) {
+        if (materialSupportsEmissive(mesh.material)) {
             const pulse = Math.sin(time * 0.0012 + index * 0.15) * 0.1 + 0.45;
             mesh.material.emissiveIntensity = pulse;
         }
@@ -340,7 +346,7 @@ function onCosmosMouseMove(event) {
 
     if (hoveredMesh && hoveredMesh !== selectedMesh) {
         hoveredMesh.scale.setScalar(1.0);
-        if (hoveredMesh.material) {
+        if (materialSupportsEmissive(hoveredMesh.material)) {
             hoveredMesh.material.emissiveIntensity = 0.45;
         }
         hoveredMesh = null;
@@ -351,7 +357,7 @@ function onCosmosMouseMove(event) {
         if (chunkMeshes.has(mesh.userData?.chunkId)) {
             if (mesh !== selectedMesh) {
                 mesh.scale.setScalar(1.4);
-                if (mesh.material) {
+                if (materialSupportsEmissive(mesh.material)) {
                     mesh.material.emissiveIntensity = 1.2;
                 }
             }
@@ -383,7 +389,7 @@ function onCosmosClick(event) {
 
     if (selectedMesh) {
         selectedMesh.scale.setScalar(1.0);
-        if (selectedMesh.material) {
+        if (materialSupportsEmissive(selectedMesh.material)) {
             selectedMesh.material.emissiveIntensity = 0.45;
         }
         selectedMesh = null;
@@ -399,7 +405,7 @@ function onCosmosClick(event) {
         if (chunkMeshes.has(mesh.userData?.chunkId)) {
             selectedMesh = mesh;
             mesh.scale.setScalar(1.7);
-            if (mesh.material) {
+            if (materialSupportsEmissive(mesh.material)) {
                 mesh.material.emissiveIntensity = 1.5;
             }
             showCosmosInfo(mesh.userData.chunk || mesh.userData);

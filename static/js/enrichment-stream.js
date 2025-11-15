@@ -67,7 +67,20 @@ class EnrichmentStreamListener {
      * Handle incoming enrichment events
      */
     handleEvent(eventData) {
-        const { event_type, doc_id, chunk_id, chunk_index, embedding, color, position_3d, progress, total_chunks, error, timestamp } = eventData;
+        const {
+            event_type,
+            doc_id,
+            chunk_id,
+            chunk_index,
+            embedding,
+            color,
+            position_3d,
+            umap_coordinates,
+            progress,
+            total_chunks,
+            error,
+            timestamp
+        } = eventData;
 
         console.log(`📡 Event: ${event_type} (${progress}% complete)`);
 
@@ -80,6 +93,7 @@ class EnrichmentStreamListener {
                 break;
 
             case 'chunk_enriched':
+            case 'chunk_layout_updated':
                 console.log(`✨ Chunk ${chunk_index} enriched:`, { chunk_id, embedding_dims: embedding.length, color });
                 if (this.onChunkEnriched) {
                     this.onChunkEnriched({
@@ -88,10 +102,12 @@ class EnrichmentStreamListener {
                         embedding,
                         color,
                         position_3d,
-                        timestamp
+                        umap_coordinates,
+                        timestamp,
+                        stage: event_type
                     });
                 }
-                if (this.onProgress) {
+                if (this.onProgress && event_type === 'chunk_enriched') {
                     this.onProgress(progress, total_chunks);
                 }
                 break;
@@ -258,7 +274,7 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
         docId,
         // onChunkEnriched - Update shape with new embedding
         async (chunkData) => {
-            const { chunk_id, embedding, color, position_3d } = chunkData;
+            const { chunk_id, embedding, color, position_3d, umap_coordinates, stage } = chunkData;
 
             // Get the mesh for this chunk
             const mesh = chunkMeshMap.get(chunk_id);
@@ -275,14 +291,18 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
             }
 
             // Update position
-            mesh.position.set(position_3d[0], position_3d[1], position_3d[2]);
+            if (position_3d && position_3d.length === 3) {
+                mesh.position.set(position_3d[0], position_3d[1], position_3d[2]);
+            } else if (umap_coordinates && umap_coordinates.length === 3) {
+                mesh.position.set(umap_coordinates[0], umap_coordinates[1], umap_coordinates[2]);
+            }
 
-            // Morph geometry from placeholder to final shape
-            const animator = new ShapeMorphingAnimator(mesh, embedding);
-            await animator.start();
-
-            // Add glow effect on completion
-            addShapeCompletionGlow(mesh);
+            if (stage === 'chunk_enriched' && embedding && embedding.length) {
+                // Morph geometry from placeholder to final shape
+                const animator = new ShapeMorphingAnimator(mesh, embedding);
+                await animator.start();
+                addShapeCompletionGlow(mesh);
+            }
         },
 
         // onProgress - Update progress indicator
@@ -327,7 +347,7 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
  * Add completion glow effect to a mesh
  */
 function addShapeCompletionGlow(mesh) {
-    if (!mesh.material) return;
+    if (!mesh.material || !('emissive' in mesh.material) || !('emissiveIntensity' in mesh.material)) return;
 
     // Temporarily brighten the material
     const originalEmissive = mesh.material.emissive?.getHex ? mesh.material.emissive.getHex() : 0x000000;

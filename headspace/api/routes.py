@@ -153,128 +153,71 @@ async def detailed_health(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def enrich_document_background(processor, doc_id: str, content: str, doc_type: str):
+async def enrich_document_background(processor, doc_id: str):
     """Background task to enrich document chunks with embeddings and tags"""
     try:
         processor.monitor.logger.info(f"🔄 Starting enrichment for document {doc_id}")
+        existing_chunks = processor.db.get_chunks_by_document(doc_id)
+        total_chunks = len(existing_chunks)
 
-        # Emit enrichment started event
         await enrichment_event_bus.emit(EnrichmentEvent(
             event_type="started",
             doc_id=doc_id,
+            total_chunks=total_chunks,
+            progress=0,
             timestamp=datetime.now().isoformat()
         ))
 
-        # Get existing chunks created by instant processor
-        chunks = processor.db.get_chunks_by_document(doc_id)
+        loop = asyncio.get_running_loop()
 
-        if not chunks:
-            processor.monitor.logger.warning(f"No chunks found for document {doc_id}")
-            return
-
-        processor.monitor.logger.info(f"📊 Enriching {len(chunks)} chunks for document {doc_id}")
-
-        # Extract chunk texts for batch processing
-        chunk_texts = [chunk.content for chunk in chunks]
-
-        # Generate embeddings for all chunks at once (more efficient)
-        try:
-            embeddings = processor.embedder.generate_embeddings(chunk_texts)
-            positions_3d = processor._calculate_3d_positions(embeddings)
-
-            processor.monitor.logger.info(f"✅ Generated {len(embeddings)} embeddings, updating chunks...")
-
-            # Update each chunk with its embedding and calculated position
-            enriched_count = 0
-            for i, chunk in enumerate(chunks):
-                # Generate tags (non-blocking, can fail silently)
-                try:
-                    tag_results = processor.tag_engine.generate_tags(chunk.content)
-                    tags = tag_results.get('keywords', [])
-                except Exception as tag_error:
-                    processor.monitor.logger.debug(f"Tag generation failed for chunk {i}: {tag_error}")
-                    tags = []
-
-                # Generate color from embedding
-                color = processor._get_chunk_color(embeddings[i].tolist())
-                embedding_list = embeddings[i].tolist()
-
-                # Update chunk with enriched data
-                chunk.embedding = embedding_list
-                chunk.position_3d = positions_3d[i].tolist()
-                chunk.color = color
-                chunk.metadata = {
-                    **chunk.metadata,
-                    "status": "enriched",
-                    "tags": tags
-                }
-                processor.db.save_chunk(chunk)
-                enriched_count += 1
-
-                # Emit event for each enriched chunk (for real-time visualization)
-                await enrichment_event_bus.emit(EnrichmentEvent(
-                    event_type="chunk_enriched",
-                    doc_id=doc_id,
-                    chunk_id=chunk.id,
-                    chunk_index=i,
-                    embedding=embedding_list,
-                    color=color,
-                    position_3d=chunk.position_3d,
-                    progress=int((enriched_count / len(chunks)) * 100),
-                    total_chunks=len(chunks),
-                    timestamp=datetime.now().isoformat()
-                ))
-
-                # Log progress for large documents
-                if (i + 1) % 10 == 0:
-                    processor.monitor.logger.debug(f"  Progress: {i + 1}/{len(chunks)} chunks enriched")
-
-            processor._apply_semantic_layout(chunks, embeddings, fallback_positions=positions_3d)
-            processor.monitor.logger.info(f"✅ Enriched {enriched_count}/{len(chunks)} chunks for document {doc_id}")
-
-        except Exception as e:
-            processor.monitor.logger.error(f"❌ Enrichment failed for {doc_id}: {e}")
-            import traceback
-            processor.monitor.logger.error(traceback.format_exc())
-
-            # Emit error event
-            await enrichment_event_bus.emit(EnrichmentEvent(
-                event_type="error",
+        def chunk_callback(chunk, index, total, stage):
+            event_type = "chunk_enriched" if stage == "embedding" else "chunk_layout_updated"
+            progress = int(((index + 1) / total) * 100) if stage == "embedding" and total > 0 else 100
+            event = EnrichmentEvent(
+                event_type=event_type,
                 doc_id=doc_id,
-                error=str(e),
+                chunk_id=chunk.id,
+                chunk_index=chunk.chunk_index,
+                embedding=chunk.embedding,
+                color=chunk.color,
+                position_3d=chunk.position_3d,
+                umap_coordinates=chunk.umap_coordinates,
+                cluster_id=chunk.cluster_id,
+                cluster_confidence=chunk.cluster_confidence,
+                cluster_label=chunk.cluster_label,
+                nearest_chunk_ids=chunk.nearest_chunk_ids,
+                progress=progress,
+                total_chunks=total,
                 timestamp=datetime.now().isoformat()
-            ))
+            )
+            loop.create_task(enrichment_event_bus.emit(event))
 
-            # Update document status to indicate failure
-            doc = processor.db.get_document(doc_id)
-            if doc:
-                doc.metadata["status"] = "enrichment_failed"
-                doc.metadata["error"] = str(e)
-                processor.db.save_document(doc)
-            return
+        processor.enrich_document(doc_id, chunk_callback=chunk_callback)
 
-        # Update document status
-        doc = processor.db.get_document(doc_id)
-        if doc:
-            doc.metadata["status"] = "enriched"
-            doc.metadata["enriched_at"] = datetime.now().isoformat()
-            processor.db.save_document(doc)
-
-            # Emit completion event
-            await enrichment_event_bus.emit(EnrichmentEvent(
-                event_type="completed",
-                doc_id=doc_id,
-                progress=100,
-                total_chunks=len(chunks),
-                timestamp=datetime.now().isoformat()
-            ))
-
-            processor.monitor.logger.info(f"✅ Document {doc_id} enrichment complete")
+        await enrichment_event_bus.emit(EnrichmentEvent(
+            event_type="completed",
+            doc_id=doc_id,
+            progress=100,
+            total_chunks=total_chunks,
+            timestamp=datetime.now().isoformat()
+        ))
+        processor.monitor.logger.info(f"✅ Document {doc_id} enrichment complete")
 
     except Exception as e:
         processor.monitor.logger.error(f"❌ Background enrichment failed for {doc_id}: {e}")
         import traceback
         processor.monitor.logger.error(traceback.format_exc())
+        await enrichment_event_bus.emit(EnrichmentEvent(
+            event_type="error",
+            doc_id=doc_id,
+            error=str(e),
+            timestamp=datetime.now().isoformat()
+        ))
+        doc = processor.db.get_document(doc_id)
+        if doc:
+            doc.metadata["status"] = "enrichment_failed"
+            doc.metadata["error"] = str(e)
+            processor.db.save_document(doc)
 
 
 @router.post("/api/documents")
@@ -283,20 +226,22 @@ async def create_document(
     processor=Depends(get_processor),
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
-    """Create a new document with full synchronous enrichment and embeddings via Gemini"""
+    """Create a new document and schedule enrichment in the background"""
     try:
         processor.monitor.logger.info(f"📄 Creating document: {doc.title}")
         processor.monitor.logger.debug(f"Content size: {len(doc.content)} chars, type: {doc.doc_type}")
 
-        # Always use synchronous processing with Gemini embeddings
-        # This ensures embeddings are generated immediately and stored correctly
-        doc_id = processor.process_document(doc.title, doc.content, doc.doc_type)
+        doc_id, placeholders = processor.create_document_placeholders(doc.title, doc.content, doc.doc_type)
+        total_chunks = len(placeholders)
+        processor.monitor.logger.info(f"🌱 Document {doc_id} queued for enrichment ({total_chunks} chunks)")
 
-        processor.monitor.logger.info(f"✅ Document created and enriched: {doc_id}")
+        background_tasks.add_task(enrich_document_background, processor, doc_id)
+
         return {
             "id": doc_id,
-            "status": "enriched",
-            "message": "Document created and enriched with Gemini embeddings"
+            "status": "processing",
+            "chunks": total_chunks,
+            "message": "Document accepted. Enrichment in progress."
         }
     except Exception as e:
         processor.monitor.logger.error(f"❌ Failed to create document: {e}", exc_info=True)
