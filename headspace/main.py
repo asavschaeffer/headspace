@@ -38,7 +38,7 @@ from llm_chunker import LLMChunker
 # Use persistent disk path on Render, fallback to local path
 # DATABASE_PATH is set via environment variable in render.yaml
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "headspace.db")
-DOCUMENTS_FOLDER = os.environ.get("DOCUMENTS_FOLDER", "documents")
+DOCUMENTS_FOLDER = os.environ.get("DOCUMENTS_FOLDER", "documents_disabled")
 STATIC_FOLDER = "static"
 
 # Ensure folders exist
@@ -300,14 +300,14 @@ def create_app():
     app.mount("/static", StaticFiles(directory=STATIC_FOLDER, html=True), name="static")
 
     # Load initial documents
-    load_all_documents(db, processor)
+    # load_all_documents(db, processor)
     
     # Create seed/demo data if database is empty
-    existing_docs = db.get_all_documents()
-    if not existing_docs:
-        print("\n🌱 Database is empty, creating demo content...")
-        from seed_data import create_seed_documents
-        create_seed_documents(processor, db)
+    #existing_docs = db.get_all_documents()
+    #if not existing_docs:
+        #print("\n🌱 Database is empty, creating demo content...")
+        #from seed_data import create_seed_documents
+        #create_seed_documents(processor, db)
 
     return app
 
