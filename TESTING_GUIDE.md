@@ -20,7 +20,7 @@ curl -X POST http://localhost:8000/api/documents \
 
 **Expected**: Should return `"status": "enriched"` immediately with embeddings ready.
 
-### 3. Test Large Document (Background Enrichment)
+### 3. Test Large Document (Synchronous by Default)
 ```bash
 curl -X POST http://localhost:8000/api/documents \
   -H "Content-Type: application/json" \
@@ -31,7 +31,7 @@ curl -X POST http://localhost:8000/api/documents \
   }'
 ```
 
-**Expected**: Should return `"status": "processing"` and `"id": "xxx"`.
+**Expected**: Returns `"status": "enriched"` and `"id": "xxx"`. If you re-enable asynchronous enrichment, this response will revert to `"processing"`.
 
 ### 4. Check Enrichment Status
 ```bash
@@ -39,21 +39,21 @@ curl -X POST http://localhost:8000/api/documents \
 curl http://localhost:8000/api/documents/DOC_ID/status
 ```
 
-**Expected**: Returns enrichment progress:
+**Expected**: Returns enrichment summary:
 ```json
 {
   "document_id": "...",
-  "status": "processing" or "enriched",
-  "is_enriched": false or true,
+  "status": "enriched",
+  "is_enriched": true,
   "chunks": {
     "total": 20,
-    "enriched": 0-20,
-    "pending": 20-0
+    "enriched": 20,
+    "pending": 0
   }
 }
 ```
 
-### 5. Test WebSocket Stream (Real-time Updates)
+### 5. Test WebSocket Stream (Optional / Async Mode)
 ```javascript
 // In browser console or Node.js
 const ws = new WebSocket('ws://localhost:8000/ws/enrichment/DOC_ID');
@@ -78,6 +78,8 @@ ws.onerror = (error) => {
   console.error('WebSocket error:', error);
 };
 ```
+
+If background enrichment is disabled (default), the socket closes immediately because the document is already enriched. Re-enable asynchronous processing to see chunk-by-chunk events in real time.
 
 ### 6. Check Server Logs
 Watch for these log messages:

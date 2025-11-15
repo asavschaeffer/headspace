@@ -64,7 +64,8 @@
 ### Modified Files:
 - `headspace/main.py` - Added seed data initialization
 - `headspace/api/routes.py` - Added storage status endpoint
-- `static/headspace.html` - Added storage selector UI
+- `static/index.html` - Added storage selector UI and unified layout
+- `static/headspace.html` - Immersive cosmos diary experience
 - `static/js/cosmos-renderer.js` - Added link clicking support
 - `static/js/main.js` - Integrated storage manager
 - `static/css/components.css` - Added storage selector styles

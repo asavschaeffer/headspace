@@ -89,7 +89,8 @@ class HomePlanetGenerator {
 
         group.userData.isHomePlanet = true;
         group.userData.clickHandler = () => {
-            window.location.href = 'http://asaschaeffer.com/index.html';
+            const target = window.HOME_PLANET_TARGET_URL || '/index.html';
+            window.location.href = target;
         };
 
         return group;

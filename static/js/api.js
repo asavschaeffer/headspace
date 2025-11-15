@@ -1,66 +1,27 @@
-// API Layer - Centralized fetch wrapper
+// API Client for Headspace - Direct to Supabase
 
-import { API_BASE } from './config.js';
+import {
+  createClient,
+} from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+// --- Config ---
+const SUPABASE_URL = "https://pwxleudvclhcbksvjcho.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3eGxldWR2Y2xoY2Jrc3ZqY2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDAyNTI4ODksImV4cCI6MjAxNTgyODg4OX0.pLp6NB23D1d_v4i21xI433Nl6I2o5d3d_z7c4s_E6sA";
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export async function fetchDocuments() {
-    const response = await fetch(`${API_BASE}/documents`);
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return await response.json();
-}
+  console.log("Fetching documents from Supabase...");
+  const { data, error } = await supabase
+    .from("documents")
+    .select("id, title, metadata, umap_coordinates");
 
-export async function fetchDocument(docId) {
-    const response = await fetch(`${API_BASE}/documents/${docId}`);
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return await response.json();
-}
+  if (error) {
+    console.error("Error fetching from Supabase:", error);
+    throw error;
+  }
 
-export async function createDocument(title, content, docType) {
-    const response = await fetch(`${API_BASE}/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, doc_type: docType })
-    });
-
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return await response.json();
-}
-
-export async function deleteDocument(docId) {
-    const response = await fetch(`${API_BASE}/documents/${docId}`, {
-        method: 'DELETE'
-    });
-    return await response.json();
-}
-
-export async function attachDocumentToChunk(chunkId, documentId) {
-    const response = await fetch(`${API_BASE}/chunks/${chunkId}/attach`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document_id: documentId })
-    });
-
-    if (response.ok) {
-        return await response.json();
-    } else {
-        throw new Error('Failed to attach document');
-    }
-}
-
-export async function fetchChunkAttachments(chunkId) {
-    const response = await fetch(`${API_BASE}/chunks/${chunkId}/attachments`);
-    return await response.json();
-}
-
-export async function removeChunkAttachment(chunkId, documentId) {
-    const response = await fetch(`${API_BASE}/chunks/${chunkId}/attach/${documentId}`, {
-        method: 'DELETE'
-    });
-    return await response.json();
+  console.log(`Fetched ${data.length} documents.`);
+  return data;
 }

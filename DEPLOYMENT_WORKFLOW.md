@@ -8,7 +8,8 @@ main (production)
   ├── develop (staging/integration)
   │   ├── feature/demo-planets
   │   ├── feature/storage-selector
-  │   └── feature/supabase-integration
+  │   ├── feature/supabase-integration
+  │   └── feature/headspace-clean        # unified frontend + supabase-ready
   └── hotfix/critical-bug
 ```
 

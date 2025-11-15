@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asa Valentine Schaeffer - Resume</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Calibri", "Arial", sans-serif;
+        font-size: 11pt;
+        line-height: 1.3;
+        color: #333;
+        max-width: 8.5in;
+        margin: 0 auto;
+        padding: 0.5in;
+        background-color: #fdfdfd;
+      }
+
+      /* Header */
+      header {
+        text-align: center;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #2c3e50;
+        padding-bottom: 10px;
+      }
+
+      h1 {
+        font-size: 24pt;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 5px;
+        letter-spacing: 1px;
+      }
+
+      .contact-info {
+        font-size: 10pt;
+        color: #555;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 15px;
+      }
+
+      .contact-info a {
+        color: #2c5aa0;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .contact-info a:hover {
+        text-decoration: underline;
+      }
+      .contact-info .icon {
+        width: 14px;
+        height: 14px;
+        fill: #2c5aa0;
+      }
+
+      /* Section Headers */
+      h2 {
+        font-size: 12pt;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-top: 12px;
+        margin-bottom: 6px;
+        border-bottom: 1px solid #d0d0d0;
+        padding-bottom: 2px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      /* Job */
+      .job {
+        margin-bottom: 8px;
+      }
+
+      .job-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-top: 8px;
+        margin-bottom: 3px;
+      }
+
+      .job-title {
+        font-weight: 600;
+        font-size: 11pt;
+        color: #2c3e50;
+      }
+
+      .company {
+        font-weight: 400;
+        color: #555;
+      }
+
+      .date {
+        font-size: 10pt;
+        color: #666;
+        font-style: italic;
+        white-space: nowrap;
+        padding-left: 10px;
+      }
+
+      /* Lists */
+      ul {
+        margin-left: 18px;
+        margin-bottom: 4px;
+      }
+
+      li {
+        margin-bottom: 2px;
+        font-size: 10.5pt;
+      }
+
+      /* Projects */
+      .project {
+        margin-bottom: 6px;
+      }
+
+      .project-name {
+        font-weight: 600;
+        color: #2c3e50;
+      }
+
+      .project-tech {
+        font-size: 9pt;
+        color: #666;
+        font-style: italic;
+      }
+
+      /* Skills */
+      .skills-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+        font-size: 10pt;
+      }
+
+      .skill-category {
+        font-weight: 600;
+        color: #2c3e50;
+      }
+
+      /* Compact spacing for one page */
+      .section {
+        margin-bottom: 10px;
+      }
+
+      /* Summary */
+      .summary {
+        font-size: 10.5pt;
+        color: #444;
+        margin-bottom: 10px;
+        font-style: italic;
+      }
+      .summary-main {
+        font-style: normal;
+        font-weight: 600;
+      }
+
+      @media print {
+        body {
+          padding: 0.25in;
+          font-size: 10pt;
+          max-width: 100%;
+        }
+        h1 {
+          font-size: 20pt;
+        }
+        h2 {
+          font-size: 11pt;
+          page-break-after: avoid;
+        }
+        .job-header {
+          page-break-after: avoid;
+        }
+        ul {
+          page-break-inside: avoid;
+        }
+        .contact-info a {
+          color: #2c5aa0;
+          text-decoration: none;
+        }
+        .contact-info .icon {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>ASA VALENTINE SCHAEFFER</h1>
+      <div class="contact-info">
+        <span>Oakland, CA</span> |
+        <a href="https://linkedin.com/in/avschaeffer">
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            role="img"
+            xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"></path>
+          </svg>
+          /in/avschaeffer
+        </a>
+        |
+        <a href="https://github.com/avschaeffer">
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            role="img"
+            xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297 24 5.67 18.627.297 12 .297z"></path>
+          </svg>
+          /avschaeffer
+        </a>
+        |
+        <a href="https://x.com/asavs_">
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            role="img"
+            xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M18.901 1.153h3.68l-8.04 9.19L24 22.847h-7.406l-5.8-7.584-6.638 7.584H.065l8.66-9.92L0 1.154h7.594l5.243 6.931L18.901 1.153zM17.61 20.974h2.03l-5.63-7.718-2.117-2.925h-.11l-5.638 7.718h2.032l4.787-6.533 5.636 6.533z"></path>
+          </svg>
+          /asavs_
+        </a>
+      </div>
+    </header>
+
+    <div class="summary">
+      ive been building with blocks since I was 3. From there, minecraft &
+      command blocks, game development, AI, and thinking about thinking.
+      <span class="summary-main"
+        >building next-gen intelligence systems that think in domain-native
+        languages. LARGE MODELS FROM PROVIDERS VS SPECIALIZED PROPRIETARY MODELS
+        FINE RL FINE TUNED. RAG OR DAFT.AI OR MY CUSTOM AI OS SOLUTION
+        (ADD/ADJUST LLM FRIENDLY METADATA TO ALL DOCUMENT TYPES ON INGESTION TO
+        THE SYSTEM). HUMAN AI INTERACTION IMO AIRPODS FOR A FEW YEARS BEFORE
+        GLASSES TAKE OVER. A COVERT BUTTON CAMERA</span
+      >
+      <br />
+      Specializing in novel AI architectures, from teaching machines to
+      understand games as computational systems to creating molecular discovery
+      platforms for drug development.
+    </div>
+
+    <section class="section">
+      <h2>Professional Experience</h2>
+
+      <div class="job">
+        <div class="job-header">
+          <div>
+            <span class="job-title">AI Engineer</span>
+            <span class="company">| Curable Labs</span>
+          </div>
+          <div class="date">Feb 2024 – Present</div>
+        </div>
+        <ul>
+          <li>
+            Architected agentic target discovery platform integrating LLMs with
+            molecular databases for drug development
+          </li>
+          <li>
+            Engineered real-time biomarker analysis pipeline for wearable
+            devices using transformer models
+          </li>
+          <li>
+            Designed intuitive UX for complex AI systems, - friction and + speed
+          </li>
+        </ul>
+      </div>
+
+      <div class="job">
+        <div class="job-header">
+          <div>
+            <span class="job-title">Outreach Specialist</span>
+            <span class="company">| Hellen Diller Foundation</span>
+          </div>
+          <div class="date">2024 – 2025</div>
+        </div>
+        <ul>
+          <li>
+            Drove "reverse sales" by identifying and engaging exceptional
+            applicants for Tikkun Olam awards
+          </li>
+          <li>
+            Led cold calling, corporate communications, and meetings to raise
+            awareness
+          </li>
+        </ul>
+      </div>
+
+      <div class="job">
+        <div class="job-header">
+          <div>
+            <span class="job-title">Game Developer</span>
+            <span class="company">| People-1st Open Metaverse Initiative</span>
+          </div>
+          <div class="date">Jun 2023 – Present</div>
+        </div>
+        <ul>
+          <li>
+            Led design and critiques for award-winning games using Unity and
+            custom AI systems
+          </li>
+          <li>
+            Implemented complex game economies and balanced resource trees using
+            data-driven approaches
+          </li>
+          <li>
+            Managed cross-functional teams using Agile/Scrum methodologies
+            (transitioned to game jam/hackathon focus)
+          </li>
+        </ul>
+      </div>
+
+      <div class="job">
+        <div class="job-header">
+          <div>
+            <span class="job-title">Sales Specialist</span>
+            <span class="company"
+              >| Gentemstick Niseko Showroom (Niseko, Japan)</span
+            >
+          </div>
+          <div class="date">Dec 2023 – Apr 2024</div>
+        </div>
+        <ul>
+          <li>Ensured equipment and avalanche safety standards were upheld</li>
+          <li>
+            Navigated difficult situations with high-maintenance, powerful
+            individuals gracefully
+          </li>
+          <li>
+            Recommended boards based on in-depth conversations about client
+            experience, style, and learning goals
+          </li>
+          <li>
+            Maintained pristine showroom cleanliness (Japanese standards),
+            managed inventory, and performed board/boot sizing and binding
+            installation
+          </li>
+        </ul>
+      </div>
+
+      <div class="job">
+        <div class="job-header">
+          <div>
+            <span class="job-title">Valet</span>
+            <span class="company">| Ace Solutions (San Diego, CA)</span>
+          </div>
+          <div class="date">Jun 2023 – Aug 2023 | May 2024 – Aug 2024</div>
+        </div>
+        <ul>
+          <li>
+            Acted as first and last point of contact for hotel guests, ensuring
+            a welcoming experience
+          </li>
+          <li>
+            Assisted with luggage, operated vehicles safely, and maintained
+            precise key organization
+          </li>
+          <li>
+            Adapted to new working environments, coworkers, and guests across
+            multiple luxury hotels
+          </li>
+          <li>
+            Received numerous positive reviews on TripAdvisor for exceptional
+            service
+          </li>
+        </ul>
+      </div>
+
+      <div class="job">
+        <div class="job-header">
+          <div>
+            <span class="job-title">Banquet Chef</span>
+            <span class="company">| Wayfare Tavern (San Francisco, CA)</span>
+          </div>
+          <div class="date">May 2022 – Feb 2023, Current</div>
+        </div>
+        <ul>
+          <li>
+            Consistently executed a special, changing menu multiple times a day
+            for private events
+          </li>
+          <li>
+            Took initiative to maintain inventory and manage orders for the
+            entire restaurant
+          </li>
+          <li>
+            Overcame intense fatigue, pain, time crunches, and logistical
+            failures (delivery/power)
+          </li>
+          <li>
+            Developed and optimized strategies to make the role manageable for a
+            single person
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Key Projects</h2>
+
+      <div class="project">
+        <span class="project-name">"Language Game" World Model</span>
+        <span class="project-tech">(Tokenization, Transformers, PyTorch)</span>
+        <ul>
+          <li>
+            Built 6-layer transformer with three-stream tokenization mimicking
+            biological perception systems
+          </li>
+          <li>
+            Implemented Hebbian learning with reservoir computing for very basic
+            but stable real-time learning
+          </li>
+          <li>
+            Created novel architecture allowing machines to "think" in
+            Wittgensteinian language-game mechanics, not text
+          </li>
+        </ul>
+      </div>
+
+      <div class="project">
+        <span class="project-name"
+          >ChatLab – AI-Powered Molecular Research Platform</span
+        >
+        <span class="project-tech"
+          >(LangChain, PostgreSQL, PyMol, Socket.IO)</span
+        >
+        <ul>
+          <li>
+            Developed "Sparky" AI agent generating complex SQL for
+            neuropharmacology research
+          </li>
+          <li>
+            Integrated NPASS bioactivity database with clinical trials for
+            Parkinson's drug discovery
+          </li>
+          <li>
+            Built real-time collaborative molecular visualization with WebSocket
+            architecture
+          </li>
+        </ul>
+      </div>
+
+      <div class="project">
+        <span class="project-name"
+          >Headspace - Knowledge Management meets AI OS</span
+        >
+        <span class="project-tech"
+          >(React, Three.js, Gemini API, Graph Neural Networks)</span
+        >
+        <ul>
+          <li>
+            Created 3D knowledge constellation where documents orbit based on
+            semantic embeddings
+          </li>
+          <li>
+            Implemented force-directed graphs with gravitational clustering for
+            spatial visualization & navigation
+          </li>
+          <li>
+            Adjusted existing 2D implementation with superior clustering
+            algorithm and real-time editing
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Technical Skills</h2>
+      <div class="skills-grid">
+        <div>
+          <span class="skill-category">AI/ML:</span> PyTorch, LangChain, BERT,
+          Claude & Gemini API, Tokenizers, Transformers, Embeddings, RLHF
+        </div>
+        <div>
+          <span class="skill-category">Languages:</span> Python, JS/TS, SQL, C#,
+          Java
+        </div>
+        <div>
+          <span class="skill-category">Frameworks:</span> React, Node.js, MCP,
+          Unix, Socket.IO, Three.js, Unity
+        </div>
+        <div>
+          <span class="skill-category">Tools:</span> Cursor, Claude Code,
+          GitHub, Render, Supabase, PostgreSQL, Vector & Graph DBs
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Education & Achievements</h2>
+      <ul>
+        <li>
+          <strong>University of British Columbia (UBC)</strong> – Cognitive
+          Systems (Psychology, Computer Science, Linguistics, Philosophy)
+        </li>
+        <li>Accomplished in a wide range of athletic and combat endeavors</li>
+        <li>
+          <strong>Languages:</strong> Native English, Restaurant/California
+          Spanish, Managable Japanese (N2), Survival Mandarin
+        </li>
+      </ul>
+    </section>
+  </body>
+</html>
