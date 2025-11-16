@@ -183,7 +183,13 @@ function createChunkMaterial(chunk) {
         ? chunk.color
         : '#748ffc';
     baseColor.setStyle(fallbackColor);
+    if (typeof baseColor.convertSRGBToLinear === 'function') {
+        baseColor.convertSRGBToLinear();
+    }
     const emissive = baseColor.clone().multiplyScalar(0.25);
+    if (typeof emissive.convertSRGBToLinear === 'function') {
+        emissive.convertSRGBToLinear();
+    }
 
     let metalness = 0.2;
     let roughness = 0.65;

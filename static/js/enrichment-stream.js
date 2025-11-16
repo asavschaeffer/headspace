@@ -325,74 +325,90 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
         docId,
         // onChunkEnriched - Update shape with new embedding
         async (chunkData) => {
-            const { chunk_id, color, position_3d, umap_coordinates, stage } = chunkData;
-            const shapeSignature = normalizeShapeSignature(chunkData.shape_3d);
+            const MAX_RETRIES = 25;
+            const RETRY_DELAY_MS = 120;
 
-            // Get the mesh for this chunk
-            const mesh = chunkMeshMap.get(chunk_id);
-            if (!mesh) {
-                console.warn(`Mesh not found for chunk ${chunk_id}`);
-                return;
-            }
+            const applyUpdateToMesh = async (mesh, resolvedData) => {
+                const { color, position_3d, umap_coordinates, stage } = resolvedData;
+                const shapeSignature = normalizeShapeSignature(resolvedData.shape_3d);
 
-            console.log(`🎨 Morphing shape for chunk ${chunk_id}`);
+                console.log(`🎨 Morphing shape for chunk ${resolvedData.chunk_id}`);
 
-            // Update color
-            const effectiveColor = (typeof color === 'string' && color.trim())
-                ? color
-                : mesh.userData?.chunk?.color;
-            if (effectiveColor && mesh.material && mesh.material.color && typeof mesh.material.color.setStyle === 'function') {
-                mesh.material.color.setStyle(effectiveColor);
-                if (materialSupportsEmissive(mesh.material) && typeof THREE !== 'undefined') {
-                    const emissiveColor = new THREE.Color(effectiveColor);
-                    emissiveColor.multiplyScalar(0.25);
-                    mesh.material.emissive.copy(emissiveColor);
-                }
-                mesh.material.needsUpdate = true;
-            }
-
-            // Update position
-            if (position_3d && position_3d.length === 3) {
-                mesh.position.set(position_3d[0], position_3d[1], position_3d[2]);
-            } else if (umap_coordinates && umap_coordinates.length === 3) {
-                mesh.position.set(umap_coordinates[0], umap_coordinates[1], umap_coordinates[2]);
-            }
-
-            mesh.userData = {
-                ...mesh.userData,
-                shapeSignature: shapeSignature || mesh.userData?.shapeSignature,
-            };
-            if (mesh.userData && mesh.userData.chunk) {
-                mesh.userData.chunk = {
-                    ...mesh.userData.chunk,
-                    color: effectiveColor || mesh.userData.chunk.color,
-                    position_3d: position_3d || mesh.userData.chunk.position_3d,
-                    umap_coordinates: umap_coordinates || mesh.userData.chunk.umap_coordinates,
-                    shape_3d: shapeSignature || mesh.userData.chunk.shape_3d,
-                };
-            }
-
-            if (shapeSignature && stage === 'chunk_enriched') {
-                // Morph geometry from placeholder to final shape
-                const animator = new ShapeMorphingAnimator(mesh, shapeSignature);
-                await animator.start();
-                addShapeCompletionGlow(mesh);
-            } else if (shapeSignature && stage === 'chunk_layout_updated') {
-                const generator = getGeometryGenerator();
-                if (generator && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
-                    try {
-                        const newGeometry = generator.generatePlanetaryGeometryFromSignature(shapeSignature);
-                        if (newGeometry) {
-                            if (mesh.geometry && typeof mesh.geometry.dispose === 'function') {
-                                mesh.geometry.dispose();
-                            }
-                            mesh.geometry = newGeometry;
+                const effectiveColor = (typeof color === 'string' && color.trim())
+                    ? color
+                    : mesh.userData?.chunk?.color;
+                if (effectiveColor && mesh.material && mesh.material.color && typeof mesh.material.color.setStyle === 'function') {
+                    mesh.material.color.setStyle(effectiveColor);
+                    if (typeof mesh.material.color.convertSRGBToLinear === 'function') {
+                        mesh.material.color.convertSRGBToLinear();
+                    }
+                    if (materialSupportsEmissive(mesh.material) && typeof THREE !== 'undefined') {
+                        const emissiveColor = new THREE.Color(effectiveColor);
+                        if (typeof emissiveColor.convertSRGBToLinear === 'function') {
+                            emissiveColor.convertSRGBToLinear();
                         }
-                    } catch (error) {
-                        console.warn('Failed to update geometry during layout stage', error);
+                        emissiveColor.multiplyScalar(0.25);
+                        mesh.material.emissive.copy(emissiveColor);
+                    }
+                    mesh.material.needsUpdate = true;
+                }
+
+                if (position_3d && position_3d.length === 3) {
+                    mesh.position.set(position_3d[0], position_3d[1], position_3d[2]);
+                } else if (umap_coordinates && umap_coordinates.length === 3) {
+                    mesh.position.set(umap_coordinates[0], umap_coordinates[1], umap_coordinates[2]);
+                }
+
+                mesh.userData = {
+                    ...mesh.userData,
+                    shapeSignature: shapeSignature || mesh.userData?.shapeSignature,
+                };
+                if (mesh.userData && mesh.userData.chunk) {
+                    mesh.userData.chunk = {
+                        ...mesh.userData.chunk,
+                        color: effectiveColor || mesh.userData.chunk.color,
+                        position_3d: position_3d || mesh.userData.chunk.position_3d,
+                        umap_coordinates: umap_coordinates || mesh.userData.chunk.umap_coordinates,
+                        shape_3d: shapeSignature || mesh.userData.chunk.shape_3d,
+                    };
+                }
+
+                if (shapeSignature && stage === 'chunk_enriched') {
+                    const animator = new ShapeMorphingAnimator(mesh, shapeSignature);
+                    await animator.start();
+                    addShapeCompletionGlow(mesh);
+                } else if (shapeSignature && stage === 'chunk_layout_updated') {
+                    const generator = getGeometryGenerator();
+                    if (generator && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
+                        try {
+                            const newGeometry = generator.generatePlanetaryGeometryFromSignature(shapeSignature);
+                            if (newGeometry) {
+                                if (mesh.geometry && typeof mesh.geometry.dispose === 'function') {
+                                    mesh.geometry.dispose();
+                                }
+                                mesh.geometry = newGeometry;
+                            }
+                        } catch (error) {
+                            console.warn('Failed to update geometry during layout stage', error);
+                        }
                     }
                 }
-            }
+            };
+
+            const attemptUpdate = (resolvedData, attempt = 0) => {
+                const mesh = chunkMeshMap.get(resolvedData.chunk_id);
+                if (!mesh) {
+                    if (attempt < MAX_RETRIES) {
+                        setTimeout(() => attemptUpdate(resolvedData, attempt + 1), RETRY_DELAY_MS);
+                    } else {
+                        console.warn(`Mesh not found for chunk ${resolvedData.chunk_id} after retries; skipping update.`);
+                    }
+                    return;
+                }
+                applyUpdateToMesh(mesh, resolvedData);
+            };
+
+            attemptUpdate(chunkData);
         },
 
         // onProgress - Update progress indicator
