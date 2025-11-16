@@ -88,6 +88,11 @@ export async function initCosmos() {
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    if ('outputColorSpace' in renderer) {
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+    } else if ('outputEncoding' in renderer) {
+        renderer.outputEncoding = THREE.sRGBEncoding;
+    }
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
 
@@ -173,7 +178,11 @@ function materialSupportsEmissive(material) {
 
 function createChunkMaterial(chunk) {
     const signature = normalizeShapeSignature(chunk?.shape_3d);
-    const baseColor = new THREE.Color(chunk?.color || '#748ffc');
+    const baseColor = new THREE.Color();
+    const fallbackColor = (chunk?.color && typeof chunk.color === 'string' && chunk.color.trim())
+        ? chunk.color
+        : '#748ffc';
+    baseColor.setStyle(fallbackColor);
     const emissive = baseColor.clone().multiplyScalar(0.25);
 
     let metalness = 0.2;
@@ -187,7 +196,7 @@ function createChunkMaterial(chunk) {
         roughness = 0.85;
     }
 
-    return new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshStandardMaterial({
         color: baseColor,
         vertexColors: false,
         emissive,
@@ -197,6 +206,8 @@ function createChunkMaterial(chunk) {
         transparent: true,
         opacity: 0.97
     });
+    material.toneMapped = true;
+    return material;
 }
 
 function createPlaceholderGeometry(chunk) {

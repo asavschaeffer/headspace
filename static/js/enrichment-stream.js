@@ -148,6 +148,17 @@ class EnrichmentStreamListener {
 }
 
 let geometryGeneratorInstance = null;
+
+function materialSupportsEmissive(material) {
+    return !!(
+        material &&
+        typeof material === 'object' &&
+        'emissive' in material &&
+        'emissiveIntensity' in material &&
+        material.emissive !== undefined
+    );
+}
+
 function normalizeShapeSignature(rawSignature) {
     if (!rawSignature) return null;
     if (typeof rawSignature === 'object') {
@@ -327,10 +338,13 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
             console.log(`🎨 Morphing shape for chunk ${chunk_id}`);
 
             // Update color
-            if (color && mesh.material && mesh.material.color) {
-                mesh.material.color.setStyle(color);
-                if (mesh.material.emissive && typeof THREE !== 'undefined') {
-                    const emissiveColor = new THREE.Color(color);
+            const effectiveColor = (typeof color === 'string' && color.trim())
+                ? color
+                : mesh.userData?.chunk?.color;
+            if (effectiveColor && mesh.material && mesh.material.color && typeof mesh.material.color.setStyle === 'function') {
+                mesh.material.color.setStyle(effectiveColor);
+                if (materialSupportsEmissive(mesh.material) && typeof THREE !== 'undefined') {
+                    const emissiveColor = new THREE.Color(effectiveColor);
                     emissiveColor.multiplyScalar(0.25);
                     mesh.material.emissive.copy(emissiveColor);
                 }
@@ -351,7 +365,7 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
             if (mesh.userData && mesh.userData.chunk) {
                 mesh.userData.chunk = {
                     ...mesh.userData.chunk,
-                    color: color || mesh.userData.chunk.color,
+                    color: effectiveColor || mesh.userData.chunk.color,
                     position_3d: position_3d || mesh.userData.chunk.position_3d,
                     umap_coordinates: umap_coordinates || mesh.userData.chunk.umap_coordinates,
                     shape_3d: shapeSignature || mesh.userData.chunk.shape_3d,
@@ -423,10 +437,10 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
  * Add completion glow effect to a mesh
  */
 function addShapeCompletionGlow(mesh) {
-    if (!mesh.material || !('emissive' in mesh.material) || !('emissiveIntensity' in mesh.material)) return;
+    if (!materialSupportsEmissive(mesh.material) || typeof THREE === 'undefined') return;
 
     // Temporarily brighten the material
-    const originalEmissive = mesh.material.emissive?.getHex ? mesh.material.emissive.getHex() : 0x000000;
+    const originalEmissive = mesh.material.emissive.getHex ? mesh.material.emissive.getHex() : 0x000000;
     const originalIntensity = mesh.material.emissiveIntensity || 0;
 
     mesh.material.emissive = new THREE.Color(0xffffff);
