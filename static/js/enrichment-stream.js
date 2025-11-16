@@ -338,15 +338,20 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                     ? color
                     : mesh.userData?.chunk?.color;
                 if (effectiveColor && mesh.material && mesh.material.color && typeof mesh.material.color.setStyle === 'function') {
-                    console.log(`[ENRICHMENT] Setting color for chunk ${resolvedData.chunk_id}: ${effectiveColor} → material.color=${mesh.material.color.getHexString()}`);
+                    console.log(`[ENRICHMENT] Setting color for chunk ${resolvedData.chunk_id}: material.type=${mesh.material.type}, effectiveColor=${effectiveColor}`);
                     mesh.material.color.setStyle(effectiveColor);
                     console.log(`[ENRICHMENT] After setStyle: material.color=${mesh.material.color.getHexString()}`);
                     if (materialSupportsEmissive(mesh.material) && typeof THREE !== 'undefined') {
+                        console.log(`[ENRICHMENT] Material supports emissive, setting it...`);
                         const emissiveColor = new THREE.Color(effectiveColor);
                         mesh.material.emissive.copy(emissiveColor);
                         console.log(`[ENRICHMENT] Set emissive: ${mesh.material.emissive.getHexString()}`);
+                    } else {
+                        console.log(`[ENRICHMENT] Material does NOT support emissive (type=${mesh.material.type})`);
                     }
                     mesh.material.needsUpdate = true;
+                } else {
+                    console.log(`[ENRICHMENT] Could not set color - mesh.material=${mesh.material?.type}, has color=${!!mesh.material?.color}`);
                 }
 
                 if (position_3d && position_3d.length === 3) {
@@ -449,12 +454,17 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
  * Add completion glow effect to a mesh
  */
 function addShapeCompletionGlow(mesh) {
-    if (!materialSupportsEmissive(mesh.material) || typeof THREE === 'undefined') return;
+    console.log(`[GLOW] addShapeCompletionGlow called. materialSupportsEmissive=${materialSupportsEmissive(mesh.material)}, material.type=${mesh.material?.type}`);
+    if (!materialSupportsEmissive(mesh.material) || typeof THREE === 'undefined') {
+        console.log(`[GLOW] Returning early - material doesn't support emissive`);
+        return;
+    }
 
     // Temporarily brighten the material
     const originalEmissive = mesh.material.emissive.getHex ? mesh.material.emissive.getHex() : 0x000000;
     const originalIntensity = mesh.material.emissiveIntensity || 0;
 
+    console.log(`[GLOW] Setting glow - emissive to white, intensity to 0.3`);
     mesh.material.emissive = new THREE.Color(0xffffff);
     mesh.material.emissiveIntensity = 0.3;
 
