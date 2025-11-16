@@ -354,6 +354,7 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                             emissiveColor.convertSRGBToLinear();
                         }
                         mesh.material.emissive.copy(emissiveColor.multiplyScalar(0.15));
+                        mesh.material.emissiveIntensity = 1.0;
                         console.log(`[ENRICHMENT] Set emissive: ${mesh.material.emissive.getHexString()}`);
                     } else {
                         console.log(`[ENRICHMENT] Material does NOT support emissive (type=${mesh.material.type})`);

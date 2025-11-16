@@ -2,6 +2,10 @@
 
 import { state } from './state.js';
 
+if (typeof THREE !== 'undefined' && THREE.ColorManagement) {
+    THREE.ColorManagement.enabled = true;
+}
+
 let scene;
 let camera;
 let renderer;
@@ -270,8 +274,8 @@ export function addCustomObject(object3D) {
         }
         light.position.set(0, 0, 0);
         light.distance = 0;
-        light.decay = 1;
-        light.intensity = 2.1;
+        light.decay = 1.4;
+        light.intensity = 4.8;
         light.castShadow = false;
         if (!scene.children.includes(light)) {
             scene.add(light);
@@ -306,12 +310,16 @@ export async function initCosmos() {
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    if ('physicallyCorrectLights' in renderer) {
+        renderer.physicallyCorrectLights = true;
+    }
     if ('outputColorSpace' in renderer) {
         renderer.outputColorSpace = THREE.SRGBColorSpace;
     } else if ('outputEncoding' in renderer) {
         renderer.outputEncoding = THREE.sRGBEncoding;
     }
-    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.45;
 
     // Controls
     controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -322,14 +330,14 @@ export async function initCosmos() {
     controls.maxPolarAngle = Math.PI;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.32);
     scene.add(ambientLight);
 
-    const rimLight = new THREE.PointLight(0xffffff, 0.6);
-    rimLight.position.set(100, 120, 160);
+    const rimLight = new THREE.PointLight(0xffffff, 1.0, 0, 1.2);
+    rimLight.position.set(80, 160, 220);
     scene.add(rimLight);
 
-    const sunLight = new THREE.PointLight(0xffffff, 2.2, 0, 1.1);
+    const sunLight = new THREE.PointLight(0xffffff, 4.6, 0, 1.6);
     sunLight.position.set(0, 0, 0);
     sunLight.castShadow = false;
     scene.add(sunLight);
@@ -429,9 +437,12 @@ function createChunkMaterial(chunk) {
         color: linearColor,
         emissive: emissiveLinear,
         emissiveIntensity: 1.0,
-        roughness: 0.58,
-        metalness: 0.22
+        roughness: 0.42,
+        metalness: 0.12,
+        envMapIntensity: 0.45
     });
+    material.toneMapped = true;
+    material.needsUpdate = true;
     console.log(`[MATERIAL] Created material type=${material.type}`);
     return material;
 }
