@@ -198,12 +198,23 @@ function createPlaceholderGeometry(chunk) {
 function createGeometryForChunk(chunk) {
     const generator = getGeometryGenerator();
     const signature = normalizeShapeSignature(chunk?.shape_3d);
+
+    console.log(`[GEOMETRY] Generator available: ${!!generator}, signature valid: ${!!signature}`);
+    if (signature) {
+        console.log(`[GEOMETRY] Signature type=${signature.type}, texture=${signature.texture}, detail=${signature.detail}`);
+    }
+
     if (generator && signature && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
         try {
-            return generator.generatePlanetaryGeometryFromSignature(signature);
+            console.log(`[GEOMETRY] Attempting to generate procedural geometry...`);
+            const geom = generator.generatePlanetaryGeometryFromSignature(signature);
+            console.log(`[GEOMETRY] SUCCESS: Generated geometry with ${geom.attributes.position.count} vertices`);
+            return geom;
         } catch (error) {
-            console.warn('Failed to generate geometry from signature', error);
+            console.warn(`[GEOMETRY] ERROR generating geometry:`, error.message);
         }
+    } else {
+        console.log(`[GEOMETRY] Falling back to placeholder - generator=${!!generator}, hasMethod=${generator && typeof generator.generatePlanetaryGeometryFromSignature === 'function'}`);
     }
     return createPlaceholderGeometry(chunk);
 }
