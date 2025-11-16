@@ -20,6 +20,22 @@ let frameCount = 0;
 const LOD_UPDATE_INTERVAL = 30;
 let geometryGeneratorInstance = null;
 
+function getDebugConfig() {
+    const defaults = {
+        lightHelpers: true,
+        normalHelpers: true,
+        logRenderer: true,
+        forceDoubleSide: false
+    };
+
+    if (typeof window === 'undefined') {
+        return defaults;
+    }
+
+    window.__COSMOS_DEBUG__ = window.__COSMOS_DEBUG__ || {};
+    return Object.assign({}, defaults, window.__COSMOS_DEBUG__);
+}
+
 function getHexStringSafe(value) {
     if (value === undefined || value === null) {
         return 'null';
@@ -184,6 +200,48 @@ function repairGeometryNormals(geometry, label = '') {
 }
 
 function getMaterialOverride() {
+function createNormalsDebugHelper(mesh, length = 1.8) {
+    const debug = getDebugConfig();
+    if (!debug.normalHelpers || !mesh.geometry?.attributes?.position || !mesh.geometry?.attributes?.normal) {
+        return;
+    }
+
+    const positions = mesh.geometry.attributes.position;
+    const normals = mesh.geometry.attributes.normal;
+    const linePositions = new Float32Array(normals.count * 2 * 3);
+
+    const start = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+
+    for (let i = 0; i < normals.count; i++) {
+        start.set(
+            positions.getX(i),
+            positions.getY(i),
+            positions.getZ(i)
+        );
+        normal.set(
+            normals.getX(i),
+            normals.getY(i),
+            normals.getZ(i)
+        ).normalize().multiplyScalar(length);
+
+        linePositions[i * 6 + 0] = start.x;
+        linePositions[i * 6 + 1] = start.y;
+        linePositions[i * 6 + 2] = start.z;
+
+        linePositions[i * 6 + 3] = start.x + normal.x;
+        linePositions[i * 6 + 4] = start.y + normal.y;
+        linePositions[i * 6 + 5] = start.z + normal.z;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+
+    const material = new THREE.LineBasicMaterial({ color: 0xff33ff, toneMapped: false });
+    const helper = new THREE.LineSegments(geometry, material);
+    helper.userData.isCosmosNormalHelper = true;
+    mesh.add(helper);
+}
     if (typeof window === 'undefined') {
         return null;
     }
@@ -205,7 +263,8 @@ function getMaterialOverride() {
             return null;
         }
 
-        if (selected === 'basic' || selected === 'phong' || selected === 'meshbasic' || selected === 'meshphong') {
+        if (selected === 'basic' || selected === 'phong' || selected === 'lambert' ||
+            selected === 'meshbasic' || selected === 'meshphong' || selected === 'meshlambert') {
             return selected.startsWith('mesh') ? selected.replace('mesh', '') : selected;
         }
 
@@ -259,6 +318,8 @@ export function addCustomObject(object3D) {
     if (!customObjects.includes(object3D)) {
         customObjects.push(object3D);
     }
+    const debug = getDebugConfig();
+
     const globalLights = [];
     object3D.traverse((child) => {
         if (child?.userData?.isCosmosGlobalLight && child.isLight) {
@@ -274,11 +335,16 @@ export function addCustomObject(object3D) {
         }
         light.position.set(0, 0, 0);
         light.distance = 0;
-        light.decay = 1.4;
-        light.intensity = 4.8;
+        light.decay = 2;
+        light.intensity = 520;
         light.castShadow = false;
         if (!scene.children.includes(light)) {
             scene.add(light);
+        }
+        if (debug.lightHelpers) {
+            const helper = new THREE.PointLightHelper(light, 40, 0xffaa33);
+            helper.userData.isCosmosLightHelper = true;
+            scene.add(helper);
         }
     });
 }
@@ -319,7 +385,17 @@ export async function initCosmos() {
         renderer.outputEncoding = THREE.sRGBEncoding;
     }
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.45;
+    renderer.toneMappingExposure = 1.85;
+    const debug = getDebugConfig();
+    if (debug.logRenderer) {
+        console.log('[RENDERER] Config:', {
+            physicallyCorrectLights: renderer.physicallyCorrectLights,
+            toneMapping: renderer.toneMapping,
+            toneMappingExposure: renderer.toneMappingExposure,
+            outputColorSpace: renderer.outputColorSpace ?? renderer.outputEncoding,
+            colorManagement: THREE.ColorManagement?.enabled
+        });
+    }
 
     // Controls
     controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -330,17 +406,27 @@ export async function initCosmos() {
     controls.maxPolarAngle = Math.PI;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.32);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.42);
     scene.add(ambientLight);
 
-    const rimLight = new THREE.PointLight(0xffffff, 1.0, 0, 1.2);
-    rimLight.position.set(80, 160, 220);
+    const rimLight = new THREE.PointLight(0xffffff, 140, 0, 2);
+    rimLight.position.set(120, 220, 260);
     scene.add(rimLight);
 
-    const sunLight = new THREE.PointLight(0xffffff, 4.6, 0, 1.6);
+    const sunLight = new THREE.PointLight(0xffffff, 520, 0, 2);
     sunLight.position.set(0, 0, 0);
     sunLight.castShadow = false;
     scene.add(sunLight);
+    if (debug.lightHelpers) {
+        const helperColor = 0xffaa33;
+        const sunHelper = new THREE.PointLightHelper(sunLight, 40, helperColor);
+        sunHelper.userData.isCosmosLightHelper = true;
+        scene.add(sunHelper);
+
+        const rimHelper = new THREE.PointLightHelper(rimLight, 30, 0x33aaff);
+        rimHelper.userData.isCosmosLightHelper = true;
+        scene.add(rimHelper);
+    }
 
     // Raycaster for interaction
     raycaster = new THREE.Raycaster();
@@ -429,6 +515,14 @@ function createChunkMaterial(chunk) {
             emissiveIntensity: 1.0,
             shininess: 36,
             specular: new THREE.Color(0xffffff)
+        });
+    }
+
+    if (override === 'lambert') {
+        console.log(`[MATERIAL] Using MeshLambertMaterial override with color=${srgbColor.getHexString()}`);
+        return new THREE.MeshLambertMaterial({
+            color: srgbColor,
+            emissive: srgbColor.clone().multiplyScalar(0.18)
         });
     }
 
@@ -556,6 +650,12 @@ export function updateCosmosData() {
 
         usedPositions.push(resolvedPosition.clone());
 
+        const debug = getDebugConfig();
+        if (debug.forceDoubleSide && mesh.material) {
+            mesh.material.side = THREE.DoubleSide;
+            mesh.material.needsUpdate = true;
+        }
+
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
         console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}, material.color=${getHexStringSafe(mesh.material.color)}`);
@@ -571,6 +671,8 @@ export function updateCosmosData() {
             colorWrite: mesh.material.colorWrite,
             needsUpdate: mesh.material.needsUpdate
         });
+
+        createNormalsDebugHelper(mesh);
 
         // Log initial rendering state
         setTimeout(() => {
