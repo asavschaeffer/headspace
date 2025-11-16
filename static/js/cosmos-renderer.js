@@ -226,6 +226,13 @@ export function updateCosmosData() {
     console.log(`[COSMOS] Starting mesh creation with ${chunks.length} chunks`);
 
     chunks.forEach((chunk, idx) => {
+        console.log(`[COSMOS] Chunk ${idx} raw data:`, {
+            id: chunk.id,
+            color: chunk.color,
+            shape_3d: chunk.shape_3d,
+            position_3d: chunk.position_3d
+        });
+
         const geometry = createGeometryForChunk(chunk);
         const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
