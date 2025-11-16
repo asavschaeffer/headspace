@@ -199,7 +199,6 @@ function repairGeometryNormals(geometry, label = '') {
     console.log(`[GEOMETRY] Recomputed normals for ${label}`);
 }
 
-function getMaterialOverride() {
 function createNormalsDebugHelper(mesh, length = 1.8) {
     const debug = getDebugConfig();
     if (!debug.normalHelpers || !mesh.geometry?.attributes?.position || !mesh.geometry?.attributes?.normal) {
@@ -242,6 +241,8 @@ function createNormalsDebugHelper(mesh, length = 1.8) {
     helper.userData.isCosmosNormalHelper = true;
     mesh.add(helper);
 }
+
+function getMaterialOverride() {
     if (typeof window === 'undefined') {
         return null;
     }
