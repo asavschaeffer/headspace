@@ -221,10 +221,14 @@ export function updateCosmosData() {
     chunkMeshes.clear();
 
     const chunks = state.chunks || [];
-    chunks.forEach((chunk) => {
+    console.log(`[COSMOS] Starting mesh creation with ${chunks.length} chunks`);
+
+    chunks.forEach((chunk, idx) => {
         const geometry = createGeometryForChunk(chunk);
         const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
+
+        console.log(`[COSMOS] Chunk ${idx} (id=${chunk.id}): color=${chunk.color}, material.color=${material.color.getHexString()}, material.emissive=${material.emissive.getHexString()}`);
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
             ? new THREE.Vector3(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2])
@@ -245,8 +249,11 @@ export function updateCosmosData() {
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
+        console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}`);
     });
 
+    console.log(`[COSMOS] Scene has ${chunkMeshes.size} meshes. Camera pos: ${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)}`);
+    console.log(`[COSMOS] Lights in scene: ${scene.children.filter(c => c.isLight).length}`);
     setStatus(`Cosmos populated · ${chunkMeshes.size} nodes`);
 }
 
@@ -317,6 +324,16 @@ function animateCosmos(time = 0) {
     animationId = requestAnimationFrame(animateCosmos);
 
     frameCount++;
+    if (frameCount === 1) {
+        console.log(`[RENDER] First frame: renderer.outputColorSpace=${renderer.outputColorSpace}, toneMapping=${renderer.toneMapping}, scene.background=${scene.background ? scene.background.getHexString() : 'null'}`);
+        console.log(`[RENDER] Scene has ${chunkMeshes.size} meshes visible`);
+        chunkMeshes.forEach((mesh, idx) => {
+            if (idx < 3) {
+                console.log(`[RENDER] Mesh ${idx}: color=${mesh.material.color.getHexString()}, emissive=${mesh.material.emissive.getHexString()}, emissiveIntensity=${mesh.material.emissiveIntensity}, visible=${mesh.visible}, geometry vertices=${mesh.geometry.attributes.position.count}`);
+            }
+        });
+    }
+
     if (frameCount % LOD_UPDATE_INTERVAL === 0) {
         controls.update();
     }

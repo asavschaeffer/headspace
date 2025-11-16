@@ -338,10 +338,13 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                     ? color
                     : mesh.userData?.chunk?.color;
                 if (effectiveColor && mesh.material && mesh.material.color && typeof mesh.material.color.setStyle === 'function') {
+                    console.log(`[ENRICHMENT] Setting color for chunk ${resolvedData.chunk_id}: ${effectiveColor} → material.color=${mesh.material.color.getHexString()}`);
                     mesh.material.color.setStyle(effectiveColor);
+                    console.log(`[ENRICHMENT] After setStyle: material.color=${mesh.material.color.getHexString()}`);
                     if (materialSupportsEmissive(mesh.material) && typeof THREE !== 'undefined') {
                         const emissiveColor = new THREE.Color(effectiveColor);
                         mesh.material.emissive.copy(emissiveColor);
+                        console.log(`[ENRICHMENT] Set emissive: ${mesh.material.emissive.getHexString()}`);
                     }
                     mesh.material.needsUpdate = true;
                 }
