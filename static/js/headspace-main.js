@@ -104,6 +104,7 @@ function animateNewDocument(docId) {
         if (mesh.material) {
             mesh.material.transparent = true;
             mesh.material.opacity = 0.2;
+            mesh.material.needsUpdate = true;
         }
 
         const startDelay = index * 180;
@@ -132,7 +133,9 @@ function animateNewDocument(docId) {
                 mesh.position.copy(targetPosition);
                 mesh.scale.setScalar(1);
                 if (mesh.material) {
-                    mesh.material.opacity = 0.97;
+                    mesh.material.opacity = 1;
+                    mesh.material.transparent = false;
+                    mesh.material.needsUpdate = true;
                 }
             }
         }

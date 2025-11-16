@@ -16,6 +16,35 @@ let frameCount = 0;
 const LOD_UPDATE_INTERVAL = 30;
 let geometryGeneratorInstance = null;
 
+function getHexStringSafe(value) {
+    if (value === undefined || value === null) {
+        return 'null';
+    }
+
+    if (typeof value === 'string') {
+        return value.startsWith('#') ? value.slice(1) : value;
+    }
+
+    if (typeof value === 'number') {
+        return value.toString(16);
+    }
+
+    if (typeof value === 'object') {
+        if (typeof value.getHexString === 'function') {
+            return value.getHexString();
+        }
+        if (typeof value.getHex === 'function') {
+            const hex = value.getHex();
+            if (typeof hex === 'number') {
+                return hex.toString(16);
+            }
+            return String(hex);
+        }
+    }
+
+    return String(value);
+}
+
 function resolvePositionOverlap(target, usedPositions, options = {}) {
     const {
         minDistance = 6,
@@ -113,7 +142,11 @@ function analyzeGeometryNormals(geometry, label = '') {
 
     console.log(`[GEOMETRY] Normals for ${label}: min=${minLength.toFixed(3)}, max=${maxLength.toFixed(3)}, avg=${avgLength.toFixed(3)}, zero=${zeroCount} (${(zeroRatio * 100).toFixed(2)}%), nan=${nanCount}, vertices=${sampleCount}`);
 
-    const hasIssues = nanCount > 0 || zeroRatio > 0.02 || minLength < 0.02;
+    const MIN_LENGTH_THRESHOLD = 0.001;
+    const hasIssues =
+        nanCount > 0 ||
+        zeroRatio > 0.02 ||
+        (minLength < MIN_LENGTH_THRESHOLD && zeroRatio > 0.005);
     if (hasIssues) {
         console.warn(`[GEOMETRY] Suspicious normals detected for ${label}. Consider recomputing or checking deformation pipeline.`);
     }
@@ -148,7 +181,7 @@ function repairGeometryNormals(geometry, label = '') {
 
 function getMaterialOverride() {
     if (typeof window === 'undefined') {
-        return 'phong';
+        return null;
     }
 
     try {
@@ -160,10 +193,7 @@ function getMaterialOverride() {
             (window.__COSMOS_DEBUG__?.forcePhongMaterial ? 'phong' : null) ||
             window.__COSMOS_DEBUG__?.defaultMaterial;
 
-        const fallback =
-            window.__COSMOS_CONFIG__?.defaultMaterial ||
-            window.localStorage?.getItem('cosmos:defaultMaterial') ||
-            'basic';
+        const fallback = window.__COSMOS_CONFIG__?.defaultMaterial || null;
 
         const selected = (overrideParam || debugMaterial || fallback || '').toLowerCase();
 
@@ -178,7 +208,7 @@ function getMaterialOverride() {
         return null;
     } catch (error) {
         console.warn('[MATERIAL] Unable to read material override preference:', error);
-        return 'phong';
+        return null;
     }
 }
 
@@ -225,7 +255,28 @@ export function addCustomObject(object3D) {
     if (!customObjects.includes(object3D)) {
         customObjects.push(object3D);
     }
+    const globalLights = [];
+    object3D.traverse((child) => {
+        if (child?.userData?.isCosmosGlobalLight && child.isLight) {
+            globalLights.push(child);
+        }
+    });
+
     scene.add(object3D);
+
+    globalLights.forEach((light) => {
+        if (light.parent) {
+            light.parent.remove(light);
+        }
+        light.position.set(0, 0, 0);
+        light.distance = 0;
+        light.decay = 1;
+        light.intensity = 2.1;
+        light.castShadow = false;
+        if (!scene.children.includes(light)) {
+            scene.add(light);
+        }
+    });
 }
 
 export async function initCosmos() {
@@ -271,12 +322,17 @@ export async function initCosmos() {
     controls.maxPolarAngle = Math.PI;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
     scene.add(ambientLight);
 
-    const pointLight = new THREE.PointLight(0xffffff, 0.8);
-    pointLight.position.set(100, 100, 100);
-    scene.add(pointLight);
+    const rimLight = new THREE.PointLight(0xffffff, 0.6);
+    rimLight.position.set(100, 120, 160);
+    scene.add(rimLight);
+
+    const sunLight = new THREE.PointLight(0xffffff, 2.2, 0, 1.1);
+    sunLight.position.set(0, 0, 0);
+    sunLight.castShadow = false;
+    scene.add(sunLight);
 
     // Raycaster for interaction
     raycaster = new THREE.Raycaster();
@@ -340,39 +396,41 @@ function createChunkMaterial(chunk) {
         colorHex = chunk.color.trim();
     }
 
-    // Explicitly create THREE.Color objects
-    const colorObj = new THREE.Color(colorHex);
-    const emissiveObj = new THREE.Color(colorHex);
-    emissiveObj.multiplyScalar(0.35);
+    const logColor = typeof colorHex === 'string' ? colorHex : `#${colorHex.toString(16)}`;
+    const srgbColor = new THREE.Color(colorHex);
+    const linearColor = srgbColor.clone();
+    if (typeof linearColor.convertSRGBToLinear === 'function') {
+        linearColor.convertSRGBToLinear();
+    }
+    const emissiveLinear = linearColor.clone().multiplyScalar(0.15);
 
     const override = getMaterialOverride();
     if (override === 'basic') {
-        console.log(`[MATERIAL] Using MeshBasicMaterial override with color=${colorObj.getHexString()}`);
+        console.log(`[MATERIAL] Using MeshBasicMaterial override with color=${srgbColor.getHexString()}`);
         return new THREE.MeshBasicMaterial({
-            color: colorObj,
+            color: srgbColor,
             transparent: false
         });
     }
 
     if (override === 'phong') {
-        console.log(`[MATERIAL] Using MeshPhongMaterial override with color=${colorObj.getHexString()}`);
+        console.log(`[MATERIAL] Using MeshPhongMaterial override with color=${srgbColor.getHexString()}`);
         return new THREE.MeshPhongMaterial({
-            color: colorObj,
-            emissive: emissiveObj,
-            emissiveIntensity: 0.9,
-            shininess: 45,
+            color: srgbColor,
+            emissive: linearColor.clone().multiplyScalar(0.18),
+            emissiveIntensity: 1.0,
+            shininess: 36,
             specular: new THREE.Color(0xffffff)
         });
     }
 
-    const logColor = typeof colorHex === 'string' ? colorHex : `#${colorHex.toString(16)}`;
-    console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${logColor}, colorObj=${colorObj.getHexString()}`);
+    console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${logColor}, colorLinear=${linearColor.getHexString()}`);
     const material = new THREE.MeshStandardMaterial({
-        color: colorObj,
-        emissive: emissiveObj,
-        emissiveIntensity: 0.8,  // Increased from 0.2 to make emissive glow visible
-        roughness: 0.7,
-        metalness: 0.2
+        color: linearColor,
+        emissive: emissiveLinear,
+        emissiveIntensity: 1.0,
+        roughness: 0.58,
+        metalness: 0.22
     });
     console.log(`[MATERIAL] Created material type=${material.type}`);
     return material;
@@ -450,8 +508,8 @@ export function updateCosmosData() {
         console.log(`[COSMOS] Chunk ${idx} (id=${chunk.id}): color=${chunk.color}`);
         console.log(`[COSMOS]   Geometry type: ${geometry.type}, vertices: ${geometry.attributes?.position?.count || 'N/A'}`);
         console.log(`[COSMOS]   Material type: ${material.type}`);
-        console.log(`[COSMOS]   Material.color=${material.color ? material.color.getHexString() : 'null'}`);
-        console.log(`[COSMOS]   Material.emissive=${material.emissive ? material.emissive.getHexString() : 'null'}`);
+        console.log(`[COSMOS]   Material.color=${getHexStringSafe(material.color)}`);
+        console.log(`[COSMOS]   Material.emissive=${getHexStringSafe(material.emissive)}`);
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
             ? new THREE.Vector3(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2])
@@ -489,11 +547,11 @@ export function updateCosmosData() {
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
-        console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}, material.color=${mesh.material.color.getHexString()}`);
+        console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}, material.color=${getHexStringSafe(mesh.material.color)}`);
         console.log('[COSMOS] Material diagnostics:', {
             type: mesh.material.type,
-            color: mesh.material.color.getHexString(),
-            emissive: mesh.material.emissive?.getHexString?.() ?? mesh.material.emissive,
+            color: getHexStringSafe(mesh.material.color),
+            emissive: getHexStringSafe(mesh.material.emissive),
             opacity: mesh.material.opacity,
             transparent: mesh.material.transparent,
             depthWrite: mesh.material.depthWrite,
@@ -508,7 +566,7 @@ export function updateCosmosData() {
             if (chunkMeshes.has(chunk.id || chunk.chunk_id)) {
                 const m = chunkMeshes.get(chunk.id || chunk.chunk_id);
                 const inScene = scene.children.includes(m);
-                console.log(`[COSMOS] After add to scene (10ms later): mesh.material.color=${m.material.color.getHexString()}, emissive=${m.material.emissive.getHexString()}, in scene=${inScene}, mesh.visible=${m.visible}`);
+                console.log(`[COSMOS] After add to scene (10ms later): mesh.material.color=${getHexStringSafe(m.material.color)}, emissive=${getHexStringSafe(m.material.emissive)}, in scene=${inScene}, mesh.visible=${m.visible}`);
 
                 // Try to render once to see what color we get
                 if (renderer) {
@@ -598,7 +656,7 @@ function animateCosmos(time = 0) {
         console.log(`[RENDER] Lights: ${lights.map(l => `${l.type}(intensity=${l.intensity}, color=${l.color.getHexString()})`).join(', ')}`);
         chunkMeshes.forEach((mesh, idx) => {
             if (idx < 3) {
-                console.log(`[RENDER] Mesh ${idx}: pos=(${mesh.position.x.toFixed(1)},${mesh.position.y.toFixed(1)},${mesh.position.z.toFixed(1)}), color=${mesh.material.color.getHexString()}, emissive=${mesh.material.emissive.getHexString()}, emissiveIntensity=${mesh.material.emissiveIntensity}, metalness=${mesh.material.metalness}, roughness=${mesh.material.roughness}`);
+        console.log(`[RENDER] Mesh ${idx}: pos=(${mesh.position.x.toFixed(1)},${mesh.position.y.toFixed(1)},${mesh.position.z.toFixed(1)}), color=${getHexStringSafe(mesh.material.color)}, emissive=${getHexStringSafe(mesh.material.emissive)}, emissiveIntensity=${mesh.material.emissiveIntensity}, metalness=${mesh.material.metalness}, roughness=${mesh.material.roughness}`);
             }
         });
     }

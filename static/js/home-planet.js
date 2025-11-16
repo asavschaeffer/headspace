@@ -62,9 +62,11 @@ class HomePlanetGenerator {
             spark.scale.setScalar(pulse);
         };
 
-        // Add lighting emanating from the peak
-        const peakLight = new THREE.PointLight(0xffffff, 1.8, 220, 2);
-        peakLight.position.set(0, this.sphereRadius + this.peakHeight * 0.8, 0);
+        // Add a global light sourced from the spark that reaches the entire cosmos
+        const peakLight = new THREE.PointLight(0xffffff, 2.2, 0, 0);
+        peakLight.position.copy(spark.position);
+        peakLight.castShadow = false;
+        peakLight.userData.isCosmosGlobalLight = true;
         group.add(peakLight);
 
         // Create animated fog particles around planet
