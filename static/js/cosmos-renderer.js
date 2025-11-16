@@ -261,7 +261,14 @@ export function updateCosmosData() {
         setTimeout(() => {
             if (chunkMeshes.has(chunk.id || chunk.chunk_id)) {
                 const m = chunkMeshes.get(chunk.id || chunk.chunk_id);
-                console.log(`[COSMOS] After add to scene (10ms later): mesh.material.color=${m.material.color.getHexString()}, emissive=${m.material.emissive.getHexString()}`);
+                const inScene = scene.children.includes(m);
+                console.log(`[COSMOS] After add to scene (10ms later): mesh.material.color=${m.material.color.getHexString()}, emissive=${m.material.emissive.getHexString()}, in scene=${inScene}, mesh.visible=${m.visible}`);
+
+                // Try to render once to see what color we get
+                if (renderer) {
+                    renderer.render(scene, camera);
+                    console.log(`[COSMOS] Rendered scene - should see the mesh now`);
+                }
             }
         }, 10);
     });

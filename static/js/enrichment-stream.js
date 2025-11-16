@@ -326,6 +326,8 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
         docId,
         // onChunkEnriched - Update shape with new embedding
         async (chunkData) => {
+            console.log(`[ENRICHMENT] Event received: type=${chunkData.event_type}, chunk_id=${chunkData.chunk_id}`);
+
             const MAX_RETRIES = 25;
             const RETRY_DELAY_MS = 120;
 
