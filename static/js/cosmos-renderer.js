@@ -243,12 +243,13 @@ function materialSupportsEmissive(material) {
 function createChunkMaterial(chunk) {
     let colorHex = 0x748ffc;
     if (chunk.color && typeof chunk.color === 'string' && chunk.color.startsWith('#')) {
-        colorHex = parseInt(chunk.color.slice(1), 16);
+        colorHex = chunk.color.trim();
     }
 
     // Explicitly create THREE.Color objects
     const colorObj = new THREE.Color(colorHex);
     const emissiveObj = new THREE.Color(colorHex);
+    emissiveObj.multiplyScalar(0.35);
 
     if (shouldUsePhongMaterial()) {
         console.log(`[MATERIAL] Using MeshPhongMaterial override with color=${colorObj.getHexString()}`);
@@ -262,7 +263,8 @@ function createChunkMaterial(chunk) {
         return phongMaterial;
     }
 
-    console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${colorHex.toString(16)}, colorObj=${colorObj.getHexString()}`);
+    const logColor = typeof colorHex === 'string' ? colorHex : `#${colorHex.toString(16)}`;
+    console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${logColor}, colorObj=${colorObj.getHexString()}`);
     const material = new THREE.MeshStandardMaterial({
         color: colorObj,
         emissive: emissiveObj,
