@@ -169,15 +169,19 @@ function materialSupportsEmissive(material) {
 }
 
 function createChunkMaterial(chunk) {
-    let color = 0x748ffc;
+    let colorHex = 0x748ffc;
     if (chunk.color && typeof chunk.color === 'string' && chunk.color.startsWith('#')) {
-        color = parseInt(chunk.color.slice(1), 16);
+        colorHex = parseInt(chunk.color.slice(1), 16);
     }
 
-    console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${color.toString(16)}`);
+    // Explicitly create THREE.Color objects
+    const colorObj = new THREE.Color(colorHex);
+    const emissiveObj = new THREE.Color(colorHex);
+
+    console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${colorHex.toString(16)}, colorObj=${colorObj.getHexString()}`);
     const material = new THREE.MeshStandardMaterial({
-        color: color,
-        emissive: color,
+        color: colorObj,
+        emissive: emissiveObj,
         emissiveIntensity: 0.8,  // Increased from 0.2 to make emissive glow visible
         roughness: 0.7,
         metalness: 0.2
