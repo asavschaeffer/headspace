@@ -333,9 +333,11 @@ function animateCosmos(time = 0) {
     if (frameCount === 1) {
         console.log(`[RENDER] First frame: renderer.outputColorSpace=${renderer.outputColorSpace}, toneMapping=${renderer.toneMapping}, scene.background=${scene.background ? scene.background.getHexString() : 'null'}`);
         console.log(`[RENDER] Scene has ${chunkMeshes.size} meshes visible`);
+        const lights = scene.children.filter(c => c.isLight);
+        console.log(`[RENDER] Lights: ${lights.map(l => `${l.type}(intensity=${l.intensity}, color=${l.color.getHexString()})`).join(', ')}`);
         chunkMeshes.forEach((mesh, idx) => {
             if (idx < 3) {
-                console.log(`[RENDER] Mesh ${idx}: color=${mesh.material.color.getHexString()}, emissive=${mesh.material.emissive.getHexString()}, emissiveIntensity=${mesh.material.emissiveIntensity}, visible=${mesh.visible}, geometry vertices=${mesh.geometry.attributes.position.count}`);
+                console.log(`[RENDER] Mesh ${idx}: pos=(${mesh.position.x.toFixed(1)},${mesh.position.y.toFixed(1)},${mesh.position.z.toFixed(1)}), color=${mesh.material.color.getHexString()}, emissive=${mesh.material.emissive.getHexString()}, emissiveIntensity=${mesh.material.emissiveIntensity}, metalness=${mesh.material.metalness}, roughness=${mesh.material.roughness}`);
             }
         });
     }
