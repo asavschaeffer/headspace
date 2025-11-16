@@ -341,7 +341,6 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                     mesh.material.color.setStyle(effectiveColor);
                     if (materialSupportsEmissive(mesh.material) && typeof THREE !== 'undefined') {
                         const emissiveColor = new THREE.Color(effectiveColor);
-                        emissiveColor.multiplyScalar(0.25);
                         mesh.material.emissive.copy(emissiveColor);
                     }
                     mesh.material.needsUpdate = true;

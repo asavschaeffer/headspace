@@ -169,34 +169,17 @@ function materialSupportsEmissive(material) {
 }
 
 function createChunkMaterial(chunk) {
-    const signature = normalizeShapeSignature(chunk?.shape_3d);
-    const baseColor = new THREE.Color();
-    const fallbackColor = (chunk?.color && typeof chunk.color === 'string' && chunk.color.trim())
-        ? chunk.color
-        : '#748ffc';
-    baseColor.setStyle(fallbackColor);
-    const emissive = baseColor.clone().multiplyScalar(0.25);
-
-    let metalness = 0.05;
-    let roughness = 0.8;
-    if (signature?.texture === 'crystalline') {
-        metalness = 0.1;
-        roughness = 0.6;
-        emissive.multiplyScalar(1.1);
-    } else if (signature?.texture === 'nebula') {
-        metalness = 0.05;
-        roughness = 0.9;
+    let color = 0x748ffc;
+    if (chunk.color && typeof chunk.color === 'string' && chunk.color.startsWith('#')) {
+        color = parseInt(chunk.color.slice(1), 16);
     }
 
     const material = new THREE.MeshStandardMaterial({
-        color: baseColor,
-        vertexColors: false,
-        emissive,
-        emissiveIntensity: 0.55,
-        metalness,
-        roughness,
-        transparent: true,
-        opacity: 0.97
+        color: color,
+        emissive: color,
+        emissiveIntensity: 0.2,
+        roughness: 0.7,
+        metalness: 0.2
     });
     return material;
 }
