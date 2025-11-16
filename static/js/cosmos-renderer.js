@@ -16,6 +16,22 @@ let frameCount = 0;
 const LOD_UPDATE_INTERVAL = 30;
 let geometryGeneratorInstance = null;
 
+function normalizeShapeSignature(rawSignature) {
+    if (!rawSignature) return null;
+    if (typeof rawSignature === 'object') {
+        return rawSignature;
+    }
+    if (typeof rawSignature === 'string') {
+        try {
+            return JSON.parse(rawSignature);
+        } catch (error) {
+            console.warn('Failed to parse shape signature string', error);
+            return null;
+        }
+    }
+    return null;
+}
+
 function getGeometryGenerator() {
     if (!geometryGeneratorInstance && typeof window !== 'undefined' && window.ProceduralGeometryGenerator) {
         geometryGeneratorInstance = new window.ProceduralGeometryGenerator();
@@ -156,23 +172,35 @@ function materialSupportsEmissive(material) {
 }
 
 function createChunkMaterial(chunk) {
-    const baseColor = chunk?.color ? new THREE.Color(chunk.color) : new THREE.Color('#748ffc');
-    const emissive = baseColor.clone().multiplyScalar(0.3);
+    const signature = normalizeShapeSignature(chunk?.shape_3d);
+    const baseColor = new THREE.Color(chunk?.color || '#748ffc');
+    const emissive = baseColor.clone().multiplyScalar(0.25);
+
+    let metalness = 0.2;
+    let roughness = 0.65;
+    if (signature?.texture === 'crystalline') {
+        metalness = 0.35;
+        roughness = 0.4;
+        emissive.multiplyScalar(1.15);
+    } else if (signature?.texture === 'nebula') {
+        metalness = 0.1;
+        roughness = 0.85;
+    }
 
     return new THREE.MeshStandardMaterial({
         color: baseColor,
         vertexColors: false,
         emissive,
         emissiveIntensity: 0.55,
-        metalness: 0.2,
-        roughness: 0.65,
+        metalness,
+        roughness,
         transparent: true,
         opacity: 0.97
     });
 }
 
 function createPlaceholderGeometry(chunk) {
-    const signature = chunk?.shape_3d && typeof chunk.shape_3d === 'object' ? chunk.shape_3d : {};
+    const signature = normalizeShapeSignature(chunk?.shape_3d) || {};
     const detail = signature.detail ?? 16;
     const scale = signature.scale ?? 3.4;
     const geometry = new THREE.SphereGeometry(1, detail, detail);
@@ -182,9 +210,10 @@ function createPlaceholderGeometry(chunk) {
 
 function createGeometryForChunk(chunk) {
     const generator = getGeometryGenerator();
-    if (generator && chunk?.shape_3d && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
+    const signature = normalizeShapeSignature(chunk?.shape_3d);
+    if (generator && signature && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
         try {
-            return generator.generatePlanetaryGeometryFromSignature(chunk.shape_3d);
+            return generator.generatePlanetaryGeometryFromSignature(signature);
         } catch (error) {
             console.warn('Failed to generate geometry from signature', error);
         }

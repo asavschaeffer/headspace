@@ -148,6 +148,21 @@ class EnrichmentStreamListener {
 }
 
 let geometryGeneratorInstance = null;
+function normalizeShapeSignature(rawSignature) {
+    if (!rawSignature) return null;
+    if (typeof rawSignature === 'object') {
+        return rawSignature;
+    }
+    if (typeof rawSignature === 'string') {
+        try {
+            return JSON.parse(rawSignature);
+        } catch (error) {
+            console.warn('Failed to parse shape signature string', error);
+            return null;
+        }
+    }
+    return null;
+}
 function getGeometryGenerator() {
     if (!geometryGeneratorInstance && typeof window !== 'undefined' && window.ProceduralGeometryGenerator) {
         geometryGeneratorInstance = new window.ProceduralGeometryGenerator();
@@ -299,7 +314,8 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
         docId,
         // onChunkEnriched - Update shape with new embedding
         async (chunkData) => {
-            const { chunk_id, color, position_3d, umap_coordinates, stage, shape_3d } = chunkData;
+            const { chunk_id, color, position_3d, umap_coordinates, stage } = chunkData;
+            const shapeSignature = normalizeShapeSignature(chunkData.shape_3d);
 
             // Get the mesh for this chunk
             const mesh = chunkMeshMap.get(chunk_id);
@@ -330,7 +346,7 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
 
             mesh.userData = {
                 ...mesh.userData,
-                shapeSignature: shape_3d || mesh.userData?.shapeSignature,
+                shapeSignature: shapeSignature || mesh.userData?.shapeSignature,
             };
             if (mesh.userData && mesh.userData.chunk) {
                 mesh.userData.chunk = {
@@ -338,20 +354,20 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                     color: color || mesh.userData.chunk.color,
                     position_3d: position_3d || mesh.userData.chunk.position_3d,
                     umap_coordinates: umap_coordinates || mesh.userData.chunk.umap_coordinates,
-                    shape_3d: shape_3d || mesh.userData.chunk.shape_3d,
+                    shape_3d: shapeSignature || mesh.userData.chunk.shape_3d,
                 };
             }
 
-            if (shape_3d && stage === 'chunk_enriched') {
+            if (shapeSignature && stage === 'chunk_enriched') {
                 // Morph geometry from placeholder to final shape
-                const animator = new ShapeMorphingAnimator(mesh, shape_3d);
+                const animator = new ShapeMorphingAnimator(mesh, shapeSignature);
                 await animator.start();
                 addShapeCompletionGlow(mesh);
-            } else if (shape_3d && stage === 'chunk_layout_updated') {
+            } else if (shapeSignature && stage === 'chunk_layout_updated') {
                 const generator = getGeometryGenerator();
                 if (generator && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
                     try {
-                        const newGeometry = generator.generatePlanetaryGeometryFromSignature(shape_3d);
+                        const newGeometry = generator.generatePlanetaryGeometryFromSignature(shapeSignature);
                         if (newGeometry) {
                             if (mesh.geometry && typeof mesh.geometry.dispose === 'function') {
                                 mesh.geometry.dispose();

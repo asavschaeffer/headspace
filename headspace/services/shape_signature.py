@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 @dataclass(frozen=True)
 class ShapeSignatureConfig:
     detail: int = 32
-    deformation_scale: float = 0.32
+    deformation_scale: float = 0.5
     smoothing_iterations: int = 2
     min_harmonics: int = 6
     max_harmonics: int = 16
