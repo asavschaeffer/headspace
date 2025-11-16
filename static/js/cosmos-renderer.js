@@ -616,6 +616,14 @@ export function updateCosmosData() {
         console.log(`[COSMOS]   Material type: ${material.type}`);
         console.log(`[COSMOS]   Material.color=${getHexStringSafe(material.color)}`);
         console.log(`[COSMOS]   Material.emissive=${getHexStringSafe(material.emissive)}`);
+    console.log('[COSMOS]   Material numeric values:', {
+        color: material.color ? { r: material.color.r, g: material.color.g, b: material.color.b } : null,
+        emissive: material.emissive ? { r: material.emissive.r, g: material.emissive.g, b: material.emissive.b } : null,
+        emissiveIntensity: material.emissiveIntensity,
+        roughness: material.roughness,
+        metalness: material.metalness,
+        opacity: material.opacity
+    });
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
             ? new THREE.Vector3(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2])
@@ -656,6 +664,11 @@ export function updateCosmosData() {
             mesh.material.side = THREE.DoubleSide;
             mesh.material.needsUpdate = true;
         }
+
+    console.log('[COSMOS]   Position diagnostics:', {
+        position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
+        distanceFromOrigin: mesh.position.length()
+    });
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
