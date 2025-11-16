@@ -533,10 +533,11 @@ function createChunkMaterial(chunk) {
     }
 
     if (override === 'lambert') {
-        console.log(`[MATERIAL] Using MeshLambertMaterial override with color=${srgbColor.getHexString()}`);
+        console.log(`[MATERIAL] Using MeshLambertMaterial override with color=${linearColor.getHexString()}`);
         return new THREE.MeshLambertMaterial({
-            color: srgbColor,
-            emissive: srgbColor.clone().multiplyScalar(0.18)
+            color: linearColor.clone(),
+            emissive: linearColor.clone().multiplyScalar(0.18),
+            emissiveIntensity: 1.0
         });
     }
 
@@ -696,6 +697,20 @@ export function updateCosmosData() {
         });
 
         createNormalsDebugHelper(mesh);
+
+    if (debug.cloneBasicPreview && mesh.material) {
+        const previewMaterial = new THREE.MeshBasicMaterial({
+            color: mesh.material.color.clone ? mesh.material.color.clone() : new THREE.Color(0xffffff),
+            wireframe: true,
+            toneMapped: false
+        });
+        const preview = new THREE.Mesh(mesh.geometry.clone(), previewMaterial);
+        preview.scale.multiplyScalar(1.01);
+        preview.position.copy(mesh.position);
+        preview.userData.isCosmosDebugPreview = true;
+        scene.add(preview);
+        console.log('[COSMOS] Added debug basic preview mesh');
+    }
 
         // Log initial rendering state
         setTimeout(() => {
