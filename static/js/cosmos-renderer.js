@@ -25,7 +25,8 @@ function getDebugConfig() {
         lightHelpers: true,
         normalHelpers: true,
         logRenderer: true,
-        forceDoubleSide: false
+        forceDoubleSide: false,
+        cloneBasicPreview: false
     };
 
     if (typeof window === 'undefined') {
@@ -346,6 +347,15 @@ export function addCustomObject(object3D) {
             const helper = new THREE.PointLightHelper(light, 40, 0xffaa33);
             helper.userData.isCosmosLightHelper = true;
             scene.add(helper);
+        }
+
+        if (debug.cloneBasicPreview) {
+            const rangeHelperGeom = new THREE.RingGeometry(light.distance || 240, (light.distance || 240) + 0.5, 64);
+            const rangeHelperMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, toneMapped: false });
+            const rangeHelper = new THREE.Mesh(rangeHelperGeom, rangeHelperMat);
+            rangeHelper.rotation.x = Math.PI / 2;
+            rangeHelper.userData.isCosmosLightHelper = true;
+            scene.add(rangeHelper);
         }
     });
 }
