@@ -510,7 +510,7 @@ function createChunkMaterial(chunk) {
     if (typeof linearColor.convertSRGBToLinear === 'function') {
         linearColor.convertSRGBToLinear();
     }
-    const emissiveLinear = linearColor.clone().multiplyScalar(0.15);
+    const emissiveLinear = new THREE.Color(0, 0, 0);
 
     const override = getMaterialOverride();
     if (override === 'basic') {
@@ -545,10 +545,10 @@ function createChunkMaterial(chunk) {
     const material = new THREE.MeshStandardMaterial({
         color: linearColor,
         emissive: emissiveLinear,
-        emissiveIntensity: 1.0,
-        roughness: 0.42,
-        metalness: 0.12,
-        envMapIntensity: 0.45
+        emissiveIntensity: 0,
+        roughness: 0,
+        metalness: 0,
+        envMapIntensity: 0
     });
     material.toneMapped = true;
     material.needsUpdate = true;
