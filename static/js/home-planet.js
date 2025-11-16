@@ -45,10 +45,11 @@ class HomePlanetGenerator {
 
         // Create shining spark at peak tip
         const sparkGeometry = new THREE.SphereGeometry(0.15, 8, 8);
-        const sparkMaterial = new THREE.MeshBasicMaterial({
+        const sparkMaterial = new THREE.MeshPhongMaterial({
             color: 0xffff99,
             emissive: 0xffff99,
-            emissiveIntensity: 0.8
+            emissiveIntensity: 0.8,
+            shininess: 200
         });
 
         const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
