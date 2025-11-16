@@ -16,6 +16,78 @@ let frameCount = 0;
 const LOD_UPDATE_INTERVAL = 30;
 let geometryGeneratorInstance = null;
 
+function analyzeGeometryNormals(geometry, label = '') {
+    if (!geometry || !geometry.attributes) {
+        console.warn(`[GEOMETRY] ${label} missing geometry attributes`);
+        return;
+    }
+
+    const normalsAttr = geometry.attributes.normal;
+    if (!normalsAttr) {
+        console.warn(`[GEOMETRY] ${label} missing normal attribute`);
+        return;
+    }
+
+    const array = normalsAttr.array;
+    if (!array || array.length === 0) {
+        console.warn(`[GEOMETRY] ${label} normal attribute empty`);
+        return;
+    }
+
+    let zeroCount = 0;
+    let nanCount = 0;
+    let minLength = Infinity;
+    let maxLength = 0;
+    let totalLength = 0;
+    const vector = new THREE.Vector3();
+
+    for (let i = 0; i < array.length; i += 3) {
+        vector.set(array[i], array[i + 1], array[i + 2]);
+        const length = vector.length();
+
+        if (!Number.isFinite(length)) {
+            nanCount += 1;
+            continue;
+        }
+
+        if (length < 1e-6) {
+            zeroCount += 1;
+        }
+
+        minLength = Math.min(minLength, length);
+        maxLength = Math.max(maxLength, length);
+        totalLength += length;
+    }
+
+    const sampleCount = array.length / 3;
+    const avgLength = totalLength / sampleCount;
+
+    console.log(`[GEOMETRY] Normals for ${label}: min=${minLength.toFixed(3)}, max=${maxLength.toFixed(3)}, avg=${avgLength.toFixed(3)}, zero=${zeroCount}, nan=${nanCount}, vertices=${sampleCount}`);
+
+    if (nanCount > 0 || zeroCount > sampleCount * 0.1 || minLength < 0.1) {
+        console.warn(`[GEOMETRY] Suspicious normals detected for ${label}. Consider recomputing or checking deformation pipeline.`);
+    }
+}
+
+function shouldUsePhongMaterial() {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    try {
+        if (window.__COSMOS_DEBUG__?.forcePhongMaterial || window.__COSMOS_DEBUG__?.material === 'phong') {
+            return true;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const override = params.get('cosmosMaterial');
+        return override && override.toLowerCase() === 'phong';
+    } catch (error) {
+        console.warn('[MATERIAL] Unable to read material override preference:', error);
+        return false;
+    }
+}
+
 function normalizeShapeSignature(rawSignature) {
     if (!rawSignature) return null;
     if (typeof rawSignature === 'object') {
@@ -178,6 +250,18 @@ function createChunkMaterial(chunk) {
     const colorObj = new THREE.Color(colorHex);
     const emissiveObj = new THREE.Color(colorHex);
 
+    if (shouldUsePhongMaterial()) {
+        console.log(`[MATERIAL] Using MeshPhongMaterial override with color=${colorObj.getHexString()}`);
+        const phongMaterial = new THREE.MeshPhongMaterial({
+            color: colorObj,
+            emissive: emissiveObj,
+            emissiveIntensity: 0.9,
+            shininess: 45,
+            specular: new THREE.Color(0xffffff)
+        });
+        return phongMaterial;
+    }
+
     console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${colorHex.toString(16)}, colorObj=${colorObj.getHexString()}`);
     const material = new THREE.MeshStandardMaterial({
         color: colorObj,
@@ -213,6 +297,7 @@ function createGeometryForChunk(chunk) {
             console.log(`[GEOMETRY] Attempting to generate procedural geometry...`);
             const geom = generator.generatePlanetaryGeometryFromSignature(signature);
             console.log(`[GEOMETRY] SUCCESS: Generated geometry with ${geom.attributes.position.count} vertices`);
+            analyzeGeometryNormals(geom, `chunk ${chunk?.id ?? 'unknown'}`);
             return geom;
         } catch (error) {
             console.warn(`[GEOMETRY] ERROR generating geometry:`, error.message);
