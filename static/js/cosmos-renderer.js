@@ -73,7 +73,8 @@ export async function initCosmos() {
 
     // Scene
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000010, 0.00035);
+    scene.background = new THREE.Color(0x001a33);
+    scene.fog = new THREE.Fog(0x001a33, 500, 2000);
 
     // Camera
     camera = new THREE.PerspectiveCamera(72, container.clientWidth / container.clientHeight, 0.1, 10000);
@@ -93,8 +94,7 @@ export async function initCosmos() {
     } else if ('outputEncoding' in renderer) {
         renderer.outputEncoding = THREE.sRGBEncoding;
     }
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    renderer.toneMapping = THREE.NoToneMapping;
 
     // Controls
     controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -105,20 +105,12 @@ export async function initCosmos() {
     controls.maxPolarAngle = Math.PI;
 
     // Lighting
-    const ambient = new THREE.AmbientLight(0x667eea, 0.45);
-    scene.add(ambient);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
 
-    const keyLight = new THREE.PointLight(0xffffff, 1.2, 400);
-    keyLight.position.set(60, 120, 80);
-    scene.add(keyLight);
-
-    const fillLight = new THREE.PointLight(0x82a0ff, 0.6, 300);
-    fillLight.position.set(-90, -40, -30);
-    scene.add(fillLight);
-
-    const rimLight = new THREE.PointLight(0xff8a65, 0.5, 260);
-    rimLight.position.set(0, 80, -120);
-    scene.add(rimLight);
+    const pointLight = new THREE.PointLight(0xffffff, 0.8);
+    pointLight.position.set(100, 100, 100);
+    scene.add(pointLight);
 
     // Raycaster for interaction
     raycaster = new THREE.Raycaster();
@@ -183,23 +175,17 @@ function createChunkMaterial(chunk) {
         ? chunk.color
         : '#748ffc';
     baseColor.setStyle(fallbackColor);
-    if (typeof baseColor.convertSRGBToLinear === 'function') {
-        baseColor.convertSRGBToLinear();
-    }
     const emissive = baseColor.clone().multiplyScalar(0.25);
-    if (typeof emissive.convertSRGBToLinear === 'function') {
-        emissive.convertSRGBToLinear();
-    }
 
-    let metalness = 0.2;
-    let roughness = 0.65;
+    let metalness = 0.05;
+    let roughness = 0.8;
     if (signature?.texture === 'crystalline') {
-        metalness = 0.35;
-        roughness = 0.4;
-        emissive.multiplyScalar(1.15);
-    } else if (signature?.texture === 'nebula') {
         metalness = 0.1;
-        roughness = 0.85;
+        roughness = 0.6;
+        emissive.multiplyScalar(1.1);
+    } else if (signature?.texture === 'nebula') {
+        metalness = 0.05;
+        roughness = 0.9;
     }
 
     const material = new THREE.MeshStandardMaterial({
@@ -212,7 +198,6 @@ function createChunkMaterial(chunk) {
         transparent: true,
         opacity: 0.97
     });
-    material.toneMapped = true;
     return material;
 }
 

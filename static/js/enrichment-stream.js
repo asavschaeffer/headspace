@@ -329,24 +329,18 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
             const RETRY_DELAY_MS = 120;
 
             const applyUpdateToMesh = async (mesh, resolvedData) => {
-                const { color, position_3d, umap_coordinates, stage } = resolvedData;
+                const { color, position_3d, umap_coordinates, event_type } = resolvedData;
                 const shapeSignature = normalizeShapeSignature(resolvedData.shape_3d);
 
-                console.log(`🎨 Morphing shape for chunk ${resolvedData.chunk_id}`);
+                console.log(`🎨 Handling ${event_type} for chunk ${resolvedData.chunk_id}`);
 
                 const effectiveColor = (typeof color === 'string' && color.trim())
                     ? color
                     : mesh.userData?.chunk?.color;
                 if (effectiveColor && mesh.material && mesh.material.color && typeof mesh.material.color.setStyle === 'function') {
                     mesh.material.color.setStyle(effectiveColor);
-                    if (typeof mesh.material.color.convertSRGBToLinear === 'function') {
-                        mesh.material.color.convertSRGBToLinear();
-                    }
                     if (materialSupportsEmissive(mesh.material) && typeof THREE !== 'undefined') {
                         const emissiveColor = new THREE.Color(effectiveColor);
-                        if (typeof emissiveColor.convertSRGBToLinear === 'function') {
-                            emissiveColor.convertSRGBToLinear();
-                        }
                         emissiveColor.multiplyScalar(0.25);
                         mesh.material.emissive.copy(emissiveColor);
                     }
@@ -373,11 +367,11 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                     };
                 }
 
-                if (shapeSignature && stage === 'chunk_enriched') {
+                if (shapeSignature && event_type === 'chunk_enriched') {
                     const animator = new ShapeMorphingAnimator(mesh, shapeSignature);
                     await animator.start();
                     addShapeCompletionGlow(mesh);
-                } else if (shapeSignature && stage === 'chunk_layout_updated') {
+                } else if (shapeSignature && event_type === 'chunk_layout_updated') {
                     const generator = getGeometryGenerator();
                     if (generator && typeof generator.generatePlanetaryGeometryFromSignature === 'function') {
                         try {
