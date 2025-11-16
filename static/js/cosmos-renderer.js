@@ -174,6 +174,7 @@ function createChunkMaterial(chunk) {
         color = parseInt(chunk.color.slice(1), 16);
     }
 
+    console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${color.toString(16)}`);
     const material = new THREE.MeshStandardMaterial({
         color: color,
         emissive: color,
@@ -181,6 +182,7 @@ function createChunkMaterial(chunk) {
         roughness: 0.7,
         metalness: 0.2
     });
+    console.log(`[MATERIAL] Created material type=${material.type}`);
     return material;
 }
 
@@ -228,7 +230,11 @@ export function updateCosmosData() {
         const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
 
-        console.log(`[COSMOS] Chunk ${idx} (id=${chunk.id}): color=${chunk.color}, material.color=${material.color.getHexString()}, material.emissive=${material.emissive.getHexString()}`);
+        console.log(`[COSMOS] Chunk ${idx} (id=${chunk.id}): color=${chunk.color}`);
+        console.log(`[COSMOS]   Geometry type: ${geometry.type}, vertices: ${geometry.attributes?.position?.count || 'N/A'}`);
+        console.log(`[COSMOS]   Material type: ${material.type}`);
+        console.log(`[COSMOS]   Material.color=${material.color ? material.color.getHexString() : 'null'}`);
+        console.log(`[COSMOS]   Material.emissive=${material.emissive ? material.emissive.getHexString() : 'null'}`);
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
             ? new THREE.Vector3(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2])
