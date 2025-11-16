@@ -163,7 +163,7 @@ function getMaterialOverride() {
         const fallback =
             window.__COSMOS_CONFIG__?.defaultMaterial ||
             window.localStorage?.getItem('cosmos:defaultMaterial') ||
-            'phong';
+            'basic';
 
         const selected = (overrideParam || debugMaterial || fallback || '').toLowerCase();
 
@@ -490,6 +490,18 @@ export function updateCosmosData() {
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
         console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}, material.color=${mesh.material.color.getHexString()}`);
+        console.log('[COSMOS] Material diagnostics:', {
+            type: mesh.material.type,
+            color: mesh.material.color.getHexString(),
+            emissive: mesh.material.emissive?.getHexString?.() ?? mesh.material.emissive,
+            opacity: mesh.material.opacity,
+            transparent: mesh.material.transparent,
+            depthWrite: mesh.material.depthWrite,
+            depthTest: mesh.material.depthTest,
+            side: mesh.material.side,
+            colorWrite: mesh.material.colorWrite,
+            needsUpdate: mesh.material.needsUpdate
+        });
 
         // Log initial rendering state
         setTimeout(() => {
