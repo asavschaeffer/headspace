@@ -321,6 +321,7 @@ class ShapeMorphingAnimator {
  * Call this to start streaming enrichment and update shapes in real-time
  */
 function startEnrichmentStreaming(docId, chunkMeshMap) {
+    console.log(`[ENRICHMENT] Starting enrichment streaming for doc=${docId}, meshes available=${chunkMeshMap.size}`);
     const enrichmentListener = new EnrichmentStreamListener(
         docId,
         // onChunkEnriched - Update shape with new embedding
@@ -398,11 +399,14 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
 
             const attemptUpdate = (resolvedData, attempt = 0) => {
                 const mesh = chunkMeshMap.get(resolvedData.chunk_id);
+                if (attempt === 0) {
+                    console.log(`[ENRICHMENT] Looking for mesh chunk_id=${resolvedData.chunk_id}, found=${!!mesh}, map size=${chunkMeshMap.size}`);
+                }
                 if (!mesh) {
                     if (attempt < MAX_RETRIES) {
                         setTimeout(() => attemptUpdate(resolvedData, attempt + 1), RETRY_DELAY_MS);
                     } else {
-                        console.warn(`Mesh not found for chunk ${resolvedData.chunk_id} after retries; skipping update.`);
+                        console.warn(`[ENRICHMENT] Mesh not found for chunk ${resolvedData.chunk_id} after ${MAX_RETRIES} retries`);
                     }
                     return;
                 }

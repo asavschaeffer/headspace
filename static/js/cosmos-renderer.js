@@ -255,7 +255,15 @@ export function updateCosmosData() {
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
-        console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}`);
+        console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}, material.color=${mesh.material.color.getHexString()}`);
+
+        // Log initial rendering state
+        setTimeout(() => {
+            if (chunkMeshes.has(chunk.id || chunk.chunk_id)) {
+                const m = chunkMeshes.get(chunk.id || chunk.chunk_id);
+                console.log(`[COSMOS] After add to scene (10ms later): mesh.material.color=${m.material.color.getHexString()}, emissive=${m.material.emissive.getHexString()}`);
+            }
+        }, 10);
     });
 
     console.log(`[COSMOS] Scene has ${chunkMeshes.size} meshes. Camera pos: ${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)}`);
