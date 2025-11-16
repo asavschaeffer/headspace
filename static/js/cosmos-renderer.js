@@ -27,7 +27,8 @@ function getDebugConfig() {
         logRenderer: true,
         forceDoubleSide: false,
         cloneBasicPreview: false,
-        forceSolidColor: null
+        forceSolidColor: null,
+        logLightUniforms: false
     };
 
     if (typeof window === 'undefined') {
@@ -67,47 +68,71 @@ function getHexStringSafe(value) {
     return String(value);
 }
 
-function applySolidColorDebug(material, baseColor) {
+function applyMaterialDebugHooks(material, baseColor) {
     const debug = getDebugConfig();
-    if (!debug.forceSolidColor || !material) {
+    if (!material) {
         return;
     }
 
-    let targetColor;
-    if (debug.forceSolidColor === true) {
-        targetColor = new THREE.Color(0x00ff00);
-    } else {
+    const debugKey = JSON.stringify({
+        forceSolidColor: debug.forceSolidColor || null,
+        logLightUniforms: !!debug.logLightUniforms
+    });
+
+    if (!debug.forceSolidColor && !debug.logLightUniforms) {
+        material.onBeforeCompile = undefined;
+        material.customProgramCacheKey = undefined;
+        return;
+    }
+
+    let forcedColor = null;
+    if (debug.forceSolidColor) {
         try {
-            targetColor = new THREE.Color(debug.forceSolidColor);
+            forcedColor = debug.forceSolidColor === true
+                ? new THREE.Color(0x00ff00)
+                : new THREE.Color(debug.forceSolidColor);
         } catch (error) {
             console.warn('[COSMOS][DEBUG] Invalid forceSolidColor value, falling back to base color.', error);
-            targetColor = baseColor.clone ? baseColor.clone() : new THREE.Color(baseColor);
+            forcedColor = baseColor && baseColor.clone ? baseColor.clone() : null;
+        }
+
+        if (forcedColor) {
+            const linear = forcedColor.clone();
+            if (typeof linear.convertSRGBToLinear === 'function') {
+                linear.convertSRGBToLinear();
+            }
+            material.color.copy(linear);
+            material.emissive?.set?.(0, 0, 0);
+            material.emissiveIntensity = 0;
+            forcedColor = linear;
+            console.log('[COSMOS][DEBUG] forceSolidColor applied:', linear.getHexString());
         }
     }
 
-    const linear = targetColor.clone();
-    if (typeof linear.convertSRGBToLinear === 'function') {
-        linear.convertSRGBToLinear();
-    }
-
-    material.color.copy(linear);
-    material.emissive?.set?.(0, 0, 0);
-    material.emissiveIntensity = 0;
-
     material.onBeforeCompile = (shader) => {
-        const injection = `
-            gl_FragColor = vec4(${linear.r.toFixed(6)}, ${linear.g.toFixed(6)}, ${linear.b.toFixed(6)}, 1.0);
-            #include <dithering_fragment>
-            return;
-        `;
+        if (debug.logLightUniforms) {
+            const pointLights = shader.uniforms?.pointLights?.value || [];
+            const ambient = shader.uniforms?.ambientLightColor?.value;
+            console.log('[COSMOS][DEBUG] Shader point lights:', pointLights);
+            console.log('[COSMOS][DEBUG] Shader ambient light:', ambient);
+            console.log('[COSMOS][DEBUG] Shader defines:', shader.defines);
+        }
 
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <dithering_fragment>',
-            injection
-        );
+        if (forcedColor) {
+            const injection = `
+                gl_FragColor = vec4(${forcedColor.r.toFixed(6)}, ${forcedColor.g.toFixed(6)}, ${forcedColor.b.toFixed(6)}, 1.0);
+                #include <dithering_fragment>
+                return;
+            `;
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <dithering_fragment>',
+                injection
+            );
+        }
     };
+
+    material.customProgramCacheKey = () => debugKey;
     material.needsUpdate = true;
-    console.log('[COSMOS][DEBUG] forceSolidColor applied:', targetColor.getHexString());
 }
 
 function resolvePositionOverlap(target, usedPositions, options = {}) {
@@ -593,7 +618,7 @@ function createChunkMaterial(chunk) {
             emissive: linearColor.clone().multiplyScalar(0.18),
             emissiveIntensity: 1.0
         });
-        applySolidColorDebug(lambert, linearColor);
+        applyMaterialDebugHooks(lambert, linearColor);
         lambert.needsUpdate = true;
         return lambert;
     }
@@ -608,8 +633,8 @@ function createChunkMaterial(chunk) {
         envMapIntensity: 0
     });
     material.toneMapped = true;
+    applyMaterialDebugHooks(material, linearColor);
     material.needsUpdate = true;
-    applySolidColorDebug(material, linearColor);
     console.log(`[MATERIAL] Created material type=${material.type}`);
     return material;
 }
