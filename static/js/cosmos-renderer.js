@@ -418,6 +418,19 @@ export async function initCosmos() {
     sunLight.position.set(0, 0, 0);
     sunLight.castShadow = false;
     scene.add(sunLight);
+    console.log('[LIGHT] Ambient intensity:', ambientLight.intensity);
+    console.log('[LIGHT] Rim light:', {
+        intensity: rimLight.intensity,
+        decay: rimLight.decay,
+        distance: rimLight.distance,
+        position: rimLight.position.toArray()
+    });
+    console.log('[LIGHT] Sun light:', {
+        intensity: sunLight.intensity,
+        decay: sunLight.decay,
+        distance: sunLight.distance,
+        position: sunLight.position.toArray()
+    });
     if (debug.lightHelpers) {
         const helperColor = 0xffaa33;
         const sunHelper = new THREE.PointLightHelper(sunLight, 40, helperColor);
@@ -616,14 +629,13 @@ export function updateCosmosData() {
         console.log(`[COSMOS]   Material type: ${material.type}`);
         console.log(`[COSMOS]   Material.color=${getHexStringSafe(material.color)}`);
         console.log(`[COSMOS]   Material.emissive=${getHexStringSafe(material.emissive)}`);
-    console.log('[COSMOS]   Material numeric values:', {
-        color: material.color ? { r: material.color.r, g: material.color.g, b: material.color.b } : null,
-        emissive: material.emissive ? { r: material.emissive.r, g: material.emissive.g, b: material.emissive.b } : null,
-        emissiveIntensity: material.emissiveIntensity,
-        roughness: material.roughness,
-        metalness: material.metalness,
-        opacity: material.opacity
-    });
+    const colorVector = material.color
+        ? `(${material.color.r.toFixed(4)}, ${material.color.g.toFixed(4)}, ${material.color.b.toFixed(4)})`
+        : 'null';
+    const emissiveVector = material.emissive
+        ? `(${material.emissive.r.toFixed(4)}, ${material.emissive.g.toFixed(4)}, ${material.emissive.b.toFixed(4)})`
+        : 'null';
+    console.log(`[COSMOS]   Material numeric values: color=${colorVector}, emissive=${emissiveVector}, emissiveIntensity=${material.emissiveIntensity?.toFixed?.(4) ?? material.emissiveIntensity}, roughness=${material.roughness ?? 'n/a'}, metalness=${material.metalness ?? 'n/a'}, opacity=${material.opacity}`);
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
             ? new THREE.Vector3(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2])
@@ -665,10 +677,7 @@ export function updateCosmosData() {
             mesh.material.needsUpdate = true;
         }
 
-    console.log('[COSMOS]   Position diagnostics:', {
-        position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
-        distanceFromOrigin: mesh.position.length()
-    });
+    console.log(`[COSMOS]   Position diagnostics: position=(${mesh.position.x.toFixed(3)}, ${mesh.position.y.toFixed(3)}, ${mesh.position.z.toFixed(3)}), dist=${mesh.position.length().toFixed(3)}`);
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
