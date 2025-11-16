@@ -148,21 +148,37 @@ function repairGeometryNormals(geometry, label = '') {
 
 function getMaterialOverride() {
     if (typeof window === 'undefined') {
-        return null;
+        return 'phong';
     }
 
     try {
-        const debugMaterial = window.__COSMOS_DEBUG__?.material || (window.__COSMOS_DEBUG__?.forcePhongMaterial ? 'phong' : null);
-        if (debugMaterial) {
-            return String(debugMaterial).toLowerCase();
+        const params = new URLSearchParams(window.location.search);
+        const overrideParam = params.get('cosmosMaterial');
+
+        const debugMaterial =
+            window.__COSMOS_DEBUG__?.material ||
+            (window.__COSMOS_DEBUG__?.forcePhongMaterial ? 'phong' : null) ||
+            window.__COSMOS_DEBUG__?.defaultMaterial;
+
+        const fallback =
+            window.__COSMOS_CONFIG__?.defaultMaterial ||
+            window.localStorage?.getItem('cosmos:defaultMaterial') ||
+            'phong';
+
+        const selected = (overrideParam || debugMaterial || fallback || '').toLowerCase();
+
+        if (selected === 'standard' || selected === 'meshstandard') {
+            return null;
         }
 
-        const params = new URLSearchParams(window.location.search);
-        const override = params.get('cosmosMaterial');
-        return override ? override.toLowerCase() : null;
+        if (selected === 'basic' || selected === 'phong' || selected === 'meshbasic' || selected === 'meshphong') {
+            return selected.startsWith('mesh') ? selected.replace('mesh', '') : selected;
+        }
+
+        return null;
     } catch (error) {
         console.warn('[MATERIAL] Unable to read material override preference:', error);
-        return null;
+        return 'phong';
     }
 }
 
