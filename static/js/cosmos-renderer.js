@@ -26,7 +26,8 @@ function getDebugConfig() {
         normalHelpers: true,
         logRenderer: true,
         forceDoubleSide: false,
-        cloneBasicPreview: false
+        cloneBasicPreview: false,
+        forceSolidColor: null
     };
 
     if (typeof window === 'undefined') {
@@ -64,6 +65,49 @@ function getHexStringSafe(value) {
     }
 
     return String(value);
+}
+
+function applySolidColorDebug(material, baseColor) {
+    const debug = getDebugConfig();
+    if (!debug.forceSolidColor || !material) {
+        return;
+    }
+
+    let targetColor;
+    if (debug.forceSolidColor === true) {
+        targetColor = new THREE.Color(0x00ff00);
+    } else {
+        try {
+            targetColor = new THREE.Color(debug.forceSolidColor);
+        } catch (error) {
+            console.warn('[COSMOS][DEBUG] Invalid forceSolidColor value, falling back to base color.', error);
+            targetColor = baseColor.clone ? baseColor.clone() : new THREE.Color(baseColor);
+        }
+    }
+
+    const linear = targetColor.clone();
+    if (typeof linear.convertSRGBToLinear === 'function') {
+        linear.convertSRGBToLinear();
+    }
+
+    material.color.copy(linear);
+    material.emissive?.set?.(0, 0, 0);
+    material.emissiveIntensity = 0;
+
+    material.onBeforeCompile = (shader) => {
+        const injection = `
+            gl_FragColor = vec4(${linear.r.toFixed(6)}, ${linear.g.toFixed(6)}, ${linear.b.toFixed(6)}, 1.0);
+            #include <dithering_fragment>
+            return;
+        `;
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <dithering_fragment>',
+            injection
+        );
+    };
+    material.needsUpdate = true;
+    console.log('[COSMOS][DEBUG] forceSolidColor applied:', targetColor.getHexString());
 }
 
 function resolvePositionOverlap(target, usedPositions, options = {}) {
@@ -544,11 +588,14 @@ function createChunkMaterial(chunk) {
 
     if (override === 'lambert') {
         console.log(`[MATERIAL] Using MeshLambertMaterial override with color=${linearColor.getHexString()}`);
-        return new THREE.MeshLambertMaterial({
+        const lambert = new THREE.MeshLambertMaterial({
             color: linearColor.clone(),
             emissive: linearColor.clone().multiplyScalar(0.18),
             emissiveIntensity: 1.0
         });
+        applySolidColorDebug(lambert, linearColor);
+        lambert.needsUpdate = true;
+        return lambert;
     }
 
     console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${logColor}, colorLinear=${linearColor.getHexString()}`);
@@ -562,6 +609,7 @@ function createChunkMaterial(chunk) {
     });
     material.toneMapped = true;
     material.needsUpdate = true;
+    applySolidColorDebug(material, linearColor);
     console.log(`[MATERIAL] Created material type=${material.type}`);
     return material;
 }
@@ -647,6 +695,18 @@ export function updateCosmosData() {
         ? `(${material.emissive.r.toFixed(4)}, ${material.emissive.g.toFixed(4)}, ${material.emissive.b.toFixed(4)})`
         : 'null';
     console.log(`[COSMOS]   Material numeric values: color=${colorVector}, emissive=${emissiveVector}, emissiveIntensity=${material.emissiveIntensity?.toFixed?.(4) ?? material.emissiveIntensity}, roughness=${material.roughness ?? 'n/a'}, metalness=${material.metalness ?? 'n/a'}, opacity=${material.opacity}`);
+    if (material.roughness === undefined) {
+        console.log(`[COSMOS][WARN] Material roughness undefined for type=${material.type}, defaulting to Lambert parameters`);
+    }
+    if (material.type === 'MeshLambertMaterial') {
+        const lambertUniforms = {
+            color: colorVector,
+            emissive: emissiveVector,
+            receiveShadow: material.receiveShadow,
+            lights: renderer?.info?.programs?.length
+        };
+        console.log('[COSMOS]   Lambert uniforms snapshot:', lambertUniforms);
+    }
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
             ? new THREE.Vector3(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2])
