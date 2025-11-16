@@ -178,7 +178,7 @@ function createChunkMaterial(chunk) {
     const material = new THREE.MeshStandardMaterial({
         color: color,
         emissive: color,
-        emissiveIntensity: 0.2,
+        emissiveIntensity: 0.8,  // Increased from 0.2 to make emissive glow visible
         roughness: 0.7,
         metalness: 0.2
     });
