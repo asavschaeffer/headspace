@@ -57,6 +57,12 @@ class ProceduralGeometryGenerator {
 
         // Recalculate normals for proper lighting
         geometry.computeVertexNormals();
+        if (typeof geometry.normalizeNormals === 'function') {
+            geometry.normalizeNormals();
+        }
+        if (geometry.attributes?.normal) {
+            geometry.attributes.normal.needsUpdate = true;
+        }
 
         // Scale to match visual expectations
         geometry.scale(3.4, 3.4, 3.4);
@@ -114,6 +120,12 @@ class ProceduralGeometryGenerator {
             this.smoothWithOverrides(geometry, detail, smoothing);
         }
         geometry.computeVertexNormals();
+        if (typeof geometry.normalizeNormals === 'function') {
+            geometry.normalizeNormals();
+        }
+        if (geometry.attributes?.normal) {
+            geometry.attributes.normal.needsUpdate = true;
+        }
         const targetScale = signature.scale ?? 3.4;
         geometry.scale(targetScale, targetScale, targetScale);
 

@@ -16,22 +16,70 @@ let frameCount = 0;
 const LOD_UPDATE_INTERVAL = 30;
 let geometryGeneratorInstance = null;
 
+function resolvePositionOverlap(target, usedPositions, options = {}) {
+    const {
+        minDistance = 6,
+        maxAttempts = 18,
+        jitterRadius = 12
+    } = options;
+
+    if (!target) {
+        return new THREE.Vector3();
+    }
+
+    const candidate = target.clone();
+    let attempts = 0;
+
+    const isTooClose = (vec) => usedPositions.some(pos => pos.distanceTo(vec) < minDistance);
+
+    if (!isTooClose(candidate)) {
+        return candidate;
+    }
+
+    while (attempts < maxAttempts) {
+        const radius = jitterRadius * (0.35 + (attempts / maxAttempts));
+        candidate.set(
+            target.x + (Math.random() - 0.5) * radius,
+            target.y + (Math.random() - 0.5) * radius,
+            target.z + (Math.random() - 0.5) * radius
+        );
+
+        if (!isTooClose(candidate)) {
+            return candidate;
+        }
+
+        attempts += 1;
+    }
+
+    // As a fallback, push along Z-axis slightly
+    return target.clone().add(new THREE.Vector3(0, 0, minDistance * 0.75));
+}
+
 function analyzeGeometryNormals(geometry, label = '') {
     if (!geometry || !geometry.attributes) {
         console.warn(`[GEOMETRY] ${label} missing geometry attributes`);
-        return;
+        return {
+            hasIssues: true,
+            reason: 'missing-attributes'
+        };
     }
 
     const normalsAttr = geometry.attributes.normal;
     if (!normalsAttr) {
         console.warn(`[GEOMETRY] ${label} missing normal attribute`);
-        return;
+        return {
+            hasIssues: true,
+            reason: 'missing-normal-attribute'
+        };
     }
 
     const array = normalsAttr.array;
     if (!array || array.length === 0) {
         console.warn(`[GEOMETRY] ${label} normal attribute empty`);
-        return;
+        return {
+            hasIssues: true,
+            reason: 'empty-normal-array'
+        };
     }
 
     let zeroCount = 0;
@@ -61,30 +109,60 @@ function analyzeGeometryNormals(geometry, label = '') {
 
     const sampleCount = array.length / 3;
     const avgLength = totalLength / sampleCount;
+    const zeroRatio = sampleCount > 0 ? zeroCount / sampleCount : 0;
 
-    console.log(`[GEOMETRY] Normals for ${label}: min=${minLength.toFixed(3)}, max=${maxLength.toFixed(3)}, avg=${avgLength.toFixed(3)}, zero=${zeroCount}, nan=${nanCount}, vertices=${sampleCount}`);
+    console.log(`[GEOMETRY] Normals for ${label}: min=${minLength.toFixed(3)}, max=${maxLength.toFixed(3)}, avg=${avgLength.toFixed(3)}, zero=${zeroCount} (${(zeroRatio * 100).toFixed(2)}%), nan=${nanCount}, vertices=${sampleCount}`);
 
-    if (nanCount > 0 || zeroCount > sampleCount * 0.1 || minLength < 0.1) {
+    const hasIssues = nanCount > 0 || zeroRatio > 0.02 || minLength < 0.02;
+    if (hasIssues) {
         console.warn(`[GEOMETRY] Suspicious normals detected for ${label}. Consider recomputing or checking deformation pipeline.`);
     }
+
+    return {
+        hasIssues,
+        zeroCount,
+        zeroRatio,
+        nanCount,
+        minLength,
+        maxLength,
+        avgLength,
+        sampleCount
+    };
 }
 
-function shouldUsePhongMaterial() {
+function repairGeometryNormals(geometry, label = '') {
+    if (!geometry || typeof geometry.computeVertexNormals !== 'function') {
+        return;
+    }
+
+    geometry.deleteAttribute('normal');
+    geometry.computeVertexNormals();
+    if (typeof geometry.normalizeNormals === 'function') {
+        geometry.normalizeNormals();
+    }
+    if (geometry.attributes?.normal) {
+        geometry.attributes.normal.needsUpdate = true;
+    }
+    console.log(`[GEOMETRY] Recomputed normals for ${label}`);
+}
+
+function getMaterialOverride() {
     if (typeof window === 'undefined') {
-        return false;
+        return null;
     }
 
     try {
-        if (window.__COSMOS_DEBUG__?.forcePhongMaterial || window.__COSMOS_DEBUG__?.material === 'phong') {
-            return true;
+        const debugMaterial = window.__COSMOS_DEBUG__?.material || (window.__COSMOS_DEBUG__?.forcePhongMaterial ? 'phong' : null);
+        if (debugMaterial) {
+            return String(debugMaterial).toLowerCase();
         }
 
         const params = new URLSearchParams(window.location.search);
         const override = params.get('cosmosMaterial');
-        return override && override.toLowerCase() === 'phong';
+        return override ? override.toLowerCase() : null;
     } catch (error) {
         console.warn('[MATERIAL] Unable to read material override preference:', error);
-        return false;
+        return null;
     }
 }
 
@@ -251,16 +329,24 @@ function createChunkMaterial(chunk) {
     const emissiveObj = new THREE.Color(colorHex);
     emissiveObj.multiplyScalar(0.35);
 
-    if (shouldUsePhongMaterial()) {
+    const override = getMaterialOverride();
+    if (override === 'basic') {
+        console.log(`[MATERIAL] Using MeshBasicMaterial override with color=${colorObj.getHexString()}`);
+        return new THREE.MeshBasicMaterial({
+            color: colorObj,
+            transparent: false
+        });
+    }
+
+    if (override === 'phong') {
         console.log(`[MATERIAL] Using MeshPhongMaterial override with color=${colorObj.getHexString()}`);
-        const phongMaterial = new THREE.MeshPhongMaterial({
+        return new THREE.MeshPhongMaterial({
             color: colorObj,
             emissive: emissiveObj,
             emissiveIntensity: 0.9,
             shininess: 45,
             specular: new THREE.Color(0xffffff)
         });
-        return phongMaterial;
     }
 
     const logColor = typeof colorHex === 'string' ? colorHex : `#${colorHex.toString(16)}`;
@@ -299,7 +385,11 @@ function createGeometryForChunk(chunk) {
             console.log(`[GEOMETRY] Attempting to generate procedural geometry...`);
             const geom = generator.generatePlanetaryGeometryFromSignature(signature);
             console.log(`[GEOMETRY] SUCCESS: Generated geometry with ${geom.attributes.position.count} vertices`);
-            analyzeGeometryNormals(geom, `chunk ${chunk?.id ?? 'unknown'}`);
+            const normalStats = analyzeGeometryNormals(geom, `chunk ${chunk?.id ?? 'unknown'}`);
+            if (normalStats?.hasIssues) {
+                repairGeometryNormals(geom, `chunk ${chunk?.id ?? 'unknown'}`);
+                analyzeGeometryNormals(geom, `chunk ${chunk?.id ?? 'unknown'} (post-repair)`);
+            }
             return geom;
         } catch (error) {
             console.warn(`[GEOMETRY] ERROR generating geometry:`, error.message);
@@ -327,6 +417,8 @@ export function updateCosmosData() {
     const chunks = state.chunks || [];
     console.log(`[COSMOS] Starting mesh creation with ${chunks.length} chunks`);
 
+    const usedPositions = [];
+
     chunks.forEach((chunk, idx) => {
         console.log(`[COSMOS] Chunk ${idx} raw data:`, {
             id: chunk.id,
@@ -353,14 +445,31 @@ export function updateCosmosData() {
                 (Math.random() - 0.5) * 180
             );
 
-        mesh.position.copy(targetPosition);
+        const resolvedPosition = resolvePositionOverlap(
+            targetPosition,
+            usedPositions,
+            {
+                minDistance: 8,
+                maxAttempts: 20,
+                jitterRadius: 18
+            }
+        );
+        if (!resolvedPosition.equals(targetPosition)) {
+            console.log(`[COSMOS] Applied jitter to chunk ${chunk.id}: original=${targetPosition.toArray().map(v => v.toFixed(2))} resolved=${resolvedPosition.toArray().map(v => v.toFixed(2))}`);
+        }
+
+        mesh.position.copy(resolvedPosition);
         mesh.userData = {
             chunk,
             chunkId: chunk.id,
             documentId: chunk.document_id,
             clickHandler: chunk.metadata?.link_url ? () => handleChunkLink(chunk) : null,
-            shapeSignature: chunk.shape_3d
+            shapeSignature: chunk.shape_3d,
+            originalPosition: targetPosition.clone(),
+            resolvedPosition: resolvedPosition.clone()
         };
+
+        usedPositions.push(resolvedPosition.clone());
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
