@@ -5,8 +5,8 @@
 
 class HomePlanetGenerator {
     constructor() {
-        this.fogDensity = 0.15;
-        this.peakHeight = 2.5;
+        this.fogDensity = 0.25;
+        this.peakHeight = 3.8;
         this.sphereRadius = 2.5;
     }
 
@@ -19,12 +19,10 @@ class HomePlanetGenerator {
         // Create foggy sphere base
         const sphereGeometry = new THREE.IcosahedronGeometry(this.sphereRadius, 6);
         const sphereMaterial = new THREE.MeshPhongMaterial({
-            color: 0xffffff,
-            emissive: 0x333333,
-            emissiveIntensity: 0.3,
-            wireframe: false,
-            fog: false,
-            shininess: 100
+            color: 0xfafaff,
+            emissive: 0x141a2b,
+            emissiveIntensity: 0.18,
+            shininess: 70
         });
 
         const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
@@ -33,27 +31,27 @@ class HomePlanetGenerator {
         // Create mountain peak
         const peakGeometry = this.createMountainPeak();
         const peakMaterial = new THREE.MeshPhongMaterial({
-            color: 0xe8e8e8,
-            emissive: 0x888888,
-            emissiveIntensity: 0.2,
-            shininess: 150
-        });
-
-        const peak = new THREE.Mesh(peakGeometry, peakMaterial);
-        peak.position.y = this.sphereRadius + this.peakHeight * 0.3;
-        group.add(peak);
-
-        // Create shining spark at peak tip
-        const sparkGeometry = new THREE.SphereGeometry(0.15, 8, 8);
-        const sparkMaterial = new THREE.MeshPhongMaterial({
-            color: 0xffff99,
-            emissive: 0xffff99,
-            emissiveIntensity: 0.8,
+            color: 0xd4daff,
+            emissive: 0x445b9c,
+            emissiveIntensity: 0.28,
             shininess: 200
         });
 
+        const peak = new THREE.Mesh(peakGeometry, peakMaterial);
+        peak.position.y = this.sphereRadius + this.peakHeight * 0.42;
+        group.add(peak);
+
+        // Create shining spark at peak tip
+        const sparkGeometry = new THREE.SphereGeometry(0.08, 12, 12);
+        const sparkMaterial = new THREE.MeshPhongMaterial({
+            color: 0xffcfa3,
+            emissive: 0xffcfa3,
+            emissiveIntensity: 1.2,
+            shininess: 280
+        });
+
         const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
-        spark.position.y = this.sphereRadius + this.peakHeight * 0.95;
+        spark.position.y = this.sphereRadius + this.peakHeight * 0.47;
         group.add(spark);
 
         // Animate spark pulse
@@ -86,7 +84,7 @@ class HomePlanetGenerator {
 
             // Animate fog particles
             fogParticles.children.forEach((particle, i) => {
-                particle.position.y += Math.sin(time * 0.5 + i) * 0.002;
+                particle.position.y += Math.sin(time * 0.65 + i) * 0.0025;
                 particle.rotation.z += 0.001;
             });
 
@@ -137,7 +135,7 @@ class HomePlanetGenerator {
     createFogParticles() {
         const fogGroup = new THREE.Group();
 
-        const particleCount = 80;
+        const particleCount = 280;
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(particleCount * 3);
         const sizes = new Float32Array(particleCount);
@@ -146,24 +144,25 @@ class HomePlanetGenerator {
             // Random position on/near sphere surface
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.random() * Math.PI;
-            const r = this.sphereRadius + Math.random() * 0.8;
+            const r = this.sphereRadius + Math.random() * 1.9;
 
             positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
             positions[i * 3 + 1] = r * Math.cos(phi);
             positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
 
-            sizes[i] = Math.random() * 0.3 + 0.1;
+            sizes[i] = Math.random() * 0.24 + 0.12;
         }
 
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
         const material = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 0.3,
+            color: 0xf3f7ff,
+            size: 0.28,
             sizeAttenuation: true,
             transparent: true,
-            opacity: 0.3,
+            opacity: this.fogDensity,
+            depthWrite: false,
             fog: false
         });
 

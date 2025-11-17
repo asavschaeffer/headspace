@@ -20,6 +20,42 @@ let frameCount = 0;
 const LOD_UPDATE_INTERVAL = 30;
 let geometryGeneratorInstance = null;
 
+const tmpAxis = new THREE.Vector3();
+
+function randomUnitVector() {
+    tmpAxis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+    if (tmpAxis.lengthSq() === 0) {
+        tmpAxis.set(1, 0, 0);
+    }
+    return tmpAxis.normalize().clone();
+}
+
+function applyArrivalPulse(mesh) {
+    const start = performance.now();
+    const duration = 900;
+    const initialScale = mesh.scale.x;
+
+    const animate = () => {
+        const elapsed = performance.now() - start;
+        const t = Math.min(1, elapsed / duration);
+        const damped = 1 - Math.pow(1 - t, 4);
+        const pulse = 1 + 0.04 * Math.sin(t * Math.PI * 3) * (1 - t);
+        mesh.scale.setScalar(initialScale * pulse);
+        if (mesh.userData?.fillMesh) {
+            mesh.userData.fillMesh.scale.setScalar(initialScale * pulse);
+        }
+        if (t < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            mesh.scale.setScalar(initialScale);
+            if (mesh.userData?.fillMesh) {
+                mesh.userData.fillMesh.scale.setScalar(initialScale);
+            }
+        }
+    };
+    animate();
+}
+
 function getDebugConfig() {
     return {
         lightHelpers: false,
@@ -294,8 +330,8 @@ export async function initCosmos() {
 
     // Scene
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x001a33);
-    scene.fog = new THREE.Fog(0x001a33, 500, 2000);
+    scene.background = new THREE.Color(0x00040e);
+    scene.fog = new THREE.Fog(0x00040e, 600, 2400);
 
     // Camera
     camera = new THREE.PerspectiveCamera(72, container.clientWidth / container.clientHeight, 0.1, 10000);
@@ -519,18 +555,23 @@ export function updateCosmosData() {
         });
 
         const geometry = createGeometryForChunk(chunk);
-        const wireMaterial = createChunkMaterial(chunk);
-        const wireMesh = new THREE.Mesh(geometry, wireMaterial);
-
+        const material = createChunkMaterial(chunk);
+        const mesh = new THREE.Mesh(geometry, material);
         const baseFinalGeometry = geometry.clone();
         const fillMaterial = createFillMaterial(chunk);
         const fillMesh = new THREE.Mesh(baseFinalGeometry.clone(), fillMaterial);
         fillMesh.castShadow = false;
         fillMesh.receiveShadow = true;
         fillMesh.name = 'chunk-fill';
-        wireMesh.add(fillMesh);
+        mesh.add(fillMesh);
 
-        console.log(`[COSMOS] Chunk ${idx} (id=${chunk.id}): material=${wireMaterial.type}, color=${getHexStringSafe(wireMaterial.color)}`);
+        const rotationAxis = randomUnitVector();
+        const rotationSpeed = 0.0002 + Math.random() * 0.0009;
+        const baseScale = 0.9 + Math.random() * 0.25;
+        mesh.scale.setScalar(baseScale);
+        fillMesh.scale.setScalar(baseScale);
+
+        console.log(`[COSMOS] Chunk ${idx} (id=${chunk.id}): material=${material.type}, color=${getHexStringSafe(material.color)}`);
         console.log(`[COSMOS]   Geometry vertices: ${geometry.attributes?.position?.count || 'N/A'}`);
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
@@ -554,8 +595,8 @@ export function updateCosmosData() {
             console.log(`[COSMOS] Applied jitter to chunk ${chunk.id}: original=${targetPosition.toArray().map(v => v.toFixed(2))} resolved=${resolvedPosition.toArray().map(v => v.toFixed(2))}`);
         }
 
-        wireMesh.position.copy(resolvedPosition);
-        wireMesh.userData = {
+        mesh.position.copy(resolvedPosition);
+        mesh.userData = {
             chunk,
             chunkId: chunk.id,
             documentId: chunk.document_id,
@@ -564,16 +605,21 @@ export function updateCosmosData() {
             originalPosition: targetPosition.clone(),
             resolvedPosition: resolvedPosition.clone(),
             baseFinalGeometry,
-            fillMesh
+            fillMesh,
+            rotationAxis,
+            rotationSpeed,
+            baseScale
         };
 
         usedPositions.push(resolvedPosition.clone());
 
-        console.log(`[COSMOS]   Position diagnostics: position=(${wireMesh.position.x.toFixed(3)}, ${wireMesh.position.y.toFixed(3)}, ${wireMesh.position.z.toFixed(3)}), dist=${wireMesh.position.length().toFixed(3)}`);
+        applyArrivalPulse(mesh);
 
-        scene.add(wireMesh);
-        chunkMeshes.set(chunk.id || chunk.chunk_id, wireMesh);
-        console.log(`[COSMOS] Added mesh to scene: uuid=${wireMesh.uuid}, visible=${wireMesh.visible}, material.color=${getHexStringSafe(wireMesh.material.color)}`);
+        console.log(`[COSMOS]   Position diagnostics: position=(${mesh.position.x.toFixed(3)}, ${mesh.position.y.toFixed(3)}, ${mesh.position.z.toFixed(3)}), dist=${mesh.position.length().toFixed(3)}`);
+
+        scene.add(mesh);
+        chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
+        console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}, material.color=${getHexStringSafe(mesh.material.color)}`);
 
         setTimeout(() => {
             if (chunkMeshes.has(chunk.id || chunk.chunk_id)) {
@@ -678,8 +724,13 @@ function animateCosmos(time = 0) {
     }
 
     chunkMeshes.forEach((mesh) => {
-        mesh.rotation.y += 0.0008;
-        mesh.rotation.x += 0.0004;
+        const axis = mesh.userData?.rotationAxis;
+        const speed = mesh.userData?.rotationSpeed ?? 0.0004;
+        if (axis) {
+            mesh.rotateOnAxis(axis, speed);
+        } else {
+            mesh.rotation.y += speed;
+        }
     });
 
     customObjects.forEach((object) => {
