@@ -180,6 +180,7 @@ async function handleThoughtSubmit(event) {
     setStatus('Encoding your thought…');
 
     try {
+        window.HOME_PLANET_TARGET_URL = window.location.pathname;
         const result = await createDocumentViaApi(title, content);
         const docId = result.id;
         const status = result.status || 'enriched';
@@ -238,7 +239,6 @@ function registerUI() {
 
 async function initialize() {
     try {
-        window.HOME_PLANET_TARGET_URL = '/index.html';
         setStatus('Summoning cosmos…');
         state.setCurrentView('cosmos');
 
