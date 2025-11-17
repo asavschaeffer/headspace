@@ -726,7 +726,7 @@ export function updateCosmosData() {
             shapeSignature: chunk.shape_3d,
             originalPosition: targetPosition.clone(),
             resolvedPosition: resolvedPosition.clone(),
-            placeholderGeometry,
+            placeholderGeometry: null,
             baseFinalGeometry,
             pendingFinalGeometry: null
         };
