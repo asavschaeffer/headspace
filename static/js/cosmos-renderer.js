@@ -81,7 +81,8 @@ function applyMaterialDebugHooks(material, baseColor) {
 
     if (!debug.forceSolidColor && !debug.logLightUniforms) {
         material.onBeforeCompile = undefined;
-        material.customProgramCacheKey = undefined;
+        delete material.customProgramCacheKey;
+        material.needsUpdate = true;
         return;
     }
 
@@ -131,7 +132,7 @@ function applyMaterialDebugHooks(material, baseColor) {
         }
     };
 
-    material.customProgramCacheKey = () => debugKey;
+    material.customProgramCacheKey = () => `cosmos-debug-${debugKey}`;
     material.needsUpdate = true;
 }
 
@@ -704,6 +705,7 @@ export function updateCosmosData() {
             position_3d: chunk.position_3d
         });
 
+        const placeholderGeometry = createPlaceholderGeometry(chunk);
         const geometry = createGeometryForChunk(chunk);
         const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
@@ -762,7 +764,8 @@ export function updateCosmosData() {
             clickHandler: chunk.metadata?.link_url ? () => handleChunkLink(chunk) : null,
             shapeSignature: chunk.shape_3d,
             originalPosition: targetPosition.clone(),
-            resolvedPosition: resolvedPosition.clone()
+            resolvedPosition: resolvedPosition.clone(),
+            placeholderGeometry
         };
 
         usedPositions.push(resolvedPosition.clone());

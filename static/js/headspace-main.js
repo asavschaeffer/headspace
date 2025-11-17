@@ -98,6 +98,20 @@ function animateNewDocument(docId) {
             return;
         }
 
+        const placeholderGeometry = mesh.userData?.placeholderGeometry;
+        if (placeholderGeometry &&
+            mesh.geometry?.attributes?.position?.count === placeholderGeometry.attributes?.position?.count) {
+            const finalGeometry = mesh.geometry;
+            const sphereGeometry = placeholderGeometry.clone();
+            if (typeof sphereGeometry.computeVertexNormals === 'function') {
+                sphereGeometry.computeVertexNormals();
+            }
+            mesh.geometry = sphereGeometry;
+            if (finalGeometry && typeof finalGeometry.dispose === 'function') {
+                finalGeometry.dispose();
+            }
+        }
+
         const targetPosition = mesh.position.clone();
         mesh.position.copy(origin);
         mesh.scale.setScalar(0.1);
