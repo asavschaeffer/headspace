@@ -69,64 +69,30 @@ function getHexStringSafe(value) {
 }
 
 function applyMaterialDebugHooks(material, baseColor) {
+    if (!material) return;
     const debug = getDebugConfig();
-    if (!material) {
-        return;
-    }
 
-    material.onBeforeCompile = undefined;
-    material.needsUpdate = true;
-
-    if (!debug.forceSolidColor && !debug.logLightUniforms) {
-        return;
-    }
-
-    let forcedColor = null;
     if (debug.forceSolidColor) {
         try {
-            forcedColor = debug.forceSolidColor === true
+            const forced = debug.forceSolidColor === true
                 ? new THREE.Color(0x00ff00)
                 : new THREE.Color(debug.forceSolidColor);
-        } catch (error) {
-            console.warn('[COSMOS][DEBUG] Invalid forceSolidColor value, falling back to base color.', error);
-            forcedColor = baseColor && baseColor.clone ? baseColor.clone() : null;
-        }
-
-        if (forcedColor) {
-            const linear = forcedColor.clone();
+            const linear = forced.clone();
             if (typeof linear.convertSRGBToLinear === 'function') {
                 linear.convertSRGBToLinear();
             }
             material.color.copy(linear);
             material.emissive?.set?.(0, 0, 0);
             material.emissiveIntensity = 0;
-            forcedColor = linear;
-            console.log('[COSMOS][DEBUG] forceSolidColor is active');
+            console.log('[COSMOS][DEBUG] forceSolidColor active');
+        } catch (error) {
+            console.warn('[COSMOS][DEBUG] Invalid forceSolidColor value:', error);
         }
     }
 
-    material.onBeforeCompile = (shader) => {
-        if (debug.logLightUniforms) {
-            const pointLights = shader.uniforms?.pointLights?.value || [];
-            const ambient = shader.uniforms?.ambientLightColor?.value;
-            console.log('[COSMOS][DEBUG] Shader point lights:', pointLights);
-            console.log('[COSMOS][DEBUG] Shader ambient light:', ambient);
-            console.log('[COSMOS][DEBUG] Shader defines:', shader.defines);
-        }
-
-        if (forcedColor) {
-            const injection = `
-                gl_FragColor = vec4(${forcedColor.r.toFixed(6)}, ${forcedColor.g.toFixed(6)}, ${forcedColor.b.toFixed(6)}, 1.0);
-                #include <dithering_fragment>
-                return;
-            `;
-            shader.fragmentShader = shader.fragmentShader.replace(
-                '#include <dithering_fragment>',
-                injection
-            );
-        }
-    };
-    material.needsUpdate = true;
+    if (debug.logLightUniforms) {
+        console.log('[COSMOS][DEBUG] Light logging not supported on this build of three.js r128. Use helpers instead.');
+    }
 }
 
 function resolvePositionOverlap(target, usedPositions, options = {}) {
