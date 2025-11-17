@@ -398,6 +398,9 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                                     mesh.geometry.dispose();
                                 }
                                 mesh.geometry = newGeometry;
+                                if (mesh.userData) {
+                                    mesh.userData.baseFinalGeometry = newGeometry.clone();
+                                }
                             }
                         } catch (error) {
                             console.warn('Failed to update geometry during layout stage', error);
@@ -407,7 +410,7 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
             };
 
             const attemptUpdate = (resolvedData, attempt = 0) => {
-                const mesh = chunkMeshMap.get(resolvedData.chunk_id);
+            const mesh = chunkMeshMap.get(resolvedData.chunk_id);
                 if (attempt === 0) {
                     console.log(`[ENRICHMENT] Looking for mesh chunk_id=${resolvedData.chunk_id}, found=${!!mesh}, map size=${chunkMeshMap.size}`);
                 }
