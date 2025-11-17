@@ -7,9 +7,10 @@ class HomePlanetGenerator {
     constructor() {
         this.planetRadius = 8;
         this.peakRadius = 3;
-        this.peakHeight = 6;
+        this.peakHeight = 4.5;
         this.snowCapHeight = 2;
         this.atmosphereRadius = 12;
+        this.fogDensity = 0.32;
     }
 
     /**
@@ -18,35 +19,35 @@ class HomePlanetGenerator {
     generateHomePlanet() {
         const group = new THREE.Group();
 
-        const planetGeometry = new THREE.SphereGeometry(this.planetRadius, 48, 48);
+        const planetGeometry = new THREE.SphereGeometry(this.planetRadius, 64, 64);
         const planetMaterial = new THREE.MeshPhongMaterial({
-            color: 0x4a5568,
-            emissive: 0x1a202c,
-            emissiveIntensity: 0.28,
-            shininess: 12
+            color: 0xe6eef7,
+            emissive: 0x1b2335,
+            emissiveIntensity: 0.18,
+            shininess: 60
         });
         const planet = new THREE.Mesh(planetGeometry, planetMaterial);
         group.add(planet);
 
         const peakGeometry = new THREE.ConeGeometry(this.peakRadius, this.peakHeight, 8);
         const peakMaterial = new THREE.MeshPhongMaterial({
-            color: 0xffffff,
-            emissive: 0xe0e0e0,
-            emissiveIntensity: 0.18,
-            shininess: 90
+            color: 0x596079,
+            emissive: 0x262d44,
+            emissiveIntensity: 0.22,
+            shininess: 110
         });
         const peak = new THREE.Mesh(peakGeometry, peakMaterial);
-        peak.position.y = this.planetRadius + this.peakHeight * 0.5;
+        peak.position.y = this.planetRadius + this.peakHeight * 0.24;
         group.add(peak);
 
-        const snowCapGeometry = new THREE.ConeGeometry(this.peakRadius + 0.5, this.snowCapHeight, 8);
+        const snowCapGeometry = new THREE.ConeGeometry(this.peakRadius + 0.3, this.snowCapHeight, 8);
         const snowCapMaterial = new THREE.MeshPhongMaterial({
-            color: 0xf5f6ff,
+            color: 0xfdfbff,
             emissive: 0xffffff,
-            emissiveIntensity: 0.12,
-            opacity: 0.85,
+            emissiveIntensity: 0.16,
+            opacity: 0.78,
             transparent: true,
-            shininess: 40
+            shininess: 90
         });
         const snowCap = new THREE.Mesh(snowCapGeometry, snowCapMaterial);
         snowCap.position.y = this.planetRadius + this.peakHeight * 0.38;
@@ -60,7 +61,7 @@ class HomePlanetGenerator {
             shininess: 240
         });
         const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
-        spark.position.y = this.planetRadius + this.peakHeight * 0.9;
+        spark.position.y = this.planetRadius + this.peakHeight * 0.78;
         group.add(spark);
 
         const peakLight = new THREE.PointLight(0xffb36d, 260, 0, 1.4);
@@ -71,9 +72,9 @@ class HomePlanetGenerator {
 
         const atmosphereGeometry = new THREE.SphereGeometry(this.atmosphereRadius, 48, 48);
         const atmosphereMaterial = new THREE.MeshBasicMaterial({
-            color: 0x88ccff,
+            color: 0xa3c0ff,
             transparent: true,
-            opacity: 0.08,
+            opacity: 0.12,
             side: THREE.BackSide
         });
         const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
