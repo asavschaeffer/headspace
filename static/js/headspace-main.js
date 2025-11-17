@@ -99,17 +99,22 @@ function animateNewDocument(docId) {
         }
 
         const placeholderGeometry = mesh.userData?.placeholderGeometry;
-        if (placeholderGeometry &&
-            mesh.geometry?.attributes?.position?.count === placeholderGeometry.attributes?.position?.count) {
-            const finalGeometry = mesh.geometry;
+        const baseFinalGeometry = mesh.userData?.baseFinalGeometry;
+        if (placeholderGeometry && baseFinalGeometry) {
             const sphereGeometry = placeholderGeometry.clone();
             if (typeof sphereGeometry.computeVertexNormals === 'function') {
                 sphereGeometry.computeVertexNormals();
             }
-            mesh.geometry = sphereGeometry;
-            if (finalGeometry && typeof finalGeometry.dispose === 'function') {
-                finalGeometry.dispose();
+            if (mesh.geometry && typeof mesh.geometry.dispose === 'function') {
+                mesh.geometry.dispose();
             }
+            mesh.geometry = sphereGeometry;
+            mesh.userData.pendingFinalGeometry = baseFinalGeometry.clone();
+            if (typeof mesh.userData.pendingFinalGeometry.computeVertexNormals === 'function') {
+                mesh.userData.pendingFinalGeometry.computeVertexNormals();
+            }
+        } else {
+            mesh.userData.pendingFinalGeometry = null;
         }
 
         const targetPosition = mesh.position.clone();
@@ -150,6 +155,14 @@ function animateNewDocument(docId) {
                     mesh.material.opacity = 1;
                     mesh.material.transparent = false;
                     mesh.material.needsUpdate = true;
+                }
+                if (mesh.userData?.pendingFinalGeometry) {
+                    const finalGeom = mesh.userData.pendingFinalGeometry;
+                    if (mesh.geometry && typeof mesh.geometry.dispose === 'function') {
+                        mesh.geometry.dispose();
+                    }
+                    mesh.geometry = finalGeom;
+                    mesh.userData.pendingFinalGeometry = null;
                 }
             }
         }

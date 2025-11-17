@@ -74,15 +74,10 @@ function applyMaterialDebugHooks(material, baseColor) {
         return;
     }
 
-    const debugKey = JSON.stringify({
-        forceSolidColor: debug.forceSolidColor || null,
-        logLightUniforms: !!debug.logLightUniforms
-    });
+    material.onBeforeCompile = undefined;
+    material.needsUpdate = true;
 
     if (!debug.forceSolidColor && !debug.logLightUniforms) {
-        material.onBeforeCompile = undefined;
-        delete material.customProgramCacheKey;
-        material.needsUpdate = true;
         return;
     }
 
@@ -131,8 +126,6 @@ function applyMaterialDebugHooks(material, baseColor) {
             );
         }
     };
-
-    material.customProgramCacheKey = () => `cosmos-debug-${debugKey}`;
     material.needsUpdate = true;
 }
 
@@ -707,6 +700,7 @@ export function updateCosmosData() {
 
         const placeholderGeometry = createPlaceholderGeometry(chunk);
         const geometry = createGeometryForChunk(chunk);
+        const baseFinalGeometry = geometry.clone();
         const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
 
@@ -715,25 +709,26 @@ export function updateCosmosData() {
         console.log(`[COSMOS]   Material type: ${material.type}`);
         console.log(`[COSMOS]   Material.color=${getHexStringSafe(material.color)}`);
         console.log(`[COSMOS]   Material.emissive=${getHexStringSafe(material.emissive)}`);
-    const colorVector = material.color
-        ? `(${material.color.r.toFixed(4)}, ${material.color.g.toFixed(4)}, ${material.color.b.toFixed(4)})`
-        : 'null';
-    const emissiveVector = material.emissive
-        ? `(${material.emissive.r.toFixed(4)}, ${material.emissive.g.toFixed(4)}, ${material.emissive.b.toFixed(4)})`
-        : 'null';
-    console.log(`[COSMOS]   Material numeric values: color=${colorVector}, emissive=${emissiveVector}, emissiveIntensity=${material.emissiveIntensity?.toFixed?.(4) ?? material.emissiveIntensity}, roughness=${material.roughness ?? 'n/a'}, metalness=${material.metalness ?? 'n/a'}, opacity=${material.opacity}`);
-    if (material.roughness === undefined) {
-        console.log(`[COSMOS][WARN] Material roughness undefined for type=${material.type}, defaulting to Lambert parameters`);
-    }
-    if (material.type === 'MeshLambertMaterial') {
-        const lambertUniforms = {
-            color: colorVector,
-            emissive: emissiveVector,
-            receiveShadow: material.receiveShadow,
-            lights: renderer?.info?.programs?.length
-        };
-        console.log('[COSMOS]   Lambert uniforms snapshot:', lambertUniforms);
-    }
+
+        const colorVector = material.color
+            ? `(${material.color.r.toFixed(4)}, ${material.color.g.toFixed(4)}, ${material.color.b.toFixed(4)})`
+            : 'null';
+        const emissiveVector = material.emissive
+            ? `(${material.emissive.r.toFixed(4)}, ${material.emissive.g.toFixed(4)}, ${material.emissive.b.toFixed(4)})`
+            : 'null';
+        console.log(`[COSMOS]   Material numeric values: color=${colorVector}, emissive=${emissiveVector}, emissiveIntensity=${material.emissiveIntensity?.toFixed?.(4) ?? material.emissiveIntensity}, roughness=${material.roughness ?? 'n/a'}, metalness=${material.metalness ?? 'n/a'}, opacity=${material.opacity}`);
+        if (material.roughness === undefined) {
+            console.log(`[COSMOS][WARN] Material roughness undefined for type=${material.type}, defaulting to Lambert parameters`);
+        }
+        if (material.type === 'MeshLambertMaterial') {
+            const lambertUniforms = {
+                color: colorVector,
+                emissive: emissiveVector,
+                receiveShadow: material.receiveShadow,
+                lights: renderer?.info?.programs?.length
+            };
+            console.log('[COSMOS]   Lambert uniforms snapshot:', lambertUniforms);
+        }
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
             ? new THREE.Vector3(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2])
@@ -765,7 +760,9 @@ export function updateCosmosData() {
             shapeSignature: chunk.shape_3d,
             originalPosition: targetPosition.clone(),
             resolvedPosition: resolvedPosition.clone(),
-            placeholderGeometry
+            placeholderGeometry,
+            baseFinalGeometry,
+            pendingFinalGeometry: null
         };
 
         usedPositions.push(resolvedPosition.clone());
