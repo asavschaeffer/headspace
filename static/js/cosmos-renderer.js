@@ -101,7 +101,7 @@ function applyMaterialDebugHooks(material, baseColor) {
             material.emissive?.set?.(0, 0, 0);
             material.emissiveIntensity = 0;
             forcedColor = linear;
-            console.log('[COSMOS][DEBUG] forceSolidColor applied:', linear.getHexString());
+            console.log('[COSMOS][DEBUG] forceSolidColor is active');
         }
     }
 
