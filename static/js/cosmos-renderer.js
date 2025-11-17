@@ -273,7 +273,9 @@ export function addCustomObject(object3D) {
     const globalLights = [];
     object3D.traverse((child) => {
         if (child?.userData?.isCosmosGlobalLight && child.isLight) {
-            globalLights.push(child);
+            child.distance = 0;
+            child.decay = 1.2;
+            child.intensity = 420;
         }
     });
 
@@ -365,24 +367,11 @@ export async function initCosmos() {
     controls.maxPolarAngle = Math.PI;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.42);
-    scene.add(ambientLight);
-
-    const rimLight = new THREE.PointLight(0xffffff, 140, 0, 2);
-    rimLight.position.set(120, 220, 260);
-    scene.add(rimLight);
-
-    const sunLight = new THREE.PointLight(0xffffff, 520, 0, 2);
+    const sunLight = new THREE.PointLight(0xffffff, 420, 0, 1.8);
     sunLight.position.set(0, 0, 0);
     sunLight.castShadow = false;
+    sunLight.name = 'cosmos-sun-light';
     scene.add(sunLight);
-    console.log('[LIGHT] Ambient intensity:', ambientLight.intensity);
-    console.log('[LIGHT] Rim light:', {
-        intensity: rimLight.intensity,
-        decay: rimLight.decay,
-        distance: rimLight.distance,
-        position: rimLight.position.toArray()
-    });
     console.log('[LIGHT] Sun light:', {
         intensity: sunLight.intensity,
         decay: sunLight.decay,
@@ -394,10 +383,6 @@ export async function initCosmos() {
         const sunHelper = new THREE.PointLightHelper(sunLight, 40, helperColor);
         sunHelper.userData.isCosmosLightHelper = true;
         scene.add(sunHelper);
-
-        const rimHelper = new THREE.PointLightHelper(rimLight, 30, 0x33aaff);
-        rimHelper.userData.isCosmosLightHelper = true;
-        scene.add(rimHelper);
     }
 
     // Raycaster for interaction
