@@ -26,7 +26,7 @@ function getDebugConfig() {
         normalHelpers: true,
         logRenderer: true,
         forceDoubleSide: false,
-        cloneBasicPreview: false,
+        cloneBasicPreview: true,
         forceSolidColor: null,
         logLightUniforms: false
     };
