@@ -228,6 +228,16 @@ class ShapeMorphingAnimator {
                     this.mesh.geometry.dispose();
                 }
                 this.mesh.geometry = this.targetGeometry;
+                if (this.mesh.userData) {
+                    this.mesh.userData.baseFinalGeometry = this.targetGeometry.clone();
+                    if (this.mesh.userData.fillMesh) {
+                        const fillMesh = this.mesh.userData.fillMesh;
+                        if (fillMesh.geometry && typeof fillMesh.geometry.dispose === 'function') {
+                            fillMesh.geometry.dispose();
+                        }
+                        fillMesh.geometry = this.targetGeometry.clone();
+                    }
+                }
                 resolve();
                 return;
             }
@@ -343,21 +353,13 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                 if (effectiveColor && mesh.material && mesh.material.color && typeof mesh.material.color.setStyle === 'function') {
                     console.log(`[ENRICHMENT] Setting color for chunk ${resolvedData.chunk_id}: material.type=${mesh.material.type}, effectiveColor=${effectiveColor}`);
                     mesh.material.color.setStyle(effectiveColor);
-                    if (typeof mesh.material.color.convertSRGBToLinear === 'function' && mesh.material.type === 'MeshStandardMaterial') {
-                        mesh.material.color.convertSRGBToLinear();
-                    }
                     console.log(`[ENRICHMENT] After setStyle: material.color=${mesh.material.color.getHexString()}`);
-                    if (materialSupportsEmissive(mesh.material) && typeof THREE !== 'undefined') {
-                        console.log(`[ENRICHMENT] Material supports emissive, setting it...`);
-                        const emissiveColor = new THREE.Color(effectiveColor);
-                        if (typeof mesh.material.emissive.convertSRGBToLinear === 'function') {
-                            emissiveColor.convertSRGBToLinear();
+                    if (mesh.userData?.fillMesh?.material && typeof mesh.userData.fillMesh.material.color?.setStyle === 'function') {
+                        mesh.userData.fillMesh.material.color.setStyle(effectiveColor);
+                        if (typeof mesh.userData.fillMesh.material.color.convertSRGBToLinear === 'function') {
+                            mesh.userData.fillMesh.material.color.convertSRGBToLinear();
                         }
-                        mesh.material.emissive.copy(emissiveColor.multiplyScalar(0.15));
-                        mesh.material.emissiveIntensity = 1.0;
-                        console.log(`[ENRICHMENT] Set emissive: ${mesh.material.emissive.getHexString()}`);
-                    } else {
-                        console.log(`[ENRICHMENT] Material does NOT support emissive (type=${mesh.material.type})`);
+                        mesh.userData.fillMesh.material.needsUpdate = true;
                     }
                     mesh.material.needsUpdate = true;
                 } else {
@@ -398,8 +400,16 @@ function startEnrichmentStreaming(docId, chunkMeshMap) {
                                     mesh.geometry.dispose();
                                 }
                                 mesh.geometry = newGeometry;
+
                                 if (mesh.userData) {
                                     mesh.userData.baseFinalGeometry = newGeometry.clone();
+                                    if (mesh.userData.fillMesh) {
+                                        const fillMesh = mesh.userData.fillMesh;
+                                        if (fillMesh.geometry && typeof fillMesh.geometry.dispose === 'function') {
+                                            fillMesh.geometry.dispose();
+                                        }
+                                        fillMesh.geometry = newGeometry.clone();
+                                    }
                                 }
                             }
                         } catch (error) {
