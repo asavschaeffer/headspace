@@ -274,40 +274,13 @@ export function addCustomObject(object3D) {
     object3D.traverse((child) => {
         if (child?.userData?.isCosmosGlobalLight && child.isLight) {
             child.distance = 0;
-            child.decay = 1.2;
-            child.intensity = 420;
+            child.decay = 1.4;
+            child.intensity = 260;
+            child.color = new THREE.Color(0xffb36d);
         }
     });
 
     scene.add(object3D);
-
-    globalLights.forEach((light) => {
-        if (light.parent) {
-            light.parent.remove(light);
-        }
-        light.position.set(0, 0, 0);
-        light.distance = 0;
-        light.decay = 2;
-        light.intensity = 520;
-        light.castShadow = false;
-        if (!scene.children.includes(light)) {
-            scene.add(light);
-        }
-        if (debug.lightHelpers) {
-            const helper = new THREE.PointLightHelper(light, 40, 0xffaa33);
-            helper.userData.isCosmosLightHelper = true;
-            scene.add(helper);
-        }
-
-        if (debug.cloneBasicPreview) {
-            const rangeHelperGeom = new THREE.RingGeometry(light.distance || 240, (light.distance || 240) + 0.5, 64);
-            const rangeHelperMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, toneMapped: false });
-            const rangeHelper = new THREE.Mesh(rangeHelperGeom, rangeHelperMat);
-            rangeHelper.rotation.x = Math.PI / 2;
-            rangeHelper.userData.isCosmosLightHelper = true;
-            scene.add(rangeHelper);
-        }
-    });
 }
 
 export async function initCosmos() {
@@ -445,7 +418,9 @@ function createChunkMaterial(chunk) {
     const material = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         wireframe: true,
-        toneMapped: false
+        toneMapped: false,
+        transparent: true,
+        opacity: 0.65
     });
     material.name = 'ChunkWireframe';
     return material;
@@ -464,8 +439,8 @@ function createFillMaterial(chunk) {
 
     const material = new THREE.MeshStandardMaterial({
         color,
-        roughness: 0.55,
-        metalness: 0.1,
+        roughness: 0.75,
+        metalness: 0.05,
         side: THREE.DoubleSide,
         flatShading: false
     });
