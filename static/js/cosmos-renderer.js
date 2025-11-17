@@ -21,22 +21,11 @@ const LOD_UPDATE_INTERVAL = 30;
 let geometryGeneratorInstance = null;
 
 function getDebugConfig() {
-    const defaults = {
-        lightHelpers: true,
-        normalHelpers: true,
-        logRenderer: true,
-        forceDoubleSide: false,
-        cloneBasicPreview: true,
-        forceSolidColor: null,
-        logLightUniforms: false
+    return {
+        lightHelpers: false,
+        normalHelpers: false,
+        forceDoubleSide: false
     };
-
-    if (typeof window === 'undefined') {
-        return defaults;
-    }
-
-    window.__COSMOS_DEBUG__ = window.__COSMOS_DEBUG__ || {};
-    return Object.assign({}, defaults, window.__COSMOS_DEBUG__);
 }
 
 function getHexStringSafe(value) {
@@ -66,33 +55,6 @@ function getHexStringSafe(value) {
     }
 
     return String(value);
-}
-
-function applyMaterialDebugHooks(material, baseColor) {
-    if (!material) return;
-    const debug = getDebugConfig();
-
-    if (debug.forceSolidColor) {
-        try {
-            const forced = debug.forceSolidColor === true
-                ? new THREE.Color(0x00ff00)
-                : new THREE.Color(debug.forceSolidColor);
-            const linear = forced.clone();
-            if (typeof linear.convertSRGBToLinear === 'function') {
-                linear.convertSRGBToLinear();
-            }
-            material.color.copy(linear);
-            material.emissive?.set?.(0, 0, 0);
-            material.emissiveIntensity = 0;
-            console.log('[COSMOS][DEBUG] forceSolidColor active');
-        } catch (error) {
-            console.warn('[COSMOS][DEBUG] Invalid forceSolidColor value:', error);
-        }
-    }
-
-    if (debug.logLightUniforms) {
-        console.log('[COSMOS][DEBUG] Light logging not supported on this build of three.js r128. Use helpers instead.');
-    }
 }
 
 function resolvePositionOverlap(target, usedPositions, options = {}) {
@@ -227,49 +189,6 @@ function repairGeometryNormals(geometry, label = '') {
         geometry.attributes.normal.needsUpdate = true;
     }
     console.log(`[GEOMETRY] Recomputed normals for ${label}`);
-}
-
-function createNormalsDebugHelper(mesh, length = 1.8) {
-    const debug = getDebugConfig();
-    if (!debug.normalHelpers || !mesh.geometry?.attributes?.position || !mesh.geometry?.attributes?.normal) {
-        return;
-    }
-
-    const positions = mesh.geometry.attributes.position;
-    const normals = mesh.geometry.attributes.normal;
-    const linePositions = new Float32Array(normals.count * 2 * 3);
-
-    const start = new THREE.Vector3();
-    const normal = new THREE.Vector3();
-
-    for (let i = 0; i < normals.count; i++) {
-        start.set(
-            positions.getX(i),
-            positions.getY(i),
-            positions.getZ(i)
-        );
-        normal.set(
-            normals.getX(i),
-            normals.getY(i),
-            normals.getZ(i)
-        ).normalize().multiplyScalar(length);
-
-        linePositions[i * 6 + 0] = start.x;
-        linePositions[i * 6 + 1] = start.y;
-        linePositions[i * 6 + 2] = start.z;
-
-        linePositions[i * 6 + 3] = start.x + normal.x;
-        linePositions[i * 6 + 4] = start.y + normal.y;
-        linePositions[i * 6 + 5] = start.z + normal.z;
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
-
-    const material = new THREE.LineBasicMaterial({ color: 0xff33ff, toneMapped: false });
-    const helper = new THREE.LineSegments(geometry, material);
-    helper.userData.isCosmosNormalHelper = true;
-    mesh.add(helper);
 }
 
 function getMaterialOverride() {
@@ -538,64 +457,12 @@ function materialSupportsEmissive(material) {
 }
 
 function createChunkMaterial(chunk) {
-    let colorHex = 0x748ffc;
-    if (chunk.color && typeof chunk.color === 'string' && chunk.color.startsWith('#')) {
-        colorHex = chunk.color.trim();
-    }
-
-    const logColor = typeof colorHex === 'string' ? colorHex : `#${colorHex.toString(16)}`;
-    const srgbColor = new THREE.Color(colorHex);
-    const linearColor = srgbColor.clone();
-    if (typeof linearColor.convertSRGBToLinear === 'function') {
-        linearColor.convertSRGBToLinear();
-    }
-    const emissiveLinear = new THREE.Color(0, 0, 0);
-
-    const override = getMaterialOverride();
-    if (override === 'basic') {
-        console.log(`[MATERIAL] Using MeshBasicMaterial override with color=${srgbColor.getHexString()}`);
-        return new THREE.MeshBasicMaterial({
-            color: srgbColor,
-            transparent: false
-        });
-    }
-
-    if (override === 'phong') {
-        console.log(`[MATERIAL] Using MeshPhongMaterial override with color=${srgbColor.getHexString()}`);
-        return new THREE.MeshPhongMaterial({
-            color: srgbColor,
-            emissive: linearColor.clone().multiplyScalar(0.18),
-            emissiveIntensity: 1.0,
-            shininess: 36,
-            specular: new THREE.Color(0xffffff)
-        });
-    }
-
-    if (override === 'lambert') {
-        console.log(`[MATERIAL] Using MeshLambertMaterial override with color=${linearColor.getHexString()}`);
-        const lambert = new THREE.MeshLambertMaterial({
-            color: linearColor.clone(),
-            emissive: linearColor.clone().multiplyScalar(0.18),
-            emissiveIntensity: 1.0
-        });
-        applyMaterialDebugHooks(lambert, linearColor);
-        lambert.needsUpdate = true;
-        return lambert;
-    }
-
-    console.log(`[MATERIAL] Creating MeshStandardMaterial with color=${logColor}, colorLinear=${linearColor.getHexString()}`);
-    const material = new THREE.MeshStandardMaterial({
-        color: linearColor,
-        emissive: emissiveLinear,
-        emissiveIntensity: 0,
-        roughness: 0,
-        metalness: 0,
-        envMapIntensity: 0
+    const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        toneMapped: false
     });
-    material.toneMapped = true;
-    applyMaterialDebugHooks(material, linearColor);
-    material.needsUpdate = true;
-    console.log(`[MATERIAL] Created material type=${material.type}`);
+    material.name = 'ChunkWireframe';
     return material;
 }
 
@@ -664,37 +531,13 @@ export function updateCosmosData() {
             position_3d: chunk.position_3d
         });
 
-        const placeholderGeometry = createPlaceholderGeometry(chunk);
         const geometry = createGeometryForChunk(chunk);
-        const baseFinalGeometry = geometry.clone();
         const material = createChunkMaterial(chunk);
         const mesh = new THREE.Mesh(geometry, material);
+        const baseFinalGeometry = geometry.clone();
 
-        console.log(`[COSMOS] Chunk ${idx} (id=${chunk.id}): color=${chunk.color}`);
-        console.log(`[COSMOS]   Geometry type: ${geometry.type}, vertices: ${geometry.attributes?.position?.count || 'N/A'}`);
-        console.log(`[COSMOS]   Material type: ${material.type}`);
-        console.log(`[COSMOS]   Material.color=${getHexStringSafe(material.color)}`);
-        console.log(`[COSMOS]   Material.emissive=${getHexStringSafe(material.emissive)}`);
-
-        const colorVector = material.color
-            ? `(${material.color.r.toFixed(4)}, ${material.color.g.toFixed(4)}, ${material.color.b.toFixed(4)})`
-            : 'null';
-        const emissiveVector = material.emissive
-            ? `(${material.emissive.r.toFixed(4)}, ${material.emissive.g.toFixed(4)}, ${material.emissive.b.toFixed(4)})`
-            : 'null';
-        console.log(`[COSMOS]   Material numeric values: color=${colorVector}, emissive=${emissiveVector}, emissiveIntensity=${material.emissiveIntensity?.toFixed?.(4) ?? material.emissiveIntensity}, roughness=${material.roughness ?? 'n/a'}, metalness=${material.metalness ?? 'n/a'}, opacity=${material.opacity}`);
-        if (material.roughness === undefined) {
-            console.log(`[COSMOS][WARN] Material roughness undefined for type=${material.type}, defaulting to Lambert parameters`);
-        }
-        if (material.type === 'MeshLambertMaterial') {
-            const lambertUniforms = {
-                color: colorVector,
-                emissive: emissiveVector,
-                receiveShadow: material.receiveShadow,
-                lights: renderer?.info?.programs?.length
-            };
-            console.log('[COSMOS]   Lambert uniforms snapshot:', lambertUniforms);
-        }
+        console.log(`[COSMOS] Chunk ${idx} (id=${chunk.id}): material=${material.type}, color=${getHexStringSafe(material.color)}`);
+        console.log(`[COSMOS]   Geometry vertices: ${geometry.attributes?.position?.count || 'N/A'}`);
 
         const targetPosition = Array.isArray(chunk.position_3d) && chunk.position_3d.length === 3
             ? new THREE.Vector3(chunk.position_3d[0], chunk.position_3d[1], chunk.position_3d[2])
@@ -726,61 +569,23 @@ export function updateCosmosData() {
             shapeSignature: chunk.shape_3d,
             originalPosition: targetPosition.clone(),
             resolvedPosition: resolvedPosition.clone(),
-            placeholderGeometry: null,
-            baseFinalGeometry,
-            pendingFinalGeometry: null
+            baseFinalGeometry
         };
 
         usedPositions.push(resolvedPosition.clone());
 
-        const debug = getDebugConfig();
-        if (debug.forceDoubleSide && mesh.material) {
-            mesh.material.side = THREE.DoubleSide;
-            mesh.material.needsUpdate = true;
-        }
-
-    console.log(`[COSMOS]   Position diagnostics: position=(${mesh.position.x.toFixed(3)}, ${mesh.position.y.toFixed(3)}, ${mesh.position.z.toFixed(3)}), dist=${mesh.position.length().toFixed(3)}`);
+        console.log(`[COSMOS]   Position diagnostics: position=(${mesh.position.x.toFixed(3)}, ${mesh.position.y.toFixed(3)}, ${mesh.position.z.toFixed(3)}), dist=${mesh.position.length().toFixed(3)}`);
 
         scene.add(mesh);
         chunkMeshes.set(chunk.id || chunk.chunk_id, mesh);
         console.log(`[COSMOS] Added mesh to scene: uuid=${mesh.uuid}, visible=${mesh.visible}, material.color=${getHexStringSafe(mesh.material.color)}`);
-        console.log('[COSMOS] Material diagnostics:', {
-            type: mesh.material.type,
-            color: getHexStringSafe(mesh.material.color),
-            emissive: getHexStringSafe(mesh.material.emissive),
-            opacity: mesh.material.opacity,
-            transparent: mesh.material.transparent,
-            depthWrite: mesh.material.depthWrite,
-            depthTest: mesh.material.depthTest,
-            side: mesh.material.side,
-            colorWrite: mesh.material.colorWrite,
-            needsUpdate: mesh.material.needsUpdate
-        });
 
-        createNormalsDebugHelper(mesh);
-
-    if (debug.cloneBasicPreview && mesh.material) {
-        const previewMaterial = new THREE.MeshBasicMaterial({
-            color: mesh.material.color.clone ? mesh.material.color.clone() : new THREE.Color(0xffffff),
-            wireframe: true,
-            toneMapped: false
-        });
-        const preview = new THREE.Mesh(mesh.geometry.clone(), previewMaterial);
-        preview.scale.multiplyScalar(1.01);
-        preview.position.copy(mesh.position);
-        preview.userData.isCosmosDebugPreview = true;
-        scene.add(preview);
-        console.log('[COSMOS] Added debug basic preview mesh');
-    }
-
-        // Log initial rendering state
         setTimeout(() => {
             if (chunkMeshes.has(chunk.id || chunk.chunk_id)) {
                 const m = chunkMeshes.get(chunk.id || chunk.chunk_id);
                 const inScene = scene.children.includes(m);
-                console.log(`[COSMOS] After add to scene (10ms later): mesh.material.color=${getHexStringSafe(m.material.color)}, emissive=${getHexStringSafe(m.material.emissive)}, in scene=${inScene}, mesh.visible=${m.visible}`);
+                console.log(`[COSMOS] After add to scene (10ms later): mesh.material.color=${getHexStringSafe(m.material.color)}, in scene=${inScene}, mesh.visible=${m.visible}`);
 
-                // Try to render once to see what color we get
                 if (renderer) {
                     renderer.render(scene, camera);
                     console.log(`[COSMOS] Rendered scene - should see the mesh now`);

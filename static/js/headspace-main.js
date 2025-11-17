@@ -98,8 +98,6 @@ function animateNewDocument(docId) {
             return;
         }
 
-        mesh.userData.pendingFinalGeometry = null;
-
         const targetPosition = mesh.position.clone();
         mesh.position.copy(origin);
         mesh.scale.setScalar(0.1);
