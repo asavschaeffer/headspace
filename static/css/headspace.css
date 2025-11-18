@@ -55,17 +55,20 @@
 }
 
 .headspace-info {
-    position: absolute;
-    bottom: 24px;
-    left: 24px;
-    max-width: 360px;
-    padding: 20px;
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 500px;
+    width: 90vw;
+    padding: 24px;
     border-radius: 20px;
-    background: rgba(8, 12, 26, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(8, 12, 26, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(18px);
     color: #f3f6ff;
-    z-index: 15;
+    z-index: 25;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .headspace-info:not(.visible) {
@@ -232,7 +235,25 @@
 }
 
 .chunk-tooltip {
-    display: none !important;
+    position: fixed;
+    background: rgba(12, 18, 40, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(12px);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: #f3f6ff;
+    pointer-events: none;
+    z-index: 30;
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: none;
+}
+
+.chunk-tooltip.visible {
+    display: block;
 }
 
 .headspace-hidden {
@@ -253,9 +274,11 @@
     }
 
     .headspace-info {
-        left: 16px;
-        right: 16px;
         bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(100vw - 32px);
+        max-width: 500px;
     }
 
     #open-thought {

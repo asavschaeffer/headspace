@@ -833,7 +833,8 @@ function onCosmosMouseMove(event) {
                 }
             }
             hoveredMesh = mesh;
-            showCosmosInfo(mesh.userData.chunk || mesh.userData);
+            // On hover: show title near mouse position
+            showChunkTooltip(mesh.userData.chunk || mesh.userData, event);
             canvas.style.cursor = 'pointer';
             return;
         } else if (mesh.userData?.clickHandler) {
@@ -842,7 +843,7 @@ function onCosmosMouseMove(event) {
         }
     }
 
-    hideCosmosInfo();
+    hideChunkTooltip();
     canvas.style.cursor = 'default';
 }
 
@@ -879,6 +880,8 @@ function onCosmosClick(event) {
             if (materialSupportsEmissive(mesh.material)) {
                 mesh.material.emissiveIntensity = 1.5;
             }
+            // On click: hide tooltip and show full info panel
+            hideChunkTooltip();
             showCosmosInfo(mesh.userData.chunk || mesh.userData);
             focusChunkInCosmos(mesh.userData.chunkId || mesh.userData.chunk?.id);
         }
@@ -910,5 +913,30 @@ function hideCosmosInfo() {
     const panel = document.getElementById('cosmos-info');
     if (panel) {
         panel.classList.remove('visible');
+    }
+}
+
+function showChunkTooltip(chunk, event) {
+    const tooltip = document.getElementById('chunk-tooltip');
+    if (!tooltip || !chunk) return;
+
+    // Get chunk title
+    const chunkTitle = chunk.title || chunk.content?.split('\n')[0]?.slice(0, 60) || 'Untitled chunk';
+
+    tooltip.textContent = chunkTitle;
+
+    // Position tooltip near mouse, with small offset to avoid cursor
+    const offsetX = 12;
+    const offsetY = 12;
+    tooltip.style.left = (event.clientX + offsetX) + 'px';
+    tooltip.style.top = (event.clientY + offsetY) + 'px';
+
+    tooltip.classList.add('visible');
+}
+
+function hideChunkTooltip() {
+    const tooltip = document.getElementById('chunk-tooltip');
+    if (tooltip) {
+        tooltip.classList.remove('visible');
     }
 }
