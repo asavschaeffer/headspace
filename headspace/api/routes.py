@@ -520,6 +520,102 @@ async def get_chunk_attachments(chunk_id: str, db=Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/search")
+async def hybrid_search(
+    query: str,
+    top_k: int = 10,
+    vector_weight: float = 0.6,
+    keyword_weight: float = 0.4,
+    request: Request = None
+):
+    """
+    Hybrid search combining vector search and keyword search.
+
+    Args:
+        query: Search query (keywords/phrases)
+        top_k: Number of results to return (default 10)
+        vector_weight: Weight for vector search (0-1, default 0.6)
+        keyword_weight: Weight for keyword search (0-1, default 0.4)
+
+    Returns:
+        List of search results with chunk information and scores
+    """
+    if not query or query.strip() == "":
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    try:
+        db = request.app.state.db
+        embedder = request.app.state.embedder
+        keyword_search = request.app.state.keyword_search
+
+        # Get all chunks with embeddings
+        all_chunks = db.get_all_chunks()
+        if not all_chunks:
+            return {"results": [], "query": query, "total": 0}
+
+        # Vector search: embed query and find similar chunks
+        query_embedding = embedder.embed([query])[0]
+        vector_results = []
+
+        for chunk in all_chunks:
+            if chunk.embedding and len(chunk.embedding) > 0:
+                # Compute cosine similarity
+                chunk_emb = chunk.embedding
+                norm_query = sum(x**2 for x in query_embedding) ** 0.5
+                norm_chunk = sum(x**2 for x in chunk_emb) ** 0.5
+
+                if norm_query > 0 and norm_chunk > 0:
+                    dot_product = sum(a * b for a, b in zip(query_embedding, chunk_emb))
+                    similarity = dot_product / (norm_query * norm_chunk)
+
+                    if similarity > 0.3:  # Only include if reasonably similar
+                        vector_results.append((chunk.id, float(similarity)))
+
+        # Sort by similarity
+        vector_results.sort(key=lambda x: x[1], reverse=True)
+
+        # Keyword search
+        if keyword_search:
+            combined_results = keyword_search.hybrid_search(
+                query=query,
+                vector_results=vector_results,
+                top_k=top_k,
+                vector_weight=vector_weight,
+                keyword_weight=keyword_weight
+            )
+        else:
+            # Fall back to vector search only if keyword search unavailable
+            combined_results = vector_results[:top_k]
+
+        # Fetch full chunk details for results
+        results = []
+        for chunk_id, score in combined_results:
+            chunk = db.get_chunk(chunk_id)
+            if chunk:
+                results.append({
+                    "id": chunk.id,
+                    "document_id": chunk.document_id,
+                    "chunk_index": chunk.chunk_index,
+                    "content": chunk.content[:200] + ("..." if len(chunk.content) > 200 else ""),
+                    "full_content": chunk.content,
+                    "chunk_type": chunk.chunk_type,
+                    "score": score,
+                    "tags": chunk.tags,
+                    "metadata": chunk.metadata
+                })
+
+        return {
+            "results": results,
+            "query": query,
+            "total": len(results),
+            "vector_weight": vector_weight,
+            "keyword_weight": keyword_weight
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
 @router.websocket("/ws/enrichment/{doc_id}")
 async def websocket_enrichment_stream(websocket: WebSocket, doc_id: str):
     """
