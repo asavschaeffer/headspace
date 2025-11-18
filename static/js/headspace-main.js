@@ -48,14 +48,6 @@ function attachHomePlanet() {
     const homePlanet = generator.generateHomePlanet();
     homePlanet.position.set(0, -6, -42);
 
-    if (!homePlanet.userData) {
-        homePlanet.userData = {};
-    }
-
-    homePlanet.userData.clickHandler = () => {
-        window.location.href = window.HOME_PLANET_TARGET_URL || '/index.html';
-    };
-
     addCustomObject(homePlanet);
 }
 
@@ -181,7 +173,6 @@ async function handleThoughtSubmit(event) {
     setStatus('Encoding your thought…');
 
     try {
-        window.HOME_PLANET_TARGET_URL = window.location.pathname;
         const result = await createDocumentViaApi(title, content);
         const docId = result.id;
         const status = result.status || 'enriched';

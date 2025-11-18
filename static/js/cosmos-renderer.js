@@ -841,6 +841,10 @@ function onCosmosMouseMove(event) {
             canvas.style.cursor = 'pointer';
             return;
         } else if (mesh.userData?.clickHandler) {
+            // Show tooltip for clickable custom objects like home planet
+            if (mesh.userData?.isHomePlanet) {
+                showChunkTooltip({ title: 'Return to index' }, event);
+            }
             canvas.style.cursor = 'pointer';
             return;
         }
