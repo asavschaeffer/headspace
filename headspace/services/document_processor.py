@@ -469,8 +469,8 @@ class DocumentProcessor:
             self.monitor.logger.warning("UMAP/HDBSCAN not installed; skipping semantic layout.")
             return
 
-        n_neighbors = max(2, min(5, num_chunks - 1))
-        min_dist = 0.5
+        n_neighbors = max(2, min(4, num_chunks - 1))
+        min_dist = 1.2
 
         try:
             reducer = umap.UMAP(
@@ -478,6 +478,8 @@ class DocumentProcessor:
                 metric="cosine",
                 n_neighbors=n_neighbors,
                 min_dist=min_dist,
+                spread=2.0,
+                repulsion_strength=1.0,
                 random_state=42,
             )
             raw_umap_coords = reducer.fit_transform(embeddings_array)
@@ -507,7 +509,7 @@ class DocumentProcessor:
                 scaled_coords = np.zeros_like(scaled_coords)
         else:
             centered = scaled_coords - scaled_coords.mean(axis=0)
-            scale = 50.0 / max_range
+            scale = 120.0 / max_range
             scaled_coords = centered * scale
 
         min_cluster_size = max(2, min(5, num_chunks))
@@ -589,7 +591,7 @@ class DocumentProcessor:
             chunk.nearest_chunk_ids = neighbors[:4]
 
             chunk.metadata["cluster_label"] = chunk.cluster_label
-            chunk.metadata["position_scale"] = 50.0
+            chunk.metadata["position_scale"] = 120.0
             chunk.metadata["umap_min_dist"] = min_dist
             chunk.timestamp_modified = datetime.now(timezone.utc)
 
