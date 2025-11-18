@@ -335,7 +335,8 @@ export async function initCosmos() {
 
     // Camera
     camera = new THREE.PerspectiveCamera(72, container.clientWidth / container.clientHeight, 0.1, 10000);
-    camera.position.set(0, 2, -65);  // Positioned behind the home planet at (0, -6, -42)
+    camera.position.set(0, 35, -50);  // Positioned higher and angled down towards the scene
+    camera.lookAt(0, -5, 0);  // Look towards the center-lower area where chunks are
 
     // Renderer
     renderer = new THREE.WebGLRenderer({
@@ -840,13 +841,21 @@ function onCosmosMouseMove(event) {
             showChunkTooltip(mesh.userData.chunk || mesh.userData, event);
             canvas.style.cursor = 'pointer';
             return;
-        } else if (mesh.userData?.clickHandler) {
-            // Show tooltip for clickable custom objects like home planet
-            if (mesh.userData?.isHomePlanet) {
-                showChunkTooltip({ title: 'Return to index' }, event);
+        } else {
+            // Check hierarchy for clickHandler (important for hierarchical objects like home planet)
+            let current = mesh;
+            while (current && !current.userData?.clickHandler) {
+                current = current.parent;
             }
-            canvas.style.cursor = 'pointer';
-            return;
+
+            if (current?.userData?.clickHandler) {
+                // Show tooltip for clickable custom objects like home planet
+                if (current.userData?.isHomePlanet) {
+                    showChunkTooltip({ title: 'Return to index' }, event);
+                }
+                canvas.style.cursor = 'pointer';
+                return;
+            }
         }
     }
 
@@ -876,8 +885,15 @@ function onCosmosClick(event) {
 
     if (intersects.length > 0) {
         const mesh = intersects[0].object;
-        if (mesh.userData?.clickHandler) {
-            mesh.userData.clickHandler();
+
+        // Traverse up the hierarchy to find clickHandler (important for hierarchical objects like home planet)
+        let current = mesh;
+        while (current && !current.userData?.clickHandler) {
+            current = current.parent;
+        }
+
+        if (current?.userData?.clickHandler) {
+            current.userData.clickHandler();
             return;
         }
 
