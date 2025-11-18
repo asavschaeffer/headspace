@@ -10,7 +10,7 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import numpy as np
-from embeddings_engine import EmbeddingsEngine
+from embeddings_engine import EmbeddingEngine
 from config_manager import ConfigManager
 
 
@@ -30,7 +30,7 @@ class SemanticChunker:
 
     def __init__(
         self,
-        embedder: EmbeddingsEngine,
+        embedder: EmbeddingEngine,
         config_manager: ConfigManager,
         similarity_threshold: float = 0.7,
         max_paragraph_tokens: int = 500,
