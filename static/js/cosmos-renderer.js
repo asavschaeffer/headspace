@@ -931,8 +931,18 @@ function updateNavigationButtons(currentChunk) {
     const hasPrevious = currentPosition > 0;
     const hasNext = currentPosition < documentChunks.length - 1;
 
+    const navPanel = document.getElementById('cosmos-nav');
     const prevBtn = document.getElementById('cosmos-nav-prev');
     const nextBtn = document.getElementById('cosmos-nav-next');
+
+    // Show nav panel if there are multiple chunks
+    if (navPanel) {
+        if (documentChunks.length > 1) {
+            navPanel.classList.add('visible');
+        } else {
+            navPanel.classList.remove('visible');
+        }
+    }
 
     if (prevBtn) {
         prevBtn.disabled = !hasPrevious;
@@ -984,6 +994,10 @@ function hideCosmosInfo() {
     const panel = document.getElementById('cosmos-info');
     if (panel) {
         panel.classList.remove('visible');
+    }
+    const navPanel = document.getElementById('cosmos-nav');
+    if (navPanel) {
+        navPanel.classList.remove('visible');
     }
 }
 

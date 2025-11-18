@@ -79,6 +79,10 @@
     display: block;
 }
 
+.cosmos-info-header {
+    margin-bottom: 12px;
+}
+
 .headspace-info .cosmos-info-title {
     font-size: 14px;
     letter-spacing: 0.06em;
@@ -96,7 +100,7 @@
 .headspace-info .cosmos-info-meta {
     font-size: 12px;
     color: rgba(198, 212, 255, 0.7);
-    margin-bottom: 12px;
+    margin-bottom: 0;
 }
 
 .headspace-info .cosmos-info-text {
@@ -106,22 +110,30 @@
 }
 
 .cosmos-info-nav {
+    position: fixed;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     gap: 12px;
-    margin-top: 16px;
-    margin-bottom: 12px;
+    z-index: 25;
+    display: none;
+}
+
+.cosmos-info-nav.visible {
+    display: flex;
 }
 
 .cosmos-nav-btn {
-    flex: 1;
-    padding: 10px 14px;
+    padding: 10px 18px;
     border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(12, 18, 40, 0.85);
     color: #f3f6ff;
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s ease;
+    backdrop-filter: blur(12px);
 }
 
 .cosmos-nav-btn:hover:not(:disabled) {
@@ -131,7 +143,7 @@
 }
 
 .cosmos-nav-btn:disabled {
-    opacity: 0.4;
+    opacity: 0.35;
     cursor: not-allowed;
 }
 
