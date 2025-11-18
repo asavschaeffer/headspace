@@ -328,11 +328,14 @@ def create_app():
     static_path = Path(STATIC_FOLDER).resolve()
     css_path = static_path / "css"
     js_path = static_path / "js"
+    assets_path = Path("assets").resolve()
 
     if css_path.exists():
         app.mount("/css", StaticFiles(directory=str(css_path), html=True), name="css")
     if js_path.exists():
         app.mount("/js", StaticFiles(directory=str(js_path), html=True), name="js")
+    if assets_path.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
     app.mount("/static", StaticFiles(directory=STATIC_FOLDER, html=True), name="static")
 
     # Load initial documents
