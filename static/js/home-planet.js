@@ -11,11 +11,8 @@ class HomePlanetGenerator {
      * Load the home planet from GLB file
      */
     async generateHomePlanet() {
-        // Dynamic import of GLTFLoader
-        const { GLTFLoader } = await import('https://cdn.jsdelivr.net/npm/three@r128/examples/jsm/loaders/GLTFLoader.js');
-
         return new Promise((resolve, reject) => {
-            const loader = new GLTFLoader();
+            const loader = new THREE.GLTFLoader();
             loader.load(
                 this.modelPath,
                 (gltf) => {
