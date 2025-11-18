@@ -12,6 +12,10 @@
         <canvas id="cosmos-canvas"></canvas>
 
         <div class="headspace-overlay">
+            <div class="headspace-search-box">
+                <input type="text" id="search-input" class="headspace-search-input" placeholder="Search thoughts…" />
+                <button id="search-btn" class="headspace-search-btn">🔍</button>
+            </div>
             <button id="open-thought">+ New Thought</button>
             <div id="status-text">Summoning cosmos…</div>
         </div>
@@ -68,11 +72,20 @@
 
     <div id="chunk-tooltip" class="chunk-tooltip"></div>
 
+    <div id="search-results" class="search-results">
+        <div class="search-results__header">
+            <h3 class="search-results__title">Search Results</h3>
+            <button id="close-search-results" class="search-results__close">✕</button>
+        </div>
+        <div class="search-results__list" id="search-results-list"></div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="js/home-planet.js"></script>
     <script src="js/procedural-geometry.js"></script>
     <script src="js/enrichment-stream.js"></script>
+    <script type="module" src="js/search.js"></script>
     <script type="module" src="js/headspace-main.js"></script>
 </body>
 </html>

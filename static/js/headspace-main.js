@@ -7,6 +7,7 @@ import {
     switchView,
     focusChunkInCosmos
 } from './cosmos-renderer.js';
+import { initializeSearch } from './search.js';
 const statusEl = () => document.getElementById('status-text');
 const modalEl = () => document.getElementById('thought-modal');
 const feedbackEl = () => document.getElementById('thought-feedback');
@@ -248,6 +249,7 @@ async function initialize() {
 
         await refreshCosmos();
         registerUI();
+        initializeSearch();
         setStatus('Ready to capture a new constellation');
     } catch (error) {
         console.error('Failed to initialize headspace', error);
