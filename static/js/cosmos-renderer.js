@@ -690,11 +690,11 @@ export function focusChunkInCosmos(chunkId) {
     );
 
     // The target (center point) is the selected chunk
-    const endTarget = mesh.position.clone();
+    const targetPos = mesh.position.clone();
 
-    // Calculate centroid of OTHER chunks to orient camera toward them
+    // Calculate centroid of OTHER chunks to determine viewing direction
     const otherChunks = groupMeshes.filter(m => m !== mesh);
-    let otherCenter = mesh.position.clone();
+    let otherCenter = targetPos.clone();
     if (otherChunks.length > 0) {
         otherCenter = new THREE.Vector3();
         otherChunks.forEach(m => {
@@ -703,21 +703,22 @@ export function focusChunkInCosmos(chunkId) {
         otherCenter.divideScalar(otherChunks.length);
     }
 
-    // Calculate viewing distance - balance between seeing chunk detail and group context
-    const viewDistance = 25; // Fixed distance for consistent framing
+    // Direction from selected chunk toward other chunks (in horizontal plane)
+    const directionToOthers = otherCenter.clone().sub(targetPos);
+    directionToOthers.y = 0; // Keep in horizontal plane only
+    directionToOthers.normalize();
 
-    // Direction from selected chunk toward other chunks
-    const directionToOthers = otherCenter.clone().sub(mesh.position).normalize();
-
-    // Position camera opposite to the direction of other chunks
-    // so the chunk is centered and we can see other chunks in background
-    const endPos = mesh.position.clone().sub(directionToOthers.multiplyScalar(viewDistance));
+    // Position camera opposite to other chunks, slightly elevated
+    const viewDistance = 25;
+    const endPos = targetPos.clone()
+        .sub(directionToOthers.multiplyScalar(viewDistance))
+        .add(new THREE.Vector3(0, 8, 0)); // Slight elevation for better perspective
 
     const startPos = camera.position.clone();
     const startTarget = controls.target.clone();
 
     let progress = 0;
-    const duration = 1.2; // Slower animation
+    const duration = 1.5; // Slower animation
 
     function animateCamera() {
         progress += 1 / 60 / duration;
@@ -728,8 +729,12 @@ export function focusChunkInCosmos(chunkId) {
             ? 2 * progress * progress
             : -1 + (4 - 2 * progress) * progress;
 
+        // Interpolate position and target together for unified motion
         camera.position.lerpVectors(startPos, endPos, eased);
-        controls.target.lerpVectors(startTarget, endTarget, eased);
+        controls.target.lerpVectors(startTarget, targetPos, eased);
+
+        // Force upright orientation
+        camera.up.set(0, 1, 0);
         controls.update();
 
         if (progress < 1) {
