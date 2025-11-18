@@ -335,7 +335,7 @@ export async function initCosmos() {
 
     // Camera
     camera = new THREE.PerspectiveCamera(72, container.clientWidth / container.clientHeight, 0.1, 10000);
-    camera.position.set(0, 18, 70);
+    camera.position.set(0, 2, -65);  // Positioned behind the home planet at (0, -6, -42)
 
     // Renderer
     renderer = new THREE.WebGLRenderer({
@@ -369,6 +369,7 @@ export async function initCosmos() {
 
     // Controls
     controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, -6, -42);  // Point at home planet initially
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.minDistance = 8;
