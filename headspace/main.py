@@ -222,7 +222,7 @@ def initialize_services():
 
     # Initialize document processor
     print("\n📄 Initializing Document Processor...")
-    processor = DocumentProcessor(db, embedder, tag_engine, llm_chunker, config_manager, monitor, semantic_chunker)
+    processor = DocumentProcessor(db, embedder, tag_engine, llm_chunker, config_manager, monitor, semantic_chunker, keyword_search)
     print("✅ Document Processor initialized")
 
     # Print initialization summary

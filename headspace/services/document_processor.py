@@ -51,12 +51,13 @@ class DocumentProcessor:
         "#a55194",
     ]
 
-    def __init__(self, db, embedder, tag_engine, llm_chunker, config_manager, monitor, semantic_chunker=None):
+    def __init__(self, db, embedder, tag_engine, llm_chunker, config_manager, monitor, semantic_chunker=None, keyword_search=None):
         self.db = db
         self.embedder = embedder
         self.tag_engine = tag_engine
         self.llm_chunker = llm_chunker
         self.semantic_chunker = semantic_chunker
+        self.keyword_search = keyword_search
         self.config_manager = config_manager
         self.monitor = monitor
         self.shape_generator = ShapeSignatureBuilder()
@@ -130,6 +131,14 @@ class DocumentProcessor:
             )
             self.db.save_connection(connection)
 
+    def _index_chunk(self, chunk: Chunk) -> None:
+        """Index a chunk in the keyword search engine."""
+        try:
+            if self.keyword_search and chunk.content:
+                self.keyword_search.index_chunk(chunk.id, chunk.content)
+        except Exception as e:
+            self.monitor.logger.warning(f"Failed to index chunk {chunk.id}: {e}")
+
     def create_document_placeholders(self, title: str, content: str, doc_type: str = "text") -> tuple[str, List[Chunk]]:
         """Create a document and chunk placeholders prior to enrichment."""
         doc_id = hashlib.md5(f"{title}{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()[:12]
@@ -176,6 +185,8 @@ class DocumentProcessor:
             )
             self.db.save_chunk(placeholder)
             saved_chunks.append(placeholder)
+            # Index chunk for keyword search
+            self._index_chunk(placeholder)
 
         document.metadata["chunk_count"] = len(chunks_data)
         document.updated_at = datetime.now(timezone.utc)
