@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Headspace · Cosmic Diary</title>
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/headspace.css" />
+</head>
+<body class="headspace-body">
+    <div id="cosmos-view" class="headspace-cosmos">
+        <canvas id="cosmos-canvas"></canvas>
+
+        <div class="headspace-overlay">
+            <button id="open-thought">+ New Thought</button>
+            <div id="status-text">Summoning cosmos…</div>
+        </div>
+
+        <div id="cosmos-info" class="headspace-info">
+            <div class="cosmos-info-title">Chunk Info</div>
+            <div class="cosmos-info-id" id="cosmos-info-id">chunk_id</div>
+            <div class="cosmos-info-meta" id="cosmos-info-meta">Type: paragraph</div>
+            <div class="cosmos-info-text" id="cosmos-info-text">Hover over a thought to reveal its pulse…</div>
+            <button class="cosmos-attach-btn" id="cosmos-attach-btn">+ Attach Document</button>
+        </div>
+
+        <div class="headspace-hidden">
+            <input type="checkbox" id="show-connections" checked />
+            <input type="checkbox" id="show-nebulae" checked />
+            <input type="checkbox" id="enable-gravity" />
+            <input type="range" id="animation-speed" min="0" max="2" step="0.1" value="1" />
+        </div>
+    </div>
+
+    <div id="thought-modal" class="headspace-modal" role="dialog" aria-modal="true" aria-labelledby="thought-modal-title">
+        <div class="headspace-modal__content">
+            <button id="close-thought" class="headspace-modal__close" aria-label="Close">✕</button>
+            <div class="headspace-modal__header">
+                <h2 id="thought-modal-title" class="headspace-modal__title">Launch a New Planet</h2>
+                <p class="headspace-modal__subtitle">Write a fragment of your mind and watch it crystallize in orbit.</p>
+            </div>
+            <form id="thought-form">
+                <label for="thought-title">Title</label>
+                <input type="text" id="thought-title" placeholder="Untitled planet" />
+
+                <label for="thought-content">Thought</label>
+                <textarea id="thought-content" placeholder="Let your consciousness breathe here…" required></textarea>
+
+                <label for="thought-signature">Signature (optional)</label>
+                <input type="text" id="thought-signature" placeholder="— you" />
+
+                <div id="thought-feedback" class="headspace-form-feedback"></div>
+
+                <div class="headspace-modal__actions">
+                    <button type="button" class="secondary" id="cancel-thought">Cancel</button>
+                    <button type="submit" class="primary" id="submit-thought">Launch Planet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="chunk-tooltip" class="chunk-tooltip"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="js/home-planet.js"></script>
+    <script src="js/procedural-geometry.js"></script>
+    <script src="js/enrichment-stream.js"></script>
+    <script type="module" src="js/headspace-main.js"></script>
+</body>
+</html>
