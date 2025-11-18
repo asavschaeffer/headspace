@@ -18,6 +18,19 @@ class HomePlanetGenerator {
                 (gltf) => {
                     const model = gltf.scene;
 
+                    // Log model structure to inspect colors
+                    console.log('[HomePlanet] Loaded model:', model);
+                    model.traverse((child) => {
+                        if (child.isMesh) {
+                            console.log(`[HomePlanet] Mesh: ${child.name || 'unnamed'}`);
+                            console.log(`  Material:`, child.material);
+                            if (child.material) {
+                                console.log(`  Color:`, child.material.color?.getHexString?.() || 'N/A');
+                                console.log(`  Map:`, child.material.map ? 'yes' : 'no');
+                            }
+                        }
+                    });
+
                     // Scale the model 200x to make it visible
                     model.scale.set(200, 200, 200);
 

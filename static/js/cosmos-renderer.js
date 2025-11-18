@@ -764,6 +764,12 @@ function animateCosmos(time = 0) {
         });
     }
 
+    // Log camera position and angle every 5 seconds
+    if (frameCount % 300 === 0) {  // ~300 frames = 5 seconds at 60fps
+        const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+        console.log(`[CAMERA] Position: (${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}) | Rotation: (${(euler.x * 180/Math.PI).toFixed(1)}°, ${(euler.y * 180/Math.PI).toFixed(1)}°, ${(euler.z * 180/Math.PI).toFixed(1)}°)`);
+    }
+
     if (frameCount % LOD_UPDATE_INTERVAL === 0) {
         controls.update();
     }
