@@ -59,9 +59,10 @@
     bottom: 32px;
     left: 50%;
     transform: translateX(-50%);
-    max-width: 500px;
+    max-width: 600px;
     width: 90vw;
-    padding: 24px;
+    max-height: 60vh;
+    padding: 0;
     border-radius: 20px;
     background: rgba(8, 12, 26, 0.92);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -69,6 +70,8 @@
     color: #f3f6ff;
     z-index: 25;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
 }
 
 .headspace-info:not(.visible) {
@@ -80,7 +83,9 @@
 }
 
 .cosmos-info-header {
-    margin-bottom: 12px;
+    padding: 24px 24px 12px 24px;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .headspace-info .cosmos-info-title {
@@ -104,9 +109,31 @@
 }
 
 .headspace-info .cosmos-info-text {
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 15px;
+    line-height: 1.6;
     color: rgba(233, 240, 255, 0.9);
+    padding: 20px 24px;
+    flex: 1;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.headspace-info .cosmos-info-text::-webkit-scrollbar {
+    width: 6px;
+}
+
+.headspace-info .cosmos-info-text::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.headspace-info .cosmos-info-text::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.headspace-info .cosmos-info-text::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .cosmos-info-nav {
@@ -149,6 +176,8 @@
 
 .headspace-info .cosmos-attach-btn {
     display: none;
+    padding: 0 24px 24px 24px;
+    flex-shrink: 0;
 }
 
 .headspace-modal {
@@ -320,7 +349,8 @@
         left: 50%;
         transform: translateX(-50%);
         width: calc(100vw - 32px);
-        max-width: 500px;
+        max-width: 600px;
+        max-height: 70vh;
     }
 
     #open-thought {

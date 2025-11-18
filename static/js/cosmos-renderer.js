@@ -907,8 +907,8 @@ function showCosmosInfo(chunk) {
     if (chunk.cluster_label) metaText.push(chunk.cluster_label);
     document.getElementById('cosmos-info-meta').textContent = metaText.join(' • ') || 'Semantic node';
 
-    const preview = chunk.content || chunk.metadata?.description || 'No description available.';
-    document.getElementById('cosmos-info-text').textContent = preview.slice(0, 240) + (preview.length > 240 ? '…' : '');
+    const fullContent = chunk.content || chunk.metadata?.description || 'No description available.';
+    document.getElementById('cosmos-info-text').textContent = fullContent;
 
     // Setup navigation buttons
     updateNavigationButtons(chunk);
