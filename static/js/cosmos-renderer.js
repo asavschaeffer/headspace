@@ -407,6 +407,7 @@ export async function initCosmos() {
     const canvas = document.getElementById('cosmos-canvas');
     canvas.addEventListener('mousemove', onCosmosMouseMove);
     canvas.addEventListener('click', onCosmosClick);
+    canvas.addEventListener('touchstart', onCosmosTouchStart, false);
 
     // Begin animation loop
     state.setCurrentView('cosmos');
@@ -938,5 +939,52 @@ function hideChunkTooltip() {
     const tooltip = document.getElementById('chunk-tooltip');
     if (tooltip) {
         tooltip.classList.remove('visible');
+    }
+}
+
+function onCosmosTouchStart(event) {
+    // Handle touch interaction same as click
+    if (!scene || !camera || !event.touches || event.touches.length === 0) return;
+
+    const touch = event.touches[0];
+    const canvas = document.getElementById('cosmos-canvas');
+    const rect = canvas.getBoundingClientRect();
+
+    // Convert touch coordinates to normalized device coordinates
+    mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersectables = Array.from(chunkMeshes.values()).concat(customObjects);
+    const intersects = raycaster.intersectObjects(intersectables);
+
+    if (selectedMesh) {
+        selectedMesh.scale.setScalar(1.0);
+        if (materialSupportsEmissive(selectedMesh.material)) {
+            selectedMesh.material.emissiveIntensity = 0.45;
+        }
+        selectedMesh = null;
+    }
+
+    if (intersects.length > 0) {
+        const mesh = intersects[0].object;
+        if (mesh.userData?.clickHandler) {
+            mesh.userData.clickHandler();
+            return;
+        }
+
+        if (chunkMeshes.has(mesh.userData?.chunkId)) {
+            selectedMesh = mesh;
+            mesh.scale.setScalar(1.7);
+            if (materialSupportsEmissive(mesh.material)) {
+                mesh.material.emissiveIntensity = 1.5;
+            }
+            // On touch: hide tooltip and show full info panel
+            hideChunkTooltip();
+            showCosmosInfo(mesh.userData.chunk || mesh.userData);
+            focusChunkInCosmos(mesh.userData.chunkId || mesh.userData.chunk?.id);
+        }
+    } else {
+        hideCosmosInfo();
     }
 }
