@@ -51,33 +51,51 @@ class DocumentProcessor:
         "#a55194",
     ]
 
-    def __init__(self, db, embedder, tag_engine, llm_chunker, config_manager, monitor):
+    def __init__(self, db, embedder, tag_engine, llm_chunker, config_manager, monitor, semantic_chunker=None):
         self.db = db
         self.embedder = embedder
         self.tag_engine = tag_engine
         self.llm_chunker = llm_chunker
+        self.semantic_chunker = semantic_chunker
         self.config_manager = config_manager
         self.monitor = monitor
         self.shape_generator = ShapeSignatureBuilder()
 
     def _chunk_document(self, content: str, doc_type: str) -> List[Dict]:
         """Chunk content into structured segments using configured strategy."""
-        strategy = self.config_manager.config.get("chunking_strategy", {}).get("preferred_chunker", "llm")
+        strategy = self.config_manager.config.get("chunking_strategy", {}).get("preferred_chunker", "semantic")
         chunks_data: List[Dict] = []
         chunking_start = time.time()
 
-        if strategy == "llm":
+        if strategy == "semantic":
+            try:
+                self.monitor.logger.debug("Attempting semantic chunking")
+                if self.semantic_chunker:
+                    chunks_data = self.semantic_chunker.chunk(content)
+                    for chunk in chunks_data:
+                        chunk['type'] = chunk.get('type', 'semantic')
+                    chunking_time = (time.time() - chunking_start) * 1000
+                    self.monitor.record_model_usage("chunker-semantic", True, chunking_time)
+                    self.monitor.logger.info(f"✓ Semantic chunking successful: {len(chunks_data)} chunks ({chunking_time:.2f}ms)")
+                else:
+                    raise ValueError("Semantic chunker not initialized")
+            except Exception as e:
+                chunking_time = (time.time() - chunking_start) * 1000
+                self.monitor.record_model_usage("chunker-semantic", False, chunking_time, str(e))
+                self.monitor.logger.warning(f"✗ Semantic chunking failed, using structural fallback: {e}")
+                chunks_data = self._chunk_structural(content, doc_type)
+        elif strategy == "llm":
             try:
                 self.monitor.logger.debug("Attempting LLM chunking")
                 chunks_data = self.llm_chunker.chunk(content)
                 for chunk in chunks_data:
                     chunk['type'] = chunk.get('type', 'llm')
                 chunking_time = (time.time() - chunking_start) * 1000
-                self.monitor.record_model_usage("chunker-main", True, chunking_time)
+                self.monitor.record_model_usage("chunker-llm", True, chunking_time)
                 self.monitor.logger.info(f"✓ LLM chunking successful: {len(chunks_data)} chunks ({chunking_time:.2f}ms)")
             except Exception as e:
                 chunking_time = (time.time() - chunking_start) * 1000
-                self.monitor.record_model_usage("chunker-main", False, chunking_time, str(e))
+                self.monitor.record_model_usage("chunker-llm", False, chunking_time, str(e))
                 self.monitor.logger.warning(f"✗ LLM chunking failed, using structural fallback: {e}")
                 chunks_data = self._chunk_structural(content, doc_type)
         else:

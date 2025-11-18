@@ -33,6 +33,8 @@ from model_monitor import ModelMonitor, ModelType, ModelStatus
 from embeddings_engine import EmbeddingEngine
 from tag_engine import TagEngine
 from llm_chunker import LLMChunker
+from semantic_chunker import SemanticChunker
+from keyword_search import KeywordSearchEngine
 
 # Configuration
 # Use persistent disk path on Render, fallback to local path
@@ -186,9 +188,41 @@ def initialize_services():
         monitor.update_model_status("chunker-main", ModelStatus.FAILED, {"error": str(e)})
         llm_chunker = None
 
+    # Initialize semantic chunker
+    print("\n🧠 Initializing Semantic Chunker...")
+    try:
+        semantic_chunker = SemanticChunker(
+            embedder=embedder,
+            config_manager=config_manager,
+            similarity_threshold=0.7,
+            max_paragraph_tokens=500
+        )
+        monitor.register_model(
+            model_id="chunker-semantic",
+            model_type=ModelType.CHUNKER,
+            provider="embedding",
+            model_name="semantic-boundaries"
+        )
+        monitor.update_model_status("chunker-semantic", ModelStatus.HEALTHY,
+                                   {"info": "Hybrid semantic chunking with embedding boundaries"})
+        print("✅ Semantic Chunker initialized")
+    except Exception as e:
+        print(f"❌ Failed to initialize Semantic Chunker: {e}")
+        monitor.update_model_status("chunker-semantic", ModelStatus.FAILED, {"error": str(e)})
+        semantic_chunker = None
+
+    # Initialize keyword search engine
+    print("\n🔍 Initializing Keyword Search Engine...")
+    try:
+        keyword_search = KeywordSearchEngine()
+        print("✅ Keyword Search Engine initialized")
+    except Exception as e:
+        print(f"❌ Failed to initialize Keyword Search Engine: {e}")
+        keyword_search = None
+
     # Initialize document processor
     print("\n📄 Initializing Document Processor...")
-    processor = DocumentProcessor(db, embedder, tag_engine, llm_chunker, config_manager, monitor)
+    processor = DocumentProcessor(db, embedder, tag_engine, llm_chunker, config_manager, monitor, semantic_chunker)
     print("✅ Document Processor initialized")
 
     # Print initialization summary
@@ -197,7 +231,7 @@ def initialize_services():
     print("=" * 80)
     monitor.print_status_dashboard()
 
-    return db, config_manager, embedder, tag_engine, llm_chunker, processor
+    return db, config_manager, embedder, tag_engine, llm_chunker, processor, semantic_chunker, keyword_search
 
 
 def load_all_documents(db, processor):
@@ -272,7 +306,7 @@ def create_app():
     setup_middleware(app)
 
     # Initialize services
-    db, config_manager, embedder, tag_engine, llm_chunker, processor = initialize_services()
+    db, config_manager, embedder, tag_engine, llm_chunker, processor, semantic_chunker, keyword_search = initialize_services()
 
     # Store services in app state for access in routes
     app.state.db = db
@@ -281,6 +315,8 @@ def create_app():
     app.state.tag_engine = tag_engine
     app.state.llm_chunker = llm_chunker
     app.state.processor = processor
+    app.state.semantic_chunker = semantic_chunker
+    app.state.keyword_search = keyword_search
     app.state.monitor = monitor
 
 
