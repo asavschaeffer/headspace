@@ -48,14 +48,20 @@
             <button id="close-thought" class="headspace-modal__close" aria-label="Close">✕</button>
             <div class="headspace-modal__header">
                 <h2 id="thought-modal-title" class="headspace-modal__title">Launch a New Planet</h2>
-                <p class="headspace-modal__subtitle">Write a fragment of your mind and watch it crystallize in orbit.</p>
+                <p class="headspace-modal__subtitle">Headspace accepts text inputs and procedurally generates a 3D shape and position in space via embedding data calculated by nomic-embed-text.</p>
             </div>
             <form id="thought-form">
                 <label for="thought-title">Title</label>
                 <input type="text" id="thought-title" placeholder="Untitled planet" />
 
                 <label for="thought-content">Thought</label>
-                <textarea id="thought-content" placeholder="Let your consciousness breathe here…" required></textarea>
+                <div class="thought-input-wrapper">
+                    <textarea id="thought-content" placeholder="Let your consciousness breathe here…" required></textarea>
+                    <button type="button" id="upload-file-btn" class="upload-file-btn" title="Upload text file">
+                        <span class="upload-icon">📎</span>
+                    </button>
+                    <input type="file" id="file-input" accept=".txt,.md,.markdown" style="display: none;" />
+                </div>
 
                 <label for="thought-signature">Signature (optional)</label>
                 <input type="text" id="thought-signature" placeholder="— you" />

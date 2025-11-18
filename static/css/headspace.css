@@ -304,6 +304,51 @@
     min-height: 140px;
 }
 
+.thought-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.thought-input-wrapper textarea {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.upload-file-btn {
+    padding: 8px 12px;
+    background: rgba(111, 139, 255, 0.2);
+    border: 1px solid rgba(111, 139, 255, 0.4);
+    border-radius: 8px;
+    color: rgba(111, 139, 255, 0.8);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    width: 40px;
+    flex-shrink: 0;
+}
+
+.upload-file-btn:hover {
+    background: rgba(111, 139, 255, 0.35);
+    border-color: rgba(111, 139, 255, 0.6);
+    transform: scale(1.05);
+}
+
+.upload-file-btn:active {
+    transform: scale(0.95);
+}
+
+.thought-input-wrapper.drag-over textarea {
+    border-color: rgba(111, 139, 255, 0.8);
+    background: rgba(111, 139, 255, 0.05);
+}
+
 .headspace-modal__actions {
     display: flex;
     justify-content: flex-end;

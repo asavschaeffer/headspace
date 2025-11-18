@@ -197,6 +197,89 @@ async function handleThoughtSubmit(event) {
     }
 }
 
+function registerFileUpload() {
+    const uploadBtn = document.getElementById('upload-file-btn');
+    const fileInput = document.getElementById('file-input');
+    const contentTextarea = document.getElementById('thought-content');
+    const titleInput = document.getElementById('thought-title');
+    const wrapper = document.querySelector('.thought-input-wrapper');
+
+    if (!uploadBtn || !fileInput || !contentTextarea) return;
+
+    // Upload button click
+    uploadBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        fileInput.click();
+    });
+
+    // File input change
+    fileInput.addEventListener('change', (e) => {
+        handleFileUpload(e.target.files[0], contentTextarea, titleInput);
+        fileInput.value = ''; // Reset file input
+    });
+
+    // Drag and drop
+    contentTextarea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        wrapper.classList.add('drag-over');
+    });
+
+    contentTextarea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        wrapper.classList.remove('drag-over');
+    });
+
+    contentTextarea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        wrapper.classList.remove('drag-over');
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFileUpload(files[0], contentTextarea, titleInput);
+        }
+    });
+}
+
+function handleFileUpload(file, textarea, titleInput) {
+    if (!file) return;
+
+    // Check if file is text-based
+    const validTypes = ['text/plain', 'text/markdown', 'application/octet-stream'];
+    const validExtensions = ['.txt', '.md', '.markdown'];
+    const fileName = file.name.toLowerCase();
+
+    const isValid = validTypes.includes(file.type) ||
+                   validExtensions.some(ext => fileName.endsWith(ext));
+
+    if (!isValid && file.type !== '') {
+        showFeedback('Please upload a text file (.txt, .md, .markdown)', true);
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const content = event.target.result;
+        textarea.value = content;
+
+        // Auto-populate title from filename if title is empty
+        if (titleInput && !titleInput.value.trim()) {
+            const titleFromFile = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
+            titleInput.value = titleFromFile;
+        }
+
+        showFeedback('File loaded successfully', false);
+    };
+
+    reader.onerror = () => {
+        showFeedback('Failed to read file', true);
+    };
+
+    reader.readAsText(file);
+}
+
 function registerUI() {
     const openBtn = document.getElementById('open-thought');
     const cancelBtn = document.getElementById('cancel-thought');
@@ -221,6 +304,8 @@ function registerUI() {
     if (form) {
         form.addEventListener('submit', handleThoughtSubmit);
     }
+
+    registerFileUpload();
 
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
