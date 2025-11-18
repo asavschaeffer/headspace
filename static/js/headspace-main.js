@@ -41,14 +41,19 @@ async function refreshCosmos(focusDocId = null) {
     }
 }
 
-function attachHomePlanet() {
+async function attachHomePlanet() {
     if (!window.HomePlanetGenerator) return;
 
-    const generator = new window.HomePlanetGenerator();
-    const homePlanet = generator.generateHomePlanet();
-    homePlanet.position.set(0, -6, -42);
+    try {
+        const generator = new window.HomePlanetGenerator();
+        const homePlanet = await generator.generateHomePlanet();
+        homePlanet.position.set(0, -6, -42);
 
-    addCustomObject(homePlanet);
+        addCustomObject(homePlanet);
+    } catch (error) {
+        console.error('Failed to attach home planet:', error);
+        setStatus('Failed to load home planet');
+    }
 }
 
 function openModal() {
@@ -316,7 +321,7 @@ async function initialize() {
 
         await initCosmos();
         switchView('cosmos');
-        attachHomePlanet();
+        await attachHomePlanet();
 
         await refreshCosmos();
         registerUI();
