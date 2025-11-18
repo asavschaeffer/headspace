@@ -11,6 +11,7 @@ export function showAddModal(chunkId = null) {
     // Clear previous values
     document.getElementById('doc-title-input').value = '';
     document.getElementById('doc-content-input').value = '';
+    document.getElementById('doc-signature-input').value = '';
     document.getElementById('file-upload-input').value = '';
     document.getElementById('doc-type-select').value = 'text';
 
@@ -33,6 +34,7 @@ export function hideAddModal() {
     clearParentNode();
     document.getElementById('doc-title-input').value = '';
     document.getElementById('doc-content-input').value = '';
+    document.getElementById('doc-signature-input').value = '';
     document.getElementById('file-upload-input').value = '';
 }
 
@@ -71,19 +73,36 @@ export async function handleFileUpload(event) {
 }
 
 export async function addDocument() {
-    const title = document.getElementById('doc-title-input').value;
-    const content = document.getElementById('doc-content-input').value;
-    const docType = document.getElementById('doc-type-select').value;
+    const titleInput = document.getElementById('doc-title-input');
+    const contentInput = document.getElementById('doc-content-input');
+    const signatureInput = document.getElementById('doc-signature-input');
+    const docTypeSelect = document.getElementById('doc-type-select');
 
-    if (!title || !content) {
-        alert('Please enter title and content');
+    let title = titleInput.value.trim();
+    const content = contentInput.value.trim();
+    const signature = signatureInput ? signatureInput.value.trim() : '';
+    const docType = docTypeSelect ? docTypeSelect.value : 'text';
+
+    if (!content) {
+        alert('Please enter some content');
         return;
     }
 
-    updateStatus('Processing document...');
+    // Set title to untitled if not provided
+    if (!title) {
+        title = 'Untitled Thought';
+    }
+
+    // Append signature to content if provided
+    let finalContent = content;
+    if (signature) {
+        finalContent = `${content}\n\n— ${signature}`;
+    }
+
+    updateStatus('Processing thought...');
 
     try {
-        const result = await createDocument(title, content, docType);
+        const result = await createDocument(title, finalContent, docType);
 
         // If there's a parent chunk, attach the new document to it
         if (state.parentChunkId) {
