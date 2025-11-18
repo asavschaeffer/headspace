@@ -803,6 +803,7 @@ function onWindowResize() {
 
 let hoveredMesh = null;
 let selectedMesh = null;
+let selectedChunkId = null;
 
 function onCosmosMouseMove(event) {
     if (!scene || !camera) return;
@@ -896,18 +897,87 @@ function showCosmosInfo(chunk) {
     if (!panel || !chunk) return;
 
     const chunkId = chunk.id || chunk.chunk_id || 'unknown';
+    selectedChunkId = chunkId;
+
     document.getElementById('cosmos-info-id').textContent = chunkId;
 
     const metaText = [];
     if (chunk.chunk_type) metaText.push(chunk.chunk_type);
-    if (typeof chunk.chunk_index === 'number') metaText.push(`Index ${chunk.chunk_index}`);
+    if (typeof chunk.chunk_index === 'number') metaText.push(`Chunk ${chunk.chunk_index + 1}`);
     if (chunk.cluster_label) metaText.push(chunk.cluster_label);
     document.getElementById('cosmos-info-meta').textContent = metaText.join(' • ') || 'Semantic node';
 
     const preview = chunk.content || chunk.metadata?.description || 'No description available.';
     document.getElementById('cosmos-info-text').textContent = preview.slice(0, 240) + (preview.length > 240 ? '…' : '');
 
+    // Setup navigation buttons
+    updateNavigationButtons(chunk);
+
     panel.classList.add('visible');
+}
+
+function updateNavigationButtons(currentChunk) {
+    if (!currentChunk) return;
+
+    const documentId = currentChunk.document_id;
+    const currentIndex = currentChunk.chunk_index;
+
+    // Get all chunks in the same document, sorted by index
+    const documentChunks = state.chunks
+        .filter(c => c.document_id === documentId)
+        .sort((a, b) => (a.chunk_index ?? 0) - (b.chunk_index ?? 0));
+
+    const currentPosition = documentChunks.findIndex(c => (c.id || c.chunk_id) === selectedChunkId);
+    const hasPrevious = currentPosition > 0;
+    const hasNext = currentPosition < documentChunks.length - 1;
+
+    const prevBtn = document.getElementById('cosmos-nav-prev');
+    const nextBtn = document.getElementById('cosmos-nav-next');
+
+    if (prevBtn) {
+        prevBtn.disabled = !hasPrevious;
+        prevBtn.onclick = () => {
+            if (hasPrevious) {
+                const prevChunk = documentChunks[currentPosition - 1];
+                const prevMesh = chunkMeshes.get(prevChunk.id || prevChunk.chunk_id);
+                if (prevMesh) {
+                    selectAndFocusChunk(prevMesh, prevChunk);
+                }
+            }
+        };
+    }
+
+    if (nextBtn) {
+        nextBtn.disabled = !hasNext;
+        nextBtn.onclick = () => {
+            if (hasNext) {
+                const nextChunk = documentChunks[currentPosition + 1];
+                const nextMesh = chunkMeshes.get(nextChunk.id || nextChunk.chunk_id);
+                if (nextMesh) {
+                    selectAndFocusChunk(nextMesh, nextChunk);
+                }
+            }
+        };
+    }
+}
+
+function selectAndFocusChunk(mesh, chunk) {
+    if (selectedMesh) {
+        selectedMesh.scale.setScalar(1.0);
+        if (materialSupportsEmissive(selectedMesh.material)) {
+            selectedMesh.material.emissiveIntensity = 0.45;
+        }
+    }
+
+    selectedMesh = mesh;
+    mesh.scale.setScalar(1.7);
+    if (materialSupportsEmissive(mesh.material)) {
+        mesh.material.emissiveIntensity = 1.5;
+    }
+
+    hideChunkTooltip();
+    showCosmosInfo(chunk);
+    focusChunkInCosmos(chunk.id || chunk.chunk_id);
 }
 
 function hideCosmosInfo() {

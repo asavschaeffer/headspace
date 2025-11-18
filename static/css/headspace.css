@@ -105,6 +105,36 @@
     color: rgba(233, 240, 255, 0.9);
 }
 
+.cosmos-info-nav {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    margin-bottom: 12px;
+}
+
+.cosmos-nav-btn {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.05);
+    color: #f3f6ff;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cosmos-nav-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.cosmos-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 .headspace-info .cosmos-attach-btn {
     display: none;
 }
