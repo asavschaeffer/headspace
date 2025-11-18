@@ -18,6 +18,9 @@ class HomePlanetGenerator {
                 (gltf) => {
                     const model = gltf.scene;
 
+                    // Scale the model 200x to make it visible
+                    model.scale.set(200, 200, 200);
+
                     // Set up userData properties for interaction
                     model.userData.isHomePlanet = true;
                     model.userData.clickHandler = () => {
