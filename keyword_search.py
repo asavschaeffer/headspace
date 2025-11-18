@@ -9,7 +9,6 @@ from typing import List, Dict, Tuple, Optional, Set
 from dataclasses import dataclass
 from collections import Counter
 import math
-from tag_keywords import KEYWORDS
 
 
 @dataclass
