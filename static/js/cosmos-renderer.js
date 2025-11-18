@@ -683,18 +683,52 @@ export function focusChunkInCosmos(chunkId) {
 
     switchView('cosmos');
 
+    // Find all chunks in the same document (the "group")
+    const documentId = mesh.userData.documentId;
+    const groupMeshes = Array.from(chunkMeshes.values()).filter(
+        m => m.userData.documentId === documentId
+    );
+
+    // Calculate the centroid of the group
+    const groupCenter = new THREE.Vector3();
+    groupMeshes.forEach(m => {
+        groupCenter.add(m.position);
+    });
+    groupCenter.divideScalar(groupMeshes.length);
+
+    // Calculate bounds to determine optimal viewing distance
+    let maxDist = 0;
+    groupMeshes.forEach(m => {
+        const dist = m.position.distanceTo(groupCenter);
+        if (dist > maxDist) maxDist = dist;
+    });
+
+    // Position camera to face the group with smooth easing
     const startPos = camera.position.clone();
     const startTarget = controls.target.clone();
-    const endTarget = mesh.position.clone();
-    const endPos = mesh.position.clone().add(new THREE.Vector3(0, 12, 26));
+    const endTarget = groupCenter;
+
+    // Calculate camera position: slightly back and offset from group center
+    const viewDistance = Math.max(maxDist * 2.5, 30);
+    const camDirection = new THREE.Vector3(0.3, 0.5, 1).normalize();
+    const endPos = groupCenter.clone().add(camDirection.multiplyScalar(viewDistance));
+
     let progress = 0;
+    const duration = 1.2; // Slower: takes ~48 frames at 60fps (0.8 seconds)
 
     function animateCamera() {
-        progress += 0.03;
-        const eased = 1 - Math.pow(1 - Math.min(progress, 1), 3);
+        progress += 1 / 60 / duration; // Normalized by frame time
+        if (progress > 1) progress = 1;
+
+        // Smoother easing function for less jarring motion
+        const eased = progress < 0.5
+            ? 2 * progress * progress
+            : -1 + (4 - 2 * progress) * progress;
+
         camera.position.lerpVectors(startPos, endPos, eased);
         controls.target.lerpVectors(startTarget, endTarget, eased);
         controls.update();
+
         if (progress < 1) {
             requestAnimationFrame(animateCamera);
         }
