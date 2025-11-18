@@ -689,35 +689,38 @@ export function focusChunkInCosmos(chunkId) {
         m => m.userData.documentId === documentId
     );
 
-    // Calculate the centroid of the group
-    const groupCenter = new THREE.Vector3();
-    groupMeshes.forEach(m => {
-        groupCenter.add(m.position);
-    });
-    groupCenter.divideScalar(groupMeshes.length);
+    // The target (center point) is the selected chunk
+    const endTarget = mesh.position.clone();
 
-    // Calculate bounds to determine optimal viewing distance
-    let maxDist = 0;
-    groupMeshes.forEach(m => {
-        const dist = m.position.distanceTo(groupCenter);
-        if (dist > maxDist) maxDist = dist;
-    });
+    // Calculate centroid of OTHER chunks to orient camera toward them
+    const otherChunks = groupMeshes.filter(m => m !== mesh);
+    let otherCenter = mesh.position.clone();
+    if (otherChunks.length > 0) {
+        otherCenter = new THREE.Vector3();
+        otherChunks.forEach(m => {
+            otherCenter.add(m.position);
+        });
+        otherCenter.divideScalar(otherChunks.length);
+    }
 
-    // Position camera to face the group with smooth easing
+    // Calculate viewing distance - balance between seeing chunk detail and group context
+    const viewDistance = 25; // Fixed distance for consistent framing
+
+    // Direction from selected chunk toward other chunks
+    const directionToOthers = otherCenter.clone().sub(mesh.position).normalize();
+
+    // Position camera opposite to the direction of other chunks
+    // so the chunk is centered and we can see other chunks in background
+    const endPos = mesh.position.clone().sub(directionToOthers.multiplyScalar(viewDistance));
+
     const startPos = camera.position.clone();
     const startTarget = controls.target.clone();
-    const endTarget = groupCenter;
-
-    // Calculate camera position: slightly back and offset from group center
-    const viewDistance = Math.max(maxDist * 2.5, 30);
-    const camDirection = new THREE.Vector3(0.3, 0.5, 1).normalize();
-    const endPos = groupCenter.clone().add(camDirection.multiplyScalar(viewDistance));
 
     let progress = 0;
-    const duration = 1.2; // Slower: takes ~48 frames at 60fps (0.8 seconds)
+    const duration = 1.2; // Slower animation
 
     function animateCamera() {
-        progress += 1 / 60 / duration; // Normalized by frame time
+        progress += 1 / 60 / duration;
         if (progress > 1) progress = 1;
 
         // Smoother easing function for less jarring motion
