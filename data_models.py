@@ -34,6 +34,7 @@ class Chunk(BaseModel):
     shape_3d: Any = Field(default_factory=lambda: {"type": "sphere"})
     reasoning: str = ""
     embedding_model: str = ""
+    signature: str = ""  # Author signature
     timestamp_created: datetime = Field(default_factory=_now_utc)
     timestamp_modified: datetime = Field(default_factory=_now_utc)
     cluster_id: Optional[int] = None

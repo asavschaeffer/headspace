@@ -163,17 +163,12 @@ async function handleThoughtSubmit(event) {
     const title = (titleInput?.value || '').trim() || 'Untitled Thought';
     const signature = (signatureInput?.value || '').trim();
 
-    let content = rawContent;
-    if (signature) {
-        content = `${rawContent}\n\n— ${signature}`;
-    }
-
     submit.disabled = true;
     showFeedback('');
     setStatus('Encoding your thought…');
 
     try {
-        const result = await createDocumentViaApi(title, content);
+        const result = await createDocumentViaApi(title, rawContent, 'text', signature);
         const docId = result.id;
         const status = result.status || 'enriched';
 
@@ -335,14 +330,15 @@ async function initialize() {
 
 document.addEventListener('DOMContentLoaded', initialize);
 
-async function createDocumentViaApi(title, content, docType = 'text') {
+async function createDocumentViaApi(title, content, docType = 'text', signature = '') {
     const response = await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             title,
             content,
-            doc_type: docType
+            doc_type: docType,
+            signature
         })
     });
 

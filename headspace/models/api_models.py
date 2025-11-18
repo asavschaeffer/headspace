@@ -18,6 +18,7 @@ class ChunkResponse(BaseModel):
     color: str
     tags: List[str] = Field(default_factory=list)
     reasoning: str
+    signature: str = Field(default="")  # Author signature
     shape_3d: Union[str, Dict[str, Any]]
     embedding: List[float] = Field(default_factory=list)  # Embedding vector for procedural geometry
     metadata: Dict = Field(default_factory=dict)
@@ -49,6 +50,7 @@ class DocumentCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200, description="Document title")
     content: str = Field(..., min_length=1, max_length=1000000, description="Document content")
     doc_type: str = Field(default="text", pattern="^(text|markdown|code|json)$", description="Document type")
+    signature: str = Field(default="", max_length=500, description="Author signature (optional)")
 
     @validator('title')
     def validate_title(cls, v):

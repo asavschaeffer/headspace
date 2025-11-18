@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     shape_3d TEXT DEFAULT 'sphere',
     texture TEXT DEFAULT 'smooth',
     embedding_model TEXT DEFAULT '',  -- Track which model generated the embedding
+    signature TEXT DEFAULT '',  -- Author signature
     -- Semantic layout and clustering fields
     umap_coordinates JSONB,  -- UMAP-reduced 2D coordinates [x, y]
     cluster_id INTEGER,  -- HDBSCAN cluster assignment

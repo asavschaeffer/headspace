@@ -232,7 +232,7 @@ async def create_document(
         processor.monitor.logger.info(f"📄 Creating document: {doc.title}")
         processor.monitor.logger.debug(f"Content size: {len(doc.content)} chars, type: {doc.doc_type}")
 
-        doc_id, placeholders = processor.create_document_placeholders(doc.title, doc.content, doc.doc_type)
+        doc_id, placeholders = processor.create_document_placeholders(doc.title, doc.content, doc.doc_type, signature=doc.signature)
         total_chunks = len(placeholders)
         processor.monitor.logger.info(f"🌱 Document {doc_id} queued for enrichment ({total_chunks} chunks)")
 

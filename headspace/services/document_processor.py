@@ -139,7 +139,7 @@ class DocumentProcessor:
         except Exception as e:
             self.monitor.logger.warning(f"Failed to index chunk {chunk.id}: {e}")
 
-    def create_document_placeholders(self, title: str, content: str, doc_type: str = "text") -> tuple[str, List[Chunk]]:
+    def create_document_placeholders(self, title: str, content: str, doc_type: str = "text", signature: str = "") -> tuple[str, List[Chunk]]:
         """Create a document and chunk placeholders prior to enrichment."""
         doc_id = hashlib.md5(f"{title}{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()[:12]
         document = Document(
@@ -181,6 +181,7 @@ class DocumentProcessor:
                 tag_confidence={},
                 reasoning=chunk_data.get('reasoning', ''),
                 embedding_model="",
+                signature=signature,
                 nearest_chunk_ids=[],
             )
             self.db.save_chunk(placeholder)
