@@ -47,7 +47,7 @@ async function attachHomePlanet() {
     try {
         const generator = new window.HomePlanetGenerator();
         const homePlanet = await generator.generateHomePlanet();
-        homePlanet.position.set(0, -6, -42);
+        homePlanet.position.set(0, -56, -42);
 
         addCustomObject(homePlanet);
     } catch (error) {
