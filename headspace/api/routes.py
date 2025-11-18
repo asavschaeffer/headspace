@@ -8,7 +8,7 @@ import asyncio
 from pathlib import Path
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, HTTPException, File, UploadFile, WebSocket, Depends, Request, BackgroundTasks
+from fastapi import APIRouter, HTTPException, File, UploadFile, WebSocket, Depends, Request, BackgroundTasks, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from headspace.models.api_models import (
@@ -18,6 +18,7 @@ from headspace.models.api_models import (
     ChunkResponse,
     ChunkAttachmentRequest
 )
+from headspace.api.enrichment_events import enrichment_event_bus, EnrichmentEvent
 
 
 router = APIRouter()
@@ -47,6 +48,12 @@ def get_monitor(request: Request):
 async def root():
     """Serve the main application"""
     return FileResponse("static/index.html")
+
+
+@router.get("/headspace.html")
+async def headspace():
+    """Serve the headspace cosmic diary application"""
+    return FileResponse("static/headspace.html")
 
 
 @router.get("/api/health")
@@ -424,9 +431,31 @@ async def get_chunk_attachments(chunk_id: str, db=Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.websocket("/ws/enrichment/{doc_id}")
+async def websocket_enrichment_stream(websocket: WebSocket, doc_id: str):
+    """
+    WebSocket endpoint for real-time enrichment streaming
+    Sends enrichment events as chunks are processed
+    """
+    await websocket.accept()
+    queue = await enrichment_event_bus.subscribe(doc_id)
+
+    try:
+        while True:
+            # Get event from queue
+            event = await queue.get()
+            # Send to client as JSON
+            await websocket.send_json(event.to_json())
+    except WebSocketDisconnect:
+        await enrichment_event_bus.unsubscribe(doc_id, queue)
+    except Exception as e:
+        print(f"WebSocket error for {doc_id}: {e}")
+        await enrichment_event_bus.unsubscribe(doc_id, queue)
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket for real-time updates"""
+    """WebSocket for real-time updates (legacy, kept for compatibility)"""
     await websocket.accept()
     try:
         while True:

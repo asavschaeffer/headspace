@@ -18,6 +18,7 @@ from headspace.services.document_processor import DocumentProcessor
 from headspace.api.middleware import setup_middleware
 from headspace.api import routes
 
+from headspace.api.enrichment_events import enrichment_event_bus
 # Import supporting modules
 from config_manager import ConfigManager
 from model_monitor import ModelMonitor, ModelType, ModelStatus
