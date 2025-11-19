@@ -335,8 +335,8 @@ export async function initCosmos() {
 
     // Camera
     camera = new THREE.PerspectiveCamera(72, container.clientWidth / container.clientHeight, 0.1, 10000);
-    camera.position.set(0, 35, -50);  // Positioned higher and angled down towards the scene
-    camera.lookAt(0, -5, 0);  // Look towards the center-lower area where chunks are
+    camera.position.set(-2.69, -5.41, -84.72);
+    camera.rotation.set(-0.0192, -3.070, 0);  // (-1.1°, -175.9°, 0.0°) converted to radians
 
     // Renderer
     renderer = new THREE.WebGLRenderer({
@@ -752,23 +752,6 @@ function animateCosmos(time = 0) {
     animationId = requestAnimationFrame(animateCosmos);
 
     frameCount++;
-    if (frameCount === 1) {
-        console.log(`[RENDER] First frame: renderer.outputColorSpace=${renderer.outputColorSpace}, toneMapping=${renderer.toneMapping}, scene.background=${scene.background ? scene.background.getHexString() : 'null'}`);
-        console.log(`[RENDER] Scene has ${chunkMeshes.size} meshes visible`);
-        const lights = scene.children.filter(c => c.isLight);
-        console.log(`[RENDER] Lights: ${lights.map(l => `${l.type}(intensity=${l.intensity}, color=${l.color.getHexString()})`).join(', ')}`);
-        chunkMeshes.forEach((mesh, idx) => {
-            if (idx < 3) {
-        console.log(`[RENDER] Mesh ${idx}: pos=(${mesh.position.x.toFixed(1)},${mesh.position.y.toFixed(1)},${mesh.position.z.toFixed(1)}), color=${getHexStringSafe(mesh.material.color)}, emissive=${getHexStringSafe(mesh.material.emissive)}, emissiveIntensity=${mesh.material.emissiveIntensity}, metalness=${mesh.material.metalness}, roughness=${mesh.material.roughness}`);
-            }
-        });
-    }
-
-    // Log camera position and angle every 5 seconds
-    if (frameCount % 300 === 0) {  // ~300 frames = 5 seconds at 60fps
-        const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
-        console.log(`[CAMERA] Position: (${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}) | Rotation: (${(euler.x * 180/Math.PI).toFixed(1)}°, ${(euler.y * 180/Math.PI).toFixed(1)}°, ${(euler.z * 180/Math.PI).toFixed(1)}°)`);
-    }
 
     if (frameCount % LOD_UPDATE_INTERVAL === 0) {
         controls.update();
