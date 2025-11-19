@@ -18,6 +18,13 @@ class HomePlanetGenerator {
                 (gltf) => {
                     const model = gltf.scene;
 
+                    // Ensure vertex colors are used to render the model's materials
+                    model.traverse((child) => {
+                        if (child.isMesh && child.material) {
+                            child.material.vertexColors = true;
+                        }
+                    });
+
                     // Scale the model 200x to make it visible
                     model.scale.set(200, 200, 200);
 
