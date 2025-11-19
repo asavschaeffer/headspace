@@ -557,19 +557,47 @@ async def hybrid_search(
         query_embedding = embedder.embed([query])[0]
         vector_results = []
 
-        for chunk in all_chunks:
-            if chunk.embedding and len(chunk.embedding) > 0:
-                # Compute cosine similarity
-                chunk_emb = chunk.embedding
-                norm_query = sum(x**2 for x in query_embedding) ** 0.5
-                norm_chunk = sum(x**2 for x in chunk_emb) ** 0.5
+        try:
+            import numpy as np
+            
+            # Filter chunks with embeddings
+            valid_chunks = [c for c in all_chunks if c.embedding and len(c.embedding) > 0]
+            
+            if valid_chunks:
+                chunk_embeddings = np.array([c.embedding for c in valid_chunks])
+                chunk_ids = [c.id for c in valid_chunks]
+                
+                query_vec = np.array(query_embedding)
+                query_norm = np.linalg.norm(query_vec)
+                
+                if query_norm > 0:
+                    # Calculate cosine similarity efficiently
+                    chunk_norms = np.linalg.norm(chunk_embeddings, axis=1)
+                    
+                    # Avoid division by zero
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        similarities = np.dot(chunk_embeddings, query_vec) / (chunk_norms * query_norm)
+                    
+                    # Filter results
+                    for idx, similarity in enumerate(similarities):
+                        if not np.isnan(similarity) and similarity > 0.3:
+                            vector_results.append((chunk_ids[idx], float(similarity)))
+                            
+        except ImportError:
+            # Fallback to pure Python loop
+            for chunk in all_chunks:
+                if chunk.embedding and len(chunk.embedding) > 0:
+                    # Compute cosine similarity
+                    chunk_emb = chunk.embedding
+                    norm_query = sum(x**2 for x in query_embedding) ** 0.5
+                    norm_chunk = sum(x**2 for x in chunk_emb) ** 0.5
 
-                if norm_query > 0 and norm_chunk > 0:
-                    dot_product = sum(a * b for a, b in zip(query_embedding, chunk_emb))
-                    similarity = dot_product / (norm_query * norm_chunk)
+                    if norm_query > 0 and norm_chunk > 0:
+                        dot_product = sum(a * b for a, b in zip(query_embedding, chunk_emb))
+                        similarity = dot_product / (norm_query * norm_chunk)
 
-                    if similarity > 0.3:  # Only include if reasonably similar
-                        vector_results.append((chunk.id, float(similarity)))
+                        if similarity > 0.3:  # Only include if reasonably similar
+                            vector_results.append((chunk.id, float(similarity)))
 
         # Sort by similarity
         vector_results.sort(key=lambda x: x[1], reverse=True)
