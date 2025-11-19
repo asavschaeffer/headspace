@@ -321,9 +321,13 @@ async function initialize() {
 
         await initCosmos();
         switchView('cosmos');
-        await attachHomePlanet();
-
-        await refreshCosmos();
+        
+        // Load home planet and data in parallel for faster startup
+        const homePlanetPromise = attachHomePlanet();
+        const dataPromise = refreshCosmos();
+        
+        await Promise.all([homePlanetPromise, dataPromise]);
+        
         registerUI();
         initializeSearch();
         setStatus('Ready to capture a new constellation');
