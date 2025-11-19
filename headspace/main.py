@@ -215,7 +215,15 @@ def initialize_services():
     print("\n🔍 Initializing Keyword Search Engine...")
     try:
         keyword_search = KeywordSearchEngine()
-        print("✅ Keyword Search Engine initialized")
+        # Populate index from DB
+        print("   Populating keyword index from database...")
+        all_chunks = db.get_all_chunks()
+        count = 0
+        for chunk in all_chunks:
+            if chunk.content:
+                keyword_search.index_chunk(chunk.id, chunk.content)
+                count += 1
+        print(f"✅ Keyword Search Engine initialized with {count} chunks")
     except Exception as e:
         print(f"❌ Failed to initialize Keyword Search Engine: {e}")
         keyword_search = None
