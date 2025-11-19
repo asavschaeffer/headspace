@@ -22,6 +22,13 @@ class HomePlanetGenerator {
                     model.traverse((child) => {
                         if (child.isMesh && child.material) {
                             child.material.vertexColors = true;
+                            // Add a subtle emissive glow to make it pop
+                            if (child.material.emissive) {
+                                child.material.emissive = new THREE.Color(0x224466);
+                                child.material.emissiveIntensity = 0.2;
+                            }
+                            // Tint it slightly blue/purple to make it look like a "home" planet
+                            child.material.color = new THREE.Color(0x88aacc);
                         }
                     });
 
