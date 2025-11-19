@@ -383,6 +383,15 @@ export async function initCosmos() {
     sunLight.castShadow = false;
     sunLight.name = 'cosmos-sun-light';
     scene.add(sunLight);
+
+    // Add ambient light for base visibility
+    const ambientLight = new THREE.AmbientLight(0x404040, 2.0); // Soft white light
+    scene.add(ambientLight);
+
+    // Add hemisphere light for better depth
+    const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1.5);
+    scene.add(hemiLight);
+
     console.log('[LIGHT] Sun light:', {
         intensity: sunLight.intensity,
         decay: sunLight.decay,
