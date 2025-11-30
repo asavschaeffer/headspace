@@ -1,0 +1,2 @@
+- voidstar/zo computer
+	its my intuition that at it's current capability, claude code is perfectly capable of reorganizing an entire computer filesystem simply by reading each file and writing a description about it to a central index. that index or rather, TOC, can be leveraged to write directories, filenames, and AI oriented metadata for the documents. in the end similar documents can be merged, or versioned, and we can have a cleaned computer via human in the loop or completely autonomously.
