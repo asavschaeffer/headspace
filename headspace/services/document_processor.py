@@ -470,27 +470,6 @@ class DocumentProcessor:
             self.monitor.logger.warning("UMAP/HDBSCAN not installed; skipping semantic layout.")
             return
 
-        n_neighbors = max(2, min(4, num_chunks - 1))
-        min_dist = 1.2
-
-        try:
-            reducer = umap.UMAP(
-                n_components=3,
-                metric="cosine",
-                n_neighbors=n_neighbors,
-                min_dist=min_dist,
-                spread=2.0,
-                repulsion_strength=1.0,
-                random_state=42,
-            )
-            raw_umap_coords = reducer.fit_transform(embeddings_array)
-        except Exception as exc:
-            self.monitor.logger.warning(f"UMAP computation failed ({exc}); retaining PCA layout.")
-            if fallback_positions is not None:
-                raw_umap_coords = np.array(fallback_positions, dtype=np.float32)
-            else:
-                return
-
         if raw_umap_coords.shape[1] != 3:
             self.monitor.logger.debug("UMAP did not return 3D coordinates; using fallback positions.")
             if fallback_positions is not None:

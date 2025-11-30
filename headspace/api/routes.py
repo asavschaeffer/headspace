@@ -60,7 +60,7 @@ async def storage_status():
 @router.get("/")
 async def root():
     """Serve the main application"""
-    return FileResponse("static/index.html")
+    return FileResponse("static/headspace.html")
 
 
 @router.get("/headspace.html")
