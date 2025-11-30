@@ -1,0 +1,12 @@
+# Optional: Local model support (Ollama, Sentence-Transformers)
+# Only install if you want to run models locally without API keys
+# Warning: This will download ~2-3GB of dependencies
+
+# For local embeddings (sentence-transformers)
+sentence-transformers>=2.2.0
+torch>=2.0.0
+transformers>=4.30.0
+scikit-learn>=1.3.0
+
+# Note: Ollama itself is a separate application that needs to be installed
+# from https://ollama.ai - these requirements just enable the Python client
