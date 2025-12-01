@@ -23,18 +23,8 @@ def should_ignore(path: Path) -> bool:
         return True
     return False
 
-def describe_file(client, path: Path) -> str:
-    try:
-        txt = path.read_text(errors="ignore")[:8000]
-        if not txt.strip():
-            return "Empty file."
-        
-        prompt = f"Summarize this file in 2 sentences and tag it with topics and type:\n\n{txt[:2000]}"
-        return client.ask(prompt)
-    except Exception as e:
-        return f"Error processing file: {e}"
 
-def index_directory(directory: str):
+def index_directory(directory: str, use_llm: bool = True):
     root_path = Path(directory).resolve()
     if not root_path.exists():
         print(f"Directory not found: {root_path}")
@@ -43,7 +33,7 @@ def index_directory(directory: str):
     print(f"Indexing directory: {root_path}")
     
     db = Database()
-    client = get_llm_client()
+    client = get_llm_client() if use_llm else None
     
     count = 0
     for f in root_path.rglob("*"):
@@ -66,7 +56,7 @@ def index_directory(directory: str):
             # The plan said "Extend FileAnalyzer with code-specific extractors".
             # Let's keep the existing summary logic for now but use the metadata.
             
-            summary = describe_file(client, f) # Keep using the existing function for now to ensure we get summaries
+            summary = metadata.get('summary', '')
             
             # Store in DB
             # We need to pass the extra metadata
@@ -76,7 +66,20 @@ def index_directory(directory: str):
             # For now, we trust the analyzer for type if it set it
             file_type = metadata.get('type', '')
             
-            db.upsert_file(str(f), summary, type_=file_type, extra_metadata=extra_metadata)
+            # Extract topics from summary if possible
+            topics = ""
+            if "Topics:" in summary:
+                try:
+                    topics = summary.split("Topics:")[1].split(".")[0].strip()
+                except:
+                    pass
+            elif "topics:" in summary.lower():
+                 try:
+                    topics = summary.lower().split("topics:")[1].split(".")[0].strip()
+                 except:
+                    pass
+
+            db.upsert_file(str(f), summary, type_=file_type, topics=topics, extra_metadata=extra_metadata)
             count += 1
 
     print(f"Finished indexing. Processed {count} files.")

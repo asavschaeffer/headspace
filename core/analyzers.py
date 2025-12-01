@@ -46,8 +46,15 @@ class BaseFileAnalyzer(FileAnalyzer):
         # If we have an LLM client, we could add summarization here
         # For now, we keep it simple as per "start simple"
         if self.llm_client:
-            # Placeholder for LLM integration
-            pass
+            try:
+                txt = path.read_text(errors="ignore")[:8000]
+                if txt.strip():
+                    prompt = f"Summarize this file in 2 sentences and tag it with topics and type:\n\n{txt[:2000]}"
+                    metadata['summary'] = self.llm_client.ask(prompt)
+                else:
+                    metadata['summary'] = "Empty file."
+            except Exception as e:
+                metadata['summary_error'] = str(e)
             
         return metadata
 

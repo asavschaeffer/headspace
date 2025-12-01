@@ -17,7 +17,7 @@ from core.execution import FileOperationExecutor
 def cmd_index(args):
     """Run the file indexer."""
     print(f"Indexing directory: {args.directory}")
-    index_directory(args.directory)
+    index_directory(args.directory, use_llm=not args.no_llm)
 
 def cmd_reason(args):
     """Run reasoning strategies and generate proposals."""
@@ -157,6 +157,7 @@ def main():
     # Index Command
     parser_index = subparsers.add_parser("index", help="Index a directory")
     parser_index.add_argument("directory", nargs="?", default=".", help="Directory to index")
+    parser_index.add_argument("--no-llm", action="store_true", help="Disable LLM summarization")
     parser_index.set_defaults(func=cmd_index)
     
     # Reason Command
