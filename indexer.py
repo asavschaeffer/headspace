@@ -1,7 +1,9 @@
 import os
 import argparse
+import joblib
 from pathlib import Path
 from dotenv import load_dotenv
+from sklearn.feature_extraction.text import TfidfVectorizer
 from llm_client import get_llm_client
 from database import Database
 
@@ -59,6 +61,46 @@ def index_directory(directory: str):
             count += 1
 
     print(f"Finished indexing. Processed {count} files.")
+    build_search_index()
+
+def build_search_index():
+    print("Building search index...")
+    db = Database()
+    # We need to access the raw connection or add a method to get all files
+    # For simplicity, let's just use the raw connection here since we are in the same package
+    try:
+        with db._get_conn() as conn:
+            cursor = conn.execute("SELECT path, summary, type, topics FROM files")
+            rows = cursor.fetchall()
+    except Exception as e:
+        print(f"Error reading from DB: {e}")
+        return
+
+    if not rows:
+        print("No files to index.")
+        return
+
+    corpus = []
+    paths = []
+    for row in rows:
+        path, summary, type_, topics = row
+        text_content = f"{path} {summary or ''} {type_ or ''} {topics or ''}"
+        corpus.append(text_content)
+        paths.append(path)
+
+    vectorizer = TfidfVectorizer(stop_words='english')
+    try:
+        tfidf_matrix = vectorizer.fit_transform(corpus)
+        # Save both the vectorizer and the matrix, and the paths
+        joblib.dump({
+            'vectorizer': vectorizer,
+            'tfidf_matrix': tfidf_matrix,
+            'paths': paths
+        }, 'search_index.pkl')
+        print("Search index saved to search_index.pkl")
+    except ValueError:
+        print("Could not build search index (corpus too small).")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI-OS File Indexer")

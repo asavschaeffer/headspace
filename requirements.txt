@@ -2,3 +2,5 @@ google-generativeai
 python-dotenv
 anthropic
 ollama
+scikit-learn
+joblib
