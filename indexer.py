@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from sklearn.feature_extraction.text import TfidfVectorizer
 from llm_client import get_llm_client
 from database import Database
+from core.analyzers import BaseFileAnalyzer, CodeFileAnalyzer
 
 # Load environment variables
 load_dotenv()
@@ -52,12 +53,30 @@ def index_directory(directory: str):
             
         if f.is_file() and not should_ignore(f) and f.stat().st_size < 5e6:
             print(f"Processing: {f.relative_to(root_path)}")
-            summary = describe_file(client, f)
             
-            # Basic parsing of the LLM response could go here to extract structured data
-            # For now, we just store the raw summary text
+            # Choose analyzer
+            if f.suffix == '.py':
+                analyzer = CodeFileAnalyzer(client)
+            else:
+                analyzer = BaseFileAnalyzer(client)
+                
+            metadata = analyzer.analyze(f)
             
-            db.upsert_file(str(f), summary)
+            # Generate summary if not present (BaseFileAnalyzer doesn't do it yet, so we keep the old logic for now or move it)
+            # The plan said "Extend FileAnalyzer with code-specific extractors".
+            # Let's keep the existing summary logic for now but use the metadata.
+            
+            summary = describe_file(client, f) # Keep using the existing function for now to ensure we get summaries
+            
+            # Store in DB
+            # We need to pass the extra metadata
+            extra_metadata = {k: v for k, v in metadata.items() if k not in ['path', 'summary', 'type', 'topics', 'action']}
+            
+            # Determine type/topics from metadata or LLM
+            # For now, we trust the analyzer for type if it set it
+            file_type = metadata.get('type', '')
+            
+            db.upsert_file(str(f), summary, type_=file_type, extra_metadata=extra_metadata)
             count += 1
 
     print(f"Finished indexing. Processed {count} files.")

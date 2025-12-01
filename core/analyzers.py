@@ -50,3 +50,48 @@ class BaseFileAnalyzer(FileAnalyzer):
             pass
             
         return metadata
+
+import ast
+
+class CodeFileAnalyzer(BaseFileAnalyzer):
+    """
+    Analyzer for code files.
+    Extracts imports, functions, and classes using AST.
+    """
+    
+    def analyze(self, path: Path) -> Dict[str, Any]:
+        metadata = super().analyze(path)
+        if "error" in metadata:
+            return metadata
+            
+        if path.suffix == '.py':
+            try:
+                content = path.read_text(errors='ignore')
+                tree = ast.parse(content)
+                
+                imports = []
+                functions = []
+                classes = []
+                
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            imports.append(alias.name)
+                    elif isinstance(node, ast.ImportFrom):
+                        module = node.module or ''
+                        for alias in node.names:
+                            imports.append(f"{module}.{alias.name}")
+                    elif isinstance(node, ast.FunctionDef):
+                        functions.append(node.name)
+                    elif isinstance(node, ast.ClassDef):
+                        classes.append(node.name)
+                        
+                metadata['imports'] = imports
+                metadata['functions'] = functions
+                metadata['classes'] = classes
+                metadata['type'] = 'code'
+                
+            except Exception as e:
+                metadata['ast_error'] = str(e)
+                
+        return metadata
