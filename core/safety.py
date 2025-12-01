@@ -66,4 +66,11 @@ class SafetyGuard:
         if path.name in self.CRITICAL_FILES:
             return True
             
+        # Check if it's a directory and contains critical files/dirs
+        # This prevents moving/deleting directories that contain critical system files
+        if path.is_dir():
+            for item in self.CRITICAL_DIRS | self.CRITICAL_FILES:
+                if (path / item).exists():
+                    return True
+            
         return False

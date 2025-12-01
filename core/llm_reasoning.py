@@ -10,6 +10,13 @@ class LLMReasoningStrategy(ReasoningStrategy):
     def __init__(self, llm_client):
         self.client = llm_client
         
+    def _clean_json_response(self, response: str) -> str:
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            response = response.split("```")[1].split("```")[0].strip()
+        return response.strip()
+
     def reason(self, file_metadata: List[Dict[str, Any]]) -> List[Decision]:
         # Prepare context for LLM
         # We need to be careful about context window limits.
@@ -62,13 +69,13 @@ Respond ONLY with the JSON.
 """
         try:
             response = self.client.ask(prompt)
-            # Clean response if it contains markdown code blocks
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0].strip()
-                
-            data = json.loads(response)
+            cleaned_response = self._clean_json_response(response)
+            
+            try:
+                data = json.loads(cleaned_response)
+            except json.JSONDecodeError:
+                print(f"Failed to parse JSON from LLM response. Response snippet: {cleaned_response[:100]}...")
+                return []
             
             decisions = []
             for d in data.get("decisions", []):

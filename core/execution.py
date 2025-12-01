@@ -76,10 +76,17 @@ class FileOperationExecutor:
         """
         Executes a single decision.
         """
+        # Resolve paths to absolute to avoid ambiguity
+        target = Path(decision.target_path).resolve()
+        dest = None
+        if decision.destination_path:
+            dest = Path(decision.destination_path).resolve()
+
         # Safety Check
+        # We pass the original decision, but safety guard resolves internally too.
         is_safe, reason = self.safety.validate_decision(decision)
         if not is_safe:
-            print(f"Safety Check Failed for {decision.action} on {decision.target_path}: {reason}")
+            print(f"Safety Check Failed for {decision.action} on {target}: {reason}")
             return False
 
         tx_id = str(uuid.uuid4())
@@ -87,47 +94,56 @@ class FileOperationExecutor:
             id=tx_id,
             timestamp=time.time(),
             action=decision.action,
-            target_path=decision.target_path,
-            destination_path=decision.destination_path
+            target_path=str(target),
+            destination_path=str(dest) if dest else None
         )
         self.log.add_transaction(tx)
         
         try:
-            target = Path(decision.target_path)
-            
             if not target.exists():
                 raise FileNotFoundError(f"Target file {target} not found.")
                 
             if decision.action == "move" or decision.action == "rename":
-                dest = Path(decision.destination_path)
+                if not dest:
+                    raise ValueError("Destination path required for move/rename")
+                    
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 
                 # Check if dest exists
                 if dest.exists():
                     raise FileExistsError(f"Destination {dest} already exists.")
                 
-                shutil.move(str(target), str(dest))
+                shutil.move(target, dest)
                 self.log.update_transaction(tx_id, "success")
                 return True
                 
             elif decision.action == "delete":
                 # Safe delete: move to backup
                 backup_path = self.backup_dir / f"{target.name}_{tx_id}"
-                shutil.move(str(target), str(backup_path))
+                shutil.move(target, backup_path)
                 self.log.update_transaction(tx_id, "success", str(backup_path))
                 return True
                 
             elif decision.action == "group_files":
                  # Treat as move
-                dest = Path(decision.destination_path) / target.name
-                dest.parent.mkdir(parents=True, exist_ok=True)
+                if not dest:
+                    raise ValueError("Destination path required for group_files")
+
+                # If dest is a directory (which it should be for group_files), append filename
+                # But decision.destination_path usually points to the target directory?
+                # The original code did: dest = Path(decision.destination_path) / target.name
+                # Let's check if the decision.destination_path is the directory or the full file path.
+                # Usually group_files implies moving into a directory.
                 
-                if dest.exists():
-                     raise FileExistsError(f"Destination {dest} already exists.")
+                final_dest = dest / target.name
+                final_dest.parent.mkdir(parents=True, exist_ok=True)
+                
+                if final_dest.exists():
+                     raise FileExistsError(f"Destination {final_dest} already exists.")
                      
-                shutil.move(str(target), str(dest))
+                shutil.move(target, final_dest)
                 # Update transaction with actual destination path
-                tx.destination_path = str(dest)
+                tx.destination_path = str(final_dest)
                 self.log.update_transaction(tx_id, "success")
                 return True
                 
@@ -137,7 +153,7 @@ class FileOperationExecutor:
                 return False
                 
         except Exception as e:
-            print(f"Error executing {decision.action} on {decision.target_path}: {e}")
+            print(f"Error executing {decision.action} on {target}: {e}")
             self.log.update_transaction(tx_id, "failed")
             return False
             
