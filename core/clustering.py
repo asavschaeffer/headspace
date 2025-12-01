@@ -107,7 +107,12 @@ class DuplicateDetector(ReasoningStrategy):
                 
             # Calculate hash
             try:
-                file_hash = hashlib.md5(path.read_bytes()).hexdigest()
+                # Use chunked reading for large files
+                hasher = hashlib.md5()
+                with open(path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(8192), b""):
+                        hasher.update(chunk)
+                file_hash = hasher.hexdigest()
                 
                 if file_hash in hashes:
                     original_path = hashes[file_hash]
@@ -120,7 +125,11 @@ class DuplicateDetector(ReasoningStrategy):
                     ))
                 else:
                     hashes[file_hash] = str(path)
+                    
             except Exception:
                 continue
+        
+        # TODO: Implement fuzzy matching using difflib or embeddings
+        # for near-duplicate detection.
                 
         return decisions
