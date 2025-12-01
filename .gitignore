@@ -16,3 +16,10 @@ venv/
 .vscode/
 .idea/
 .gemini/
+
+# Runtime Artifacts
+search_index.pkl
+file_index.db
+transaction_log.json
+proposal.md
+proposed_changes.json
