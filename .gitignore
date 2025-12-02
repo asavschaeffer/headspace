@@ -1,59 +1,25 @@
-documents/
-
-# Archive and legacy code (not needed for production)
-archive/
-legacy/
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-
-# Virtual Environments
+.venv/
 venv/
-venv_headspace/
-env/
-ENV/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-.claude/
+# Environment Variables (Secrets)
+.env
 
-# Database - ignore for production, but you can track for dev if needed
-headspace.db
+# Database
 *.db
 *.sqlite
-*.sqlite3
 
-# Environment variables and secrets
-.env
-.env.local
-*.key
+# IDEs
+.vscode/
+.idea/
+.gemini/
 
-# Temporary files
-*.log
-*.tmp
-temp_*
-model_status.log
-
-# OS
-.DS_Store
-Thumbs.db
-*.bak
-
-# Build artifacts
-dist/
-build/
-*.egg-info/
-
-# Test outputs and coverage
-.pytest_cache/
-.coverage
-htmlcov/
-*.cover
-.hypothesis/
+# Runtime Artifacts
+search_index.pkl
+file_index.db
+transaction_log.json
+proposal.md
+proposed_changes.json
