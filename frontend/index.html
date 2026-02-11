@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>headspace</title>
+    <meta name="description" content="Computer information organization and retrieval for humans and LLMs">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10" opacity="0.3"/>
+                        <circle cx="12" cy="12" r="6" opacity="0.6"/>
+                        <circle cx="12" cy="12" r="2"/>
+                    </svg>
+                    <span class="logo-text">headspace</span>
+                </div>
+                <div class="status-badge" id="statusBadge">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Ready</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="doc-count" id="docCount">0 documents</div>
+                <button class="btn btn-primary" id="ingestBtn" title="Ingest directory">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Ingest
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Left Panel: File Tree -->
+            <aside class="panel panel-left" id="fileTreePanel">
+                <div class="panel-header">
+                    <h2>Files</h2>
+                    <span class="panel-count" id="fileCount">0</span>
+                </div>
+                <div class="panel-body" id="fileTree">
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48" opacity="0.3">
+                            <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                        </svg>
+                        <p>No files ingested yet</p>
+                        <p class="hint">Click <strong>Ingest</strong> to scan a directory</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Center: Visualization -->
+            <section class="panel panel-center">
+                <div class="panel-header">
+                    <div class="tab-bar">
+                        <button class="tab active" data-tab="viz">Clusters</button>
+                        <button class="tab" data-tab="search">Search</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <!-- Visualization View -->
+                    <div class="tab-content active" id="vizTab">
+                        <canvas id="clusterCanvas"></canvas>
+                        <div class="viz-legend" id="vizLegend"></div>
+                        <div class="viz-tooltip" id="vizTooltip"></div>
+                    </div>
+
+                    <!-- Search View -->
+                    <div class="tab-content" id="searchTab">
+                        <div class="search-bar">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                                <circle cx="11" cy="11" r="8"/>
+                                <path d="M21 21l-4.35-4.35"/>
+                            </svg>
+                            <input type="text" id="searchInput" placeholder="Search your documents semantically..." autocomplete="off">
+                            <kbd>Enter</kbd>
+                        </div>
+                        <div class="search-results" id="searchResults">
+                            <div class="empty-state">
+                                <p>Type a query and press Enter</p>
+                                <p class="hint">Semantic search finds documents by meaning, not just keywords</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Document Detail -->
+            <aside class="panel panel-right" id="detailPanel">
+                <div class="panel-header">
+                    <h2>Document</h2>
+                    <button class="close-btn" id="closeDetail" title="Close">×</button>
+                </div>
+                <div class="panel-body" id="detailContent">
+                    <div class="empty-state">
+                        <p>Select a file to view details</p>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <!-- Ingest Modal -->
+    <div class="modal-overlay" id="ingestModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Ingest Directory</h3>
+                <button class="close-btn" id="closeModal">×</button>
+            </div>
+            <div class="modal-body">
+                <label for="ingestPath">Directory Path</label>
+                <input type="text" id="ingestPath" placeholder="C:\Users\you\Documents\project" autocomplete="off">
+                <p class="hint">Enter the full path to a directory to scan and index.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="cancelIngest">Cancel</button>
+                <button class="btn btn-primary" id="confirmIngest">Start Ingestion</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
