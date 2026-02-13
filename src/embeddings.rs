@@ -1,3 +1,5 @@
+#![allow(clippy::cast_possible_truncation)]
+
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
@@ -35,22 +37,22 @@ struct EmbedResponse {
 
 /// Generates embeddings for a list of texts using NVIDIA NIM.
 ///
-/// Returns a vector of embedding vectors in the same order as the input.
-/// If no API key is configured, returns zero vectors.
+/// Returns f32 vectors (downcast from the API's f64 response — no meaningful
+/// precision loss for cosine similarity, and halves memory usage).
 ///
 /// # Errors
 /// Returns an error if the API call fails.
 pub async fn generate_embeddings(
     texts: &[String],
     config: &Config,
-) -> eyre::Result<Vec<Vec<f64>>> {
+) -> eyre::Result<Vec<Vec<f32>>> {
     let Some(api_key) = &config.nvidia_api_key else {
         tracing::warn!("no NVIDIA API key configured; using zero vectors");
-        return Ok(texts.iter().map(|_| vec![0.0; EMBEDDING_DIM]).collect());
+        return Ok(texts.iter().map(|_| vec![0.0_f32; EMBEDDING_DIM]).collect());
     };
 
     let client = reqwest::Client::new();
-    let mut all_embeddings: Vec<Vec<f64>> = Vec::with_capacity(texts.len());
+    let mut all_embeddings: Vec<Vec<f32>> = Vec::with_capacity(texts.len());
 
     for chunk in texts.chunks(BATCH_SIZE) {
         let truncated: Vec<String> = chunk
@@ -58,7 +60,13 @@ pub async fn generate_embeddings(
             .map(|t| {
                 // Truncate to ~2000 chars to stay within token limits
                 if t.len() > 2000 {
-                    t[..2000].to_string()
+                    let end = t
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .take_while(|&i| i <= 2000)
+                        .last()
+                        .unwrap_or(0);
+                    t[..end].to_string()
                 } else {
                     t.clone()
                 }
@@ -86,14 +94,15 @@ pub async fn generate_embeddings(
             tracing::error!(%status, body, "embedding API error");
             // Fall back to zero vectors for this batch
             for _ in chunk {
-                all_embeddings.push(vec![0.0; EMBEDDING_DIM]);
+                all_embeddings.push(vec![0.0_f32; EMBEDDING_DIM]);
             }
             continue;
         }
 
         let embed_response: EmbedResponse = response.json().await?;
         for obj in embed_response.data {
-            all_embeddings.push(obj.embedding);
+            // Downcast f64 → f32 at the API boundary
+            all_embeddings.push(obj.embedding.into_iter().map(|v| v as f32).collect());
         }
 
         // Brief pause between batches to avoid rate limiting
@@ -105,15 +114,6 @@ pub async fn generate_embeddings(
     Ok(all_embeddings)
 }
 
-/// Request body for NVIDIA query embeddings API.
-#[derive(Serialize)]
-struct QueryRequest {
-    input: Vec<String>,
-    model: String,
-    input_type: String,
-    truncate: String,
-}
-
 /// Generates an embedding for a single query string.
 ///
 /// Uses "query" input type for better search relevance.
@@ -123,14 +123,14 @@ struct QueryRequest {
 pub async fn generate_query_embedding(
     query: &str,
     config: &Config,
-) -> eyre::Result<Vec<f64>> {
+) -> eyre::Result<Vec<f32>> {
     let Some(api_key) = &config.nvidia_api_key else {
-        return Ok(vec![0.0; EMBEDDING_DIM]);
+        return Ok(vec![0.0_f32; EMBEDDING_DIM]);
     };
 
     let client = reqwest::Client::new();
 
-    let request = QueryRequest {
+    let request = EmbedRequest {
         input: vec![query.to_string()],
         model: "nvidia/nv-embedqa-e5-v5".to_string(),
         input_type: "query".to_string(),
@@ -149,7 +149,7 @@ pub async fn generate_query_embedding(
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         tracing::error!(%status, body, "query embedding API error");
-        return Ok(vec![0.0; EMBEDDING_DIM]);
+        return Ok(vec![0.0_f32; EMBEDDING_DIM]);
     }
 
     let embed_response: EmbedResponse = response.json().await?;
@@ -157,5 +157,8 @@ pub async fn generate_query_embedding(
         .data
         .into_iter()
         .next()
-        .map_or_else(|| vec![0.0; EMBEDDING_DIM], |o| o.embedding))
+        .map_or_else(
+            || vec![0.0_f32; EMBEDDING_DIM],
+            |o| o.embedding.into_iter().map(|v| v as f32).collect(),
+        ))
 }

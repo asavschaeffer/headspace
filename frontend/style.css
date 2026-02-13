@@ -134,6 +134,23 @@ html, body {
     font-variant-numeric: tabular-nums;
 }
 
+.ingest-stats {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    display: none;
+}
+
+.ingest-stats.visible {
+    opacity: 1;
+    display: block;
+}
+
 /* ===== Buttons ===== */
 .btn {
     display: inline-flex;

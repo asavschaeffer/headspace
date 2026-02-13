@@ -125,6 +125,25 @@ function updateStatus(status) {
         statusBadge.classList.remove('ingesting');
         statusText.textContent = status.document_count > 0 ? 'Ready' : 'No data';
     }
+
+    // Show last ingestion stats
+    const statsEl = $('#ingestStats');
+    if (status.last_ingest && !status.is_ingesting) {
+        const s = status.last_ingest;
+        const parts = [];
+        if (s.new_files > 0) parts.push(`${s.new_files} new`);
+        if (s.changed_files > 0) parts.push(`${s.changed_files} changed`);
+        if (s.deleted_files > 0) parts.push(`${s.deleted_files} deleted`);
+        if (s.unchanged_files > 0) parts.push(`${s.unchanged_files} unchanged`);
+        if (parts.length > 0) {
+            statsEl.textContent = parts.join(' · ');
+            statsEl.classList.add('visible');
+        } else {
+            statsEl.classList.remove('visible');
+        }
+    } else {
+        statsEl.classList.remove('visible');
+    }
 }
 
 async function startIngest() {

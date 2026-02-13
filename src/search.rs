@@ -13,8 +13,8 @@ pub struct SearchResult {
 ///
 /// Returns the top `limit` results sorted by descending similarity.
 pub fn search(
-    query_embedding: &[f64],
-    documents: &[Document],
+    query_embedding: &[f32],
+    documents: &[&Document],
     limit: usize,
 ) -> Vec<SearchResult> {
     if query_embedding.is_empty() || query_embedding.iter().all(|&v| v == 0.0) {
@@ -23,7 +23,7 @@ pub fn search(
             .iter()
             .take(limit)
             .map(|d| SearchResult {
-                document: d.clone(),
+                document: (*d).clone(),
                 score: 0.0,
             })
             .collect();
@@ -35,7 +35,7 @@ pub fn search(
         .map(|d| {
             let score = cosine_similarity(query_embedding, &d.embedding);
             SearchResult {
-                document: d.clone(),
+                document: (*d).clone(),
                 score,
             }
         })
@@ -46,20 +46,24 @@ pub fn search(
     results
 }
 
-/// Computes cosine similarity between two vectors.
-fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
+/// Computes cosine similarity between two f32 vectors.
+///
+/// Returns the result as f64 for display precision.
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
 
-    let mut dot = 0.0;
-    let mut norm_a = 0.0;
-    let mut norm_b = 0.0;
+    let mut dot = 0.0_f64;
+    let mut norm_a = 0.0_f64;
+    let mut norm_b = 0.0_f64;
 
     for i in 0..a.len() {
-        dot += a[i] * b[i];
-        norm_a += a[i] * a[i];
-        norm_b += b[i] * b[i];
+        let ai = f64::from(a[i]);
+        let bi = f64::from(b[i]);
+        dot += ai * bi;
+        norm_a += ai * ai;
+        norm_b += bi * bi;
     }
 
     let denom = norm_a.sqrt() * norm_b.sqrt();

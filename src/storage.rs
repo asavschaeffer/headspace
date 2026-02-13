@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -6,6 +8,8 @@ use uuid::Uuid;
 pub struct Document {
     /// Unique identifier.
     pub id: String,
+    /// SHA-256 hash of the file's full content — the document's identity.
+    pub content_hash: String,
     /// Original file path (relative to ingested root).
     pub rel_path: String,
     /// Absolute file path.
@@ -18,9 +22,9 @@ pub struct Document {
     pub content_preview: String,
     /// Full text length in bytes.
     pub content_length: usize,
-    /// Embedding vector (may be empty if no API key).
+    /// Embedding vector (f32 precision, may be empty if no API key).
     #[serde(default)]
-    pub embedding: Vec<f64>,
+    pub embedding: Vec<f32>,
     /// HDBSCAN cluster assignment (-1 = noise).
     #[serde(default = "default_cluster")]
     pub cluster_id: i32,
@@ -42,7 +46,9 @@ fn default_cluster() -> i32 {
 
 impl Document {
     /// Creates a new document from file metadata and content.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        content_hash: String,
         rel_path: String,
         abs_path: String,
         name: String,
@@ -53,6 +59,7 @@ impl Document {
     ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
+            content_hash,
             rel_path,
             abs_path,
             name,
@@ -70,12 +77,15 @@ impl Document {
 }
 
 /// The full document store persisted to disk.
+///
+/// Documents are keyed by their absolute path for O(1) lookups.
+/// Content hashes enable change detection without re-reading files.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Store {
     /// Root directory that was ingested.
     pub root_path: String,
-    /// All ingested documents.
-    pub documents: Vec<Document>,
+    /// All ingested documents, keyed by absolute path.
+    pub documents: HashMap<String, Document>,
 }
 
 impl Store {
@@ -103,14 +113,40 @@ impl Store {
         Ok(())
     }
 
-    /// Find a document by its relative path.
-    #[allow(dead_code)]
-    pub fn find_by_path(&self, rel_path: &str) -> Option<&Document> {
-        self.documents.iter().find(|d| d.rel_path == rel_path)
+    /// Find a document by its absolute path.
+    pub fn find_by_path(&self, abs_path: &str) -> Option<&Document> {
+        self.documents.get(abs_path)
     }
 
-    /// Find a document by its ID.
+    /// Find a document by its ID (linear scan — used for API lookups).
     pub fn find_by_id(&self, id: &str) -> Option<&Document> {
-        self.documents.iter().find(|d| d.id == id)
+        self.documents.values().find(|d| d.id == id)
+    }
+
+    /// Insert or update a document, keyed by absolute path.
+    ///
+    /// If a document with the same path exists:
+    /// - Preserves the original `id` for URL stability
+    /// - Updates all other fields
+    pub fn upsert(&mut self, mut doc: Document) {
+        if let Some(existing) = self.documents.get(&doc.abs_path) {
+            doc.id.clone_from(&existing.id);
+        }
+        self.documents.insert(doc.abs_path.clone(), doc);
+    }
+
+    /// Remove documents whose absolute paths are not in `valid_paths`.
+    /// Returns the number of documents removed.
+    pub fn retain_existing(&mut self, valid_paths: &std::collections::HashSet<String>) -> usize {
+        let before = self.documents.len();
+        self.documents.retain(|path, _| valid_paths.contains(path));
+        before - self.documents.len()
+    }
+
+    /// Returns all documents as a slice-like iterator (sorted by `rel_path` for deterministic output).
+    pub fn documents_sorted(&self) -> Vec<&Document> {
+        let mut docs: Vec<&Document> = self.documents.values().collect();
+        docs.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+        docs
     }
 }

@@ -22,6 +22,19 @@ pub struct AppState {
     pub store: Arc<RwLock<Store>>,
     pub config: Arc<Config>,
     pub ingesting: Arc<RwLock<bool>>,
+    /// Stats from the most recent ingestion (if any).
+    pub last_ingest_stats: Arc<RwLock<Option<IngestStats>>>,
+}
+
+/// Statistics from a diff-based ingestion run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestStats {
+    pub new_files: usize,
+    pub changed_files: usize,
+    pub unchanged_files: usize,
+    pub deleted_files: usize,
+    pub total_documents: usize,
+    pub embeddings_generated: usize,
 }
 
 /// Creates the API router.
@@ -44,16 +57,19 @@ struct StatusResponse {
     has_embeddings: bool,
     is_ingesting: bool,
     root_path: String,
+    last_ingest: Option<IngestStats>,
 }
 
 async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
     let store = state.store.read().await;
     let ingesting = *state.ingesting.read().await;
+    let last_ingest = state.last_ingest_stats.read().await.clone();
     Json(StatusResponse {
         document_count: store.documents.len(),
         has_embeddings: state.config.has_embeddings(),
         is_ingesting: ingesting,
         root_path: store.root_path.clone(),
+        last_ingest,
     })
 }
 
@@ -92,6 +108,7 @@ async fn ingest(
     let config = state.config.clone();
     let store_lock = state.store.clone();
     let ingesting_flag = state.ingesting.clone();
+    let stats_lock = state.last_ingest_stats.clone();
 
     let path = PathBuf::from(&body.path);
     if !path.is_dir() {
@@ -105,7 +122,7 @@ async fn ingest(
 
     // Spawn the ingestion task
     tokio::spawn(async move {
-        let result = run_ingest(&path, &config, &store_lock).await;
+        let result = run_ingest(&path, &config, &store_lock, &stats_lock).await;
 
         let mut ingesting = ingesting_flag.write().await;
         *ingesting = false;
@@ -121,38 +138,132 @@ async fn ingest(
     }))
 }
 
-/// Runs the full ingestion pipeline.
+/// Runs the diff-based ingestion pipeline.
+///
+/// 1. Crawl directory → discover files with content hashes
+/// 2. Diff against existing store (new / changed / unchanged / deleted)
+/// 3. Embed ONLY new + changed files
+/// 4. Merge results into store
+/// 5. Re-cluster entire store
+/// 6. Save
 async fn run_ingest(
     path: &std::path::Path,
     config: &Config,
     store_lock: &Arc<RwLock<Store>>,
+    stats_lock: &Arc<RwLock<Option<IngestStats>>>,
 ) -> eyre::Result<()> {
     tracing::info!(path = %path.display(), "starting ingestion");
 
-    // Crawl directory
-    let mut documents = ingestion::crawl(path)?;
-    tracing::info!(count = documents.len(), "files discovered");
+    // Step 1: Crawl directory
+    let crawl_result = ingestion::crawl(path)?;
+    tracing::info!(count = crawl_result.discovered.len(), "files discovered");
 
-    // Generate embeddings
-    let texts: Vec<String> = documents.iter().map(|d| d.content_preview.clone()).collect();
-    let embeddings = embeddings::generate_embeddings(&texts, config).await?;
+    // Step 2: Diff against existing store
+    let mut new_docs = Vec::new();
+    let mut changed_docs = Vec::new();
+    let mut unchanged_count: usize = 0;
 
-    for (doc, emb) in documents.iter_mut().zip(embeddings) {
-        doc.embedding = emb;
+    {
+        let store = store_lock.read().await;
+        for doc in crawl_result.discovered {
+            match store.find_by_path(&doc.abs_path) {
+                Some(existing) if existing.content_hash == doc.content_hash => {
+                    // File unchanged — skip embedding
+                    unchanged_count += 1;
+                }
+                Some(_) => {
+                    // File changed — needs re-embedding
+                    changed_docs.push(doc);
+                }
+                None => {
+                    // New file
+                    new_docs.push(doc);
+                }
+            }
+        }
     }
-    tracing::info!("embeddings generated");
 
-    // Cluster
-    cluster_documents(&mut documents);
-    tracing::info!("clustering complete");
+    let new_count = new_docs.len();
+    let changed_count = changed_docs.len();
+    let needs_embedding = new_count + changed_count;
+    tracing::info!(
+        new = new_count,
+        changed = changed_count,
+        unchanged = unchanged_count,
+        "diff complete"
+    );
 
-    // Save
+    // Step 3: Embed only new + changed files
+    let mut docs_to_embed: Vec<crate::storage::Document> = Vec::with_capacity(needs_embedding);
+    docs_to_embed.extend(new_docs);
+    docs_to_embed.extend(changed_docs);
+
+    if docs_to_embed.is_empty() {
+        tracing::info!("no files changed — skipping embedding API calls");
+    } else {
+        let texts: Vec<String> = docs_to_embed.iter().map(|d| d.content_preview.clone()).collect();
+        let embeddings = embeddings::generate_embeddings(&texts, config).await?;
+
+        for (doc, emb) in docs_to_embed.iter_mut().zip(embeddings) {
+            doc.embedding = emb;
+        }
+        tracing::info!(count = docs_to_embed.len(), "embeddings generated");
+    }
+
+    // Step 4: Merge into store
     let mut store = store_lock.write().await;
     store.root_path = path.to_string_lossy().to_string();
-    store.documents = documents;
+
+    // Remove deleted files
+    let deleted_count = store.retain_existing(&crawl_result.discovered_paths);
+    if deleted_count > 0 {
+        tracing::info!(deleted = deleted_count, "removed deleted files");
+    }
+
+    // Upsert new + changed files
+    for doc in docs_to_embed {
+        store.upsert(doc);
+    }
+
+    // Step 5: Re-cluster entire store
+    let mut all_docs: Vec<crate::storage::Document> = store.documents.values().cloned().collect();
+    cluster_documents(&mut all_docs);
+
+    // Write clustered docs back
+    store.documents.clear();
+    for doc in all_docs {
+        store.documents.insert(doc.abs_path.clone(), doc);
+    }
+    tracing::info!("clustering complete");
+
+    // Step 6: Save
     store.save(&config.store_path())?;
 
-    tracing::info!(count = store.documents.len(), "ingestion complete");
+    let stats = IngestStats {
+        new_files: new_count,
+        changed_files: changed_count,
+        unchanged_files: unchanged_count,
+        deleted_files: deleted_count,
+        total_documents: store.documents.len(),
+        embeddings_generated: needs_embedding,
+    };
+
+    drop(store); // Release the write lock before acquiring stats lock
+
+    {
+        let mut last_stats = stats_lock.write().await;
+        *last_stats = Some(stats.clone());
+    }
+
+    tracing::info!(
+        new = stats.new_files,
+        changed = stats.changed_files,
+        unchanged = stats.unchanged_files,
+        deleted = stats.deleted_files,
+        total = stats.total_documents,
+        "ingestion complete"
+    );
+
     Ok(())
 }
 
@@ -169,7 +280,7 @@ struct DocumentSummary {
 async fn list_documents(State(state): State<AppState>) -> Json<Vec<DocumentSummary>> {
     let store = state.store.read().await;
     let summaries: Vec<DocumentSummary> = store
-        .documents
+        .documents_sorted()
         .iter()
         .map(|d| DocumentSummary {
             id: d.id.clone(),
@@ -235,7 +346,8 @@ async fn search_documents(
         .await
         .unwrap_or_default();
 
-    let results = search::search(&query_embedding, &store.documents, query.limit);
+    let docs: Vec<&crate::storage::Document> = store.documents.values().collect();
+    let results = search::search(&query_embedding, &docs, query.limit);
 
     let response: Vec<SearchResultResponse> = results
         .into_iter()
@@ -268,7 +380,7 @@ async fn get_clusters(State(state): State<AppState>) -> Json<Vec<ClusterPoint>> 
     let store = state.store.read().await;
     let points: Vec<ClusterPoint> = store
         .documents
-        .iter()
+        .values()
         .map(|d| ClusterPoint {
             id: d.id.clone(),
             name: d.name.clone(),

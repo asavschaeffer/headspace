@@ -48,6 +48,7 @@ async fn main() -> eyre::Result<()> {
         store: Arc::new(RwLock::new(store)),
         config: Arc::new(config.clone()),
         ingesting: Arc::new(RwLock::new(false)),
+        last_ingest_stats: Arc::new(RwLock::new(None)),
     };
 
     // Build routes: API + static frontend

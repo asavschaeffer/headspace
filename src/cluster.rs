@@ -24,19 +24,19 @@ pub fn cluster_documents(documents: &mut [Document]) {
         return;
     }
 
-    // Build embedding matrix — hdbscan uses Vec<Vec<f64>>
+    // Build embedding matrix — hdbscan requires Vec<Vec<f64>>, so upcast at the boundary
     let data: Vec<Vec<f64>> = documents
         .iter()
         .map(|d| {
             if d.embedding.is_empty() {
                 vec![0.0; 1024]
             } else {
-                d.embedding.clone()
+                d.embedding.iter().map(|&v| f64::from(v)).collect()
             }
         })
         .collect();
 
-    // Run HDBSCAN — data is passed to the constructor, cluster() takes no args
+    // Run HDBSCAN
     let clusterer = Hdbscan::default_hyper_params(&data);
 
     match clusterer.cluster() {
@@ -65,7 +65,8 @@ pub fn cluster_documents(documents: &mut [Document]) {
 
 /// Assigns 2D (x, y) coordinates to documents using simple PCA on embeddings.
 ///
-/// This is a lightweight alternative to UMAP for MVP visualization.
+/// Uses f32 embeddings internally, upcast to f64 for the linear algebra
+/// (PCA needs the precision for eigenvalue convergence).
 fn assign_2d_positions(documents: &mut [Document]) {
     if documents.is_empty() {
         return;
@@ -87,30 +88,31 @@ fn assign_2d_positions(documents: &mut [Document]) {
         return;
     }
 
+    // Upcast embeddings to f64 for PCA math
+    let embeddings_f64: Vec<Vec<f64>> = documents
+        .iter()
+        .map(|d| {
+            if d.embedding.len() == dim {
+                d.embedding.iter().map(|&v| f64::from(v)).collect()
+            } else {
+                vec![0.0; dim]
+            }
+        })
+        .collect();
+
     // Compute mean
     let n = documents.len() as f64;
     let mut mean = vec![0.0; dim];
-    for doc in documents.iter() {
-        let emb = if doc.embedding.len() == dim {
-            &doc.embedding
-        } else {
-            continue;
-        };
+    for emb in &embeddings_f64 {
         for (j, val) in emb.iter().enumerate() {
             mean[j] += val / n;
         }
     }
 
     // Center data
-    let centered: Vec<Vec<f64>> = documents
+    let centered: Vec<Vec<f64>> = embeddings_f64
         .iter()
-        .map(|d| {
-            if d.embedding.len() == dim {
-                d.embedding.iter().zip(&mean).map(|(a, b)| a - b).collect()
-            } else {
-                vec![0.0; dim]
-            }
-        })
+        .map(|emb| emb.iter().zip(&mean).map(|(a, b)| a - b).collect())
         .collect();
 
     // Power iteration for first principal component

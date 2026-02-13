@@ -66,11 +66,9 @@ fn parse_env_file_key(key: &str) -> Option<String> {
             continue;
         }
         if let Some((k, v)) = line.split_once('=') {
-            if k.trim() == key {
-                let v = v.trim();
-                if !v.is_empty() {
-                    return Some(v.to_string());
-                }
+            let v = v.trim();
+            if k.trim() == key && !v.is_empty() {
+                return Some(v.to_string());
             }
         }
     }

@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::storage::Document;
@@ -32,17 +34,30 @@ const MAX_FILE_SIZE: u64 = 1_048_576;
 /// Maximum preview length in characters.
 const MAX_PREVIEW_LEN: usize = 2000;
 
-/// Crawls a directory and returns a list of documents.
+/// Result of crawling a directory.
+#[derive(Debug)]
+pub struct CrawlResult {
+    /// All files found on disk (with content hashes computed).
+    pub discovered: Vec<Document>,
+    /// Set of all absolute paths found (for detecting deletions).
+    pub discovered_paths: HashSet<String>,
+}
+
+/// Crawls a directory and returns discovered documents with content hashes.
+///
+/// Each document has its SHA-256 content hash computed during crawl,
+/// enabling efficient change detection without re-reading files later.
 ///
 /// # Errors
 /// Returns an error if the root path is not a valid directory.
-pub fn crawl(root: &Path) -> eyre::Result<Vec<Document>> {
+pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
     if !root.is_dir() {
         eyre::bail!("path is not a directory: {}", root.display());
     }
 
     let root = root.canonicalize()?;
-    let mut documents = Vec::new();
+    let mut discovered = Vec::new();
+    let mut discovered_paths = HashSet::new();
 
     for entry in WalkDir::new(&root)
         .follow_links(false)
@@ -93,6 +108,16 @@ pub fn crawl(root: &Path) -> eyre::Result<Vec<Document>> {
             continue; // Skip binary / unreadable files
         };
 
+        // Compute SHA-256 content hash
+        let content_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(content.as_bytes());
+            format!("{:x}", hasher.finalize())
+        };
+
+        let abs_path = path.to_string_lossy().to_string();
+        discovered_paths.insert(abs_path.clone());
+
         let rel_path = path
             .strip_prefix(&root)
             .unwrap_or(path)
@@ -107,7 +132,14 @@ pub fn crawl(root: &Path) -> eyre::Result<Vec<Document>> {
 
         let content_length = content.len();
         let content_preview = if content.len() > MAX_PREVIEW_LEN {
-            content[..MAX_PREVIEW_LEN].to_string()
+            // Find a safe char boundary to truncate at
+            let end = content
+                .char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= MAX_PREVIEW_LEN)
+                .last()
+                .unwrap_or(0);
+            content[..end].to_string()
         } else {
             content
         };
@@ -118,9 +150,10 @@ pub fn crawl(root: &Path) -> eyre::Result<Vec<Document>> {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_secs());
 
-        documents.push(Document::new(
+        discovered.push(Document::new(
+            content_hash,
             rel_path,
-            path.to_string_lossy().to_string(),
+            abs_path,
             name,
             ext,
             content_preview,
@@ -129,8 +162,11 @@ pub fn crawl(root: &Path) -> eyre::Result<Vec<Document>> {
         ));
     }
 
-    tracing::info!(count = documents.len(), "crawled directory");
-    Ok(documents)
+    tracing::info!(count = discovered.len(), "crawled directory");
+    Ok(CrawlResult {
+        discovered,
+        discovered_paths,
+    })
 }
 
 /// Returns true if a directory entry should be skipped.
@@ -139,9 +175,6 @@ fn is_skipped_dir(entry: &walkdir::DirEntry) -> bool {
         return false;
     }
     let name = entry.file_name().to_string_lossy();
-    // Skip hidden directories (starting with '.')
-    if name.starts_with('.') && name != "." {
-        return true;
-    }
-    SKIP_DIRS.iter().any(|&s| name == s)
+    // Skip hidden directories (starting with '.') and known skip dirs
+    (name.starts_with('.') && name != ".") || SKIP_DIRS.iter().any(|&s| name == s)
 }
