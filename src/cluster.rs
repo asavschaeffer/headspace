@@ -1,4 +1,8 @@
-#![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 
 use hdbscan::Hdbscan;
 
@@ -41,7 +45,11 @@ pub fn cluster_documents(documents: &mut [Document]) {
 
     match clusterer.cluster() {
         Ok(labels) => {
-            let num_clusters = labels.iter().filter(|&&l| l >= 0).collect::<std::collections::HashSet<_>>().len();
+            let num_clusters = labels
+                .iter()
+                .filter(|&&l| l >= 0)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
             let noise_count = labels.iter().filter(|&&l| l < 0).count();
 
             for (i, &label) in labels.iter().enumerate() {

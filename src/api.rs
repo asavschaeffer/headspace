@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::Json;
 use axum::routing::{get, post};
-use axum::Router;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
@@ -14,7 +14,7 @@ use crate::config::Config;
 use crate::embeddings;
 use crate::ingestion;
 use crate::search;
-use crate::storage::Store;
+use crate::storage::{Document, Store};
 
 /// Shared application state.
 #[derive(Debug, Clone)]
@@ -49,8 +49,6 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-// ---------- Handlers ----------
-
 #[derive(Serialize)]
 struct StatusResponse {
     document_count: usize,
@@ -64,11 +62,16 @@ async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
     let store = state.store.read().await;
     let ingesting = *state.ingesting.read().await;
     let last_ingest = state.last_ingest_stats.read().await.clone();
+    let document_count = store.document_count().unwrap_or_else(|e| {
+        tracing::error!("failed to count documents: {e:?}");
+        0
+    });
+
     Json(StatusResponse {
-        document_count: store.documents.len(),
+        document_count,
         has_embeddings: state.config.has_embeddings(),
         is_ingesting: ingesting,
-        root_path: store.root_path.clone(),
+        root_path: store.root_path().to_string(),
         last_ingest,
     })
 }
@@ -88,7 +91,6 @@ async fn ingest(
     State(state): State<AppState>,
     Json(body): Json<IngestRequest>,
 ) -> Result<Json<IngestResponse>, (StatusCode, String)> {
-    // Check if already ingesting
     {
         let ingesting = state.ingesting.read().await;
         if *ingesting {
@@ -99,7 +101,6 @@ async fn ingest(
         }
     }
 
-    // Set ingesting flag
     {
         let mut ingesting = state.ingesting.write().await;
         *ingesting = true;
@@ -120,7 +121,6 @@ async fn ingest(
         ));
     }
 
-    // Spawn the ingestion task
     tokio::spawn(async move {
         let result = run_ingest(&path, &config, &store_lock, &stats_lock).await;
 
@@ -139,13 +139,6 @@ async fn ingest(
 }
 
 /// Runs the diff-based ingestion pipeline.
-///
-/// 1. Crawl directory → discover files with content hashes
-/// 2. Diff against existing store (new / changed / unchanged / deleted)
-/// 3. Embed ONLY new + changed files
-/// 4. Merge results into store
-/// 5. Re-cluster entire store
-/// 6. Save
 async fn run_ingest(
     path: &std::path::Path,
     config: &Config,
@@ -154,29 +147,52 @@ async fn run_ingest(
 ) -> eyre::Result<()> {
     tracing::info!(path = %path.display(), "starting ingestion");
 
-    // Step 1: Crawl directory
     let crawl_result = ingestion::crawl(path)?;
     tracing::info!(count = crawl_result.discovered.len(), "files discovered");
 
-    // Step 2: Diff against existing store
     let mut new_docs = Vec::new();
     let mut changed_docs = Vec::new();
+    let mut unchanged_updates = Vec::new();
     let mut unchanged_count: usize = 0;
 
     {
         let store = store_lock.read().await;
-        for doc in crawl_result.discovered {
-            match store.find_by_path(&doc.abs_path) {
+        for mut doc in crawl_result.discovered {
+            let existing = match store.find_by_file_id(&doc.file_id)? {
+                Some(existing) => Some(existing),
+                None => store.find_by_path(&doc.abs_path)?,
+            };
+
+            match existing {
                 Some(existing) if existing.content_hash == doc.content_hash => {
-                    // File unchanged — skip embedding
                     unchanged_count += 1;
+                    if existing.abs_path != doc.abs_path
+                        || existing.rel_path != doc.rel_path
+                        || existing.modified_at != doc.modified_at
+                        || existing.name != doc.name
+                    {
+                        let mut updated = existing;
+                        updated.abs_path = doc.abs_path;
+                        updated.rel_path = doc.rel_path;
+                        updated.name = doc.name;
+                        updated.extension = doc.extension;
+                        updated.content_preview = doc.content_preview;
+                        updated.content_length = doc.content_length;
+                        updated.modified_at = doc.modified_at;
+                        unchanged_updates.push(updated);
+                    }
                 }
-                Some(_) => {
-                    // File changed — needs re-embedding
+                Some(existing) => {
+                    doc.id = existing.id;
+                    doc.cluster_id = existing.cluster_id;
+                    doc.x = existing.x;
+                    doc.y = existing.y;
+                    doc.summary = existing.summary;
+                    doc.status = existing.status;
+                    doc.topics = existing.topics;
                     changed_docs.push(doc);
                 }
                 None => {
-                    // New file
                     new_docs.push(doc);
                 }
             }
@@ -193,15 +209,17 @@ async fn run_ingest(
         "diff complete"
     );
 
-    // Step 3: Embed only new + changed files
-    let mut docs_to_embed: Vec<crate::storage::Document> = Vec::with_capacity(needs_embedding);
+    let mut docs_to_embed: Vec<Document> = Vec::with_capacity(needs_embedding);
     docs_to_embed.extend(new_docs);
     docs_to_embed.extend(changed_docs);
 
     if docs_to_embed.is_empty() {
-        tracing::info!("no files changed — skipping embedding API calls");
+        tracing::info!("no files changed, skipping embedding API calls");
     } else {
-        let texts: Vec<String> = docs_to_embed.iter().map(|d| d.content_preview.clone()).collect();
+        let texts: Vec<String> = docs_to_embed
+            .iter()
+            .map(|d| d.content_preview.clone())
+            .collect();
         let embeddings = embeddings::generate_embeddings(&texts, config).await?;
 
         for (doc, emb) in docs_to_embed.iter_mut().zip(embeddings) {
@@ -210,45 +228,38 @@ async fn run_ingest(
         tracing::info!(count = docs_to_embed.len(), "embeddings generated");
     }
 
-    // Step 4: Merge into store
     let mut store = store_lock.write().await;
-    store.root_path = path.to_string_lossy().to_string();
+    store.set_root_path(path)?;
 
-    // Remove deleted files
-    let deleted_count = store.retain_existing(&crawl_result.discovered_paths);
+    let deleted_count = store.retain_existing(&crawl_result.discovered_file_ids)?;
     if deleted_count > 0 {
         tracing::info!(deleted = deleted_count, "removed deleted files");
     }
 
-    // Upsert new + changed files
+    for doc in unchanged_updates {
+        store.upsert(doc)?;
+    }
     for doc in docs_to_embed {
-        store.upsert(doc);
+        store.upsert(doc)?;
     }
 
-    // Step 5: Re-cluster entire store
-    let mut all_docs: Vec<crate::storage::Document> = store.documents.values().cloned().collect();
+    let mut all_docs = store.all_documents()?;
     cluster_documents(&mut all_docs);
-
-    // Write clustered docs back
-    store.documents.clear();
-    for doc in all_docs {
-        store.documents.insert(doc.abs_path.clone(), doc);
-    }
+    let total_documents = all_docs.len();
+    store.replace_documents(&all_docs)?;
+    store.save()?;
     tracing::info!("clustering complete");
-
-    // Step 6: Save
-    store.save(&config.store_path())?;
 
     let stats = IngestStats {
         new_files: new_count,
         changed_files: changed_count,
         unchanged_files: unchanged_count,
         deleted_files: deleted_count,
-        total_documents: store.documents.len(),
+        total_documents,
         embeddings_generated: needs_embedding,
     };
 
-    drop(store); // Release the write lock before acquiring stats lock
+    drop(store);
 
     {
         let mut last_stats = stats_lock.write().await;
@@ -279,8 +290,12 @@ struct DocumentSummary {
 
 async fn list_documents(State(state): State<AppState>) -> Json<Vec<DocumentSummary>> {
     let store = state.store.read().await;
-    let summaries: Vec<DocumentSummary> = store
-        .documents_sorted()
+    let docs = store.documents_sorted().unwrap_or_else(|e| {
+        tracing::error!("failed to list documents: {e:?}");
+        Vec::new()
+    });
+
+    let summaries: Vec<DocumentSummary> = docs
         .iter()
         .map(|d| DocumentSummary {
             id: d.id.clone(),
@@ -297,13 +312,13 @@ async fn list_documents(State(state): State<AppState>) -> Json<Vec<DocumentSumma
 async fn get_document(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let store = state.store.read().await;
     let doc = store
         .find_by_id(&id)
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?;
 
-    // Return document without the full embedding vector (too large for JSON response)
     let mut value = serde_json::to_value(doc).unwrap_or_default();
     if let Some(obj) = value.as_object_mut() {
         obj.remove("embedding");
@@ -341,13 +356,16 @@ async fn search_documents(
     let config = state.config.clone();
     let store = state.store.read().await;
 
-    // Generate query embedding
     let query_embedding = embeddings::generate_query_embedding(&query.q, &config)
         .await
         .unwrap_or_default();
 
-    let docs: Vec<&crate::storage::Document> = store.documents.values().collect();
-    let results = search::search(&query_embedding, &docs, query.limit);
+    let docs = store.all_documents().unwrap_or_else(|e| {
+        tracing::error!("failed to load documents for search: {e:?}");
+        Vec::new()
+    });
+    let doc_refs: Vec<&Document> = docs.iter().collect();
+    let results = search::search(&query_embedding, &doc_refs, query.limit);
 
     let response: Vec<SearchResultResponse> = results
         .into_iter()
@@ -378,9 +396,13 @@ struct ClusterPoint {
 
 async fn get_clusters(State(state): State<AppState>) -> Json<Vec<ClusterPoint>> {
     let store = state.store.read().await;
-    let points: Vec<ClusterPoint> = store
-        .documents
-        .values()
+    let docs = store.all_documents().unwrap_or_else(|e| {
+        tracing::error!("failed to load clusters: {e:?}");
+        Vec::new()
+    });
+
+    let points: Vec<ClusterPoint> = docs
+        .iter()
         .map(|d| ClusterPoint {
             id: d.id.clone(),
             name: d.name.clone(),

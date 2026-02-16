@@ -42,7 +42,8 @@ async fn main() -> eyre::Result<()> {
 
     // Load existing store
     let store = storage::Store::load(&config.store_path())?;
-    tracing::info!(documents = store.documents.len(), "loaded store");
+    let documents = store.document_count().unwrap_or(0);
+    tracing::info!(documents, "loaded store");
 
     let state = api::AppState {
         store: Arc::new(RwLock::new(store)),

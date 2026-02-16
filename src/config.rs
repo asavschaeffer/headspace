@@ -43,9 +43,9 @@ impl Config {
         })
     }
 
-    /// Returns the path to the document store file.
+    /// Returns the path to the SQLite document store file.
     pub fn store_path(&self) -> PathBuf {
-        self.data_dir.join("store.json")
+        self.data_dir.join("store.sqlite3")
     }
 
     /// Returns true if embedding generation is available.

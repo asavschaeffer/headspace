@@ -8,10 +8,52 @@ use crate::storage::Document;
 
 /// File extensions we can extract text from.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "txt", "md", "rs", "py", "js", "ts", "jsx", "tsx", "json", "toml", "yaml", "yml", "html",
-    "css", "scss", "c", "cpp", "h", "hpp", "go", "java", "sh", "bat", "ps1", "xml", "csv",
-    "log", "cfg", "ini", "env", "sql", "rb", "php", "swift", "kt", "r", "lua", "pl", "ex",
-    "exs", "zig", "nim", "v", "d", "makefile", "dockerfile",
+    "txt",
+    "md",
+    "rs",
+    "py",
+    "js",
+    "ts",
+    "jsx",
+    "tsx",
+    "json",
+    "toml",
+    "yaml",
+    "yml",
+    "html",
+    "css",
+    "scss",
+    "c",
+    "cpp",
+    "h",
+    "hpp",
+    "go",
+    "java",
+    "sh",
+    "bat",
+    "ps1",
+    "xml",
+    "csv",
+    "log",
+    "cfg",
+    "ini",
+    "env",
+    "sql",
+    "rb",
+    "php",
+    "swift",
+    "kt",
+    "r",
+    "lua",
+    "pl",
+    "ex",
+    "exs",
+    "zig",
+    "nim",
+    "v",
+    "d",
+    "makefile",
+    "dockerfile",
 ];
 
 /// Directories to skip during crawl.
@@ -39,8 +81,8 @@ const MAX_PREVIEW_LEN: usize = 2000;
 pub struct CrawlResult {
     /// All files found on disk (with content hashes computed).
     pub discovered: Vec<Document>,
-    /// Set of all absolute paths found (for detecting deletions).
-    pub discovered_paths: HashSet<String>,
+    /// Set of all file IDs found (for detecting deletions and renames).
+    pub discovered_file_ids: HashSet<String>,
 }
 
 /// Crawls a directory and returns discovered documents with content hashes.
@@ -57,7 +99,7 @@ pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
 
     let root = root.canonicalize()?;
     let mut discovered = Vec::new();
-    let mut discovered_paths = HashSet::new();
+    let mut discovered_file_ids = HashSet::new();
 
     for entry in WalkDir::new(&root)
         .follow_links(false)
@@ -116,7 +158,12 @@ pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
         };
 
         let abs_path = path.to_string_lossy().to_string();
-        discovered_paths.insert(abs_path.clone());
+        let file_id =
+            crate::storage::file_identity::file_key(path).unwrap_or_else(|e| {
+                tracing::warn!(path = %path.display(), error = %e, "falling back to path-based identity");
+                crate::storage::file_identity::fallback_file_key(path)
+            });
+        discovered_file_ids.insert(file_id.clone());
 
         let rel_path = path
             .strip_prefix(&root)
@@ -151,6 +198,7 @@ pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
             .map_or(0, |d| d.as_secs());
 
         discovered.push(Document::new(
+            file_id,
             content_hash,
             rel_path,
             abs_path,
@@ -165,7 +213,7 @@ pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
     tracing::info!(count = discovered.len(), "crawled directory");
     Ok(CrawlResult {
         discovered,
-        discovered_paths,
+        discovered_file_ids,
     })
 }
 

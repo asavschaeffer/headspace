@@ -11,8 +11,7 @@ const EMBEDDING_DIM: usize = 1024;
 const BATCH_SIZE: usize = 50;
 
 /// NVIDIA NIM embeddings API endpoint.
-const NVIDIA_EMBED_URL: &str =
-    "https://integrate.api.nvidia.com/v1/embeddings";
+const NVIDIA_EMBED_URL: &str = "https://integrate.api.nvidia.com/v1/embeddings";
 
 /// Request body for NVIDIA embeddings API.
 #[derive(Debug, Serialize)]
@@ -42,10 +41,7 @@ struct EmbedResponse {
 ///
 /// # Errors
 /// Returns an error if the API call fails.
-pub async fn generate_embeddings(
-    texts: &[String],
-    config: &Config,
-) -> eyre::Result<Vec<Vec<f32>>> {
+pub async fn generate_embeddings(texts: &[String], config: &Config) -> eyre::Result<Vec<Vec<f32>>> {
     let Some(api_key) = &config.nvidia_api_key else {
         tracing::warn!("no NVIDIA API key configured; using zero vectors");
         return Ok(texts.iter().map(|_| vec![0.0_f32; EMBEDDING_DIM]).collect());
@@ -120,10 +116,7 @@ pub async fn generate_embeddings(
 ///
 /// # Errors
 /// Returns an error if the API call fails.
-pub async fn generate_query_embedding(
-    query: &str,
-    config: &Config,
-) -> eyre::Result<Vec<f32>> {
+pub async fn generate_query_embedding(query: &str, config: &Config) -> eyre::Result<Vec<f32>> {
     let Some(api_key) = &config.nvidia_api_key else {
         return Ok(vec![0.0_f32; EMBEDDING_DIM]);
     };
@@ -153,12 +146,8 @@ pub async fn generate_query_embedding(
     }
 
     let embed_response: EmbedResponse = response.json().await?;
-    Ok(embed_response
-        .data
-        .into_iter()
-        .next()
-        .map_or_else(
-            || vec![0.0_f32; EMBEDDING_DIM],
-            |o| o.embedding.into_iter().map(|v| v as f32).collect(),
-        ))
+    Ok(embed_response.data.into_iter().next().map_or_else(
+        || vec![0.0_f32; EMBEDDING_DIM],
+        |o| o.embedding.into_iter().map(|v| v as f32).collect(),
+    ))
 }

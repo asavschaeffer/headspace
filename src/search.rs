@@ -12,11 +12,7 @@ pub struct SearchResult {
 /// Performs semantic search over documents using cosine similarity.
 ///
 /// Returns the top `limit` results sorted by descending similarity.
-pub fn search(
-    query_embedding: &[f32],
-    documents: &[&Document],
-    limit: usize,
-) -> Vec<SearchResult> {
+pub fn search(query_embedding: &[f32], documents: &[&Document], limit: usize) -> Vec<SearchResult> {
     if query_embedding.is_empty() || query_embedding.iter().all(|&v| v == 0.0) {
         // No valid embedding — fall back to returning all docs
         return documents
@@ -41,7 +37,11 @@ pub fn search(
         })
         .collect();
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
     results
 }
@@ -67,9 +67,5 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     }
 
     let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 {
-        0.0
-    } else {
-        dot / denom
-    }
+    if denom == 0.0 { 0.0 } else { dot / denom }
 }
