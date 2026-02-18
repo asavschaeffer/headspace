@@ -4,10 +4,45 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
-use crate::storage::Document;
+/// File metadata collected during crawl before cortex processing.
+#[derive(Debug, Clone)]
+pub struct CrawlEntry {
+    pub file_id: String,
+    pub content_hash: String,
+    pub rel_path: String,
+    pub abs_path: String,
+    pub name: String,
+    pub extension: String,
+    pub bytes: Vec<u8>,
+    pub modified_at: u64,
+}
 
-/// File extensions we can extract text from.
+/// Result of crawling a directory.
+#[derive(Debug)]
+pub struct CrawlResult {
+    /// All files found on disk.
+    pub discovered: Vec<CrawlEntry>,
+    /// Set of all file IDs found (for detecting deletions and renames).
+    pub discovered_file_ids: HashSet<String>,
+}
+
+/// Directories to skip during crawl.
+const SKIP_DIRS: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".headspace",
+    "dist",
+    "build",
+    ".next",
+];
+
+/// Extensions currently ingested by the crawler.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
+    // Text/code
     "txt",
     "md",
     "rs",
@@ -54,45 +89,32 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "d",
     "makefile",
     "dockerfile",
+    // Routed stubs
+    "pdf",
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "bmp",
+    "webp",
+    "heic",
+    "mp3",
+    "wav",
+    "m4a",
+    "flac",
+    "ogg",
+    "mp4",
+    "mov",
+    "mkv",
+    "avi",
+    "webm",
 ];
 
-/// Directories to skip during crawl.
-const SKIP_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "__pycache__",
-    ".venv",
-    "venv",
-    ".headspace",
-    "dist",
-    "build",
-    ".next",
-];
-
-/// Maximum file size to ingest (1 MB).
-const MAX_FILE_SIZE: u64 = 1_048_576;
-
-/// Maximum preview length in characters.
-const MAX_PREVIEW_LEN: usize = 2000;
-
-/// Result of crawling a directory.
-#[derive(Debug)]
-pub struct CrawlResult {
-    /// All files found on disk (with content hashes computed).
-    pub discovered: Vec<Document>,
-    /// Set of all file IDs found (for detecting deletions and renames).
-    pub discovered_file_ids: HashSet<String>,
-}
-
-/// Crawls a directory and returns discovered documents with content hashes.
-///
-/// Each document has its SHA-256 content hash computed during crawl,
-/// enabling efficient change detection without re-reading files later.
+/// Crawls a directory and returns candidate files with content hashes.
 ///
 /// # Errors
 /// Returns an error if the root path is not a valid directory.
-pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
+pub fn crawl(root: &Path, max_file_size: u64) -> eyre::Result<CrawlResult> {
     if !root.is_dir() {
         eyre::bail!("path is not a directory: {}", root.display());
     }
@@ -116,19 +138,17 @@ pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
 
         let path = entry.path();
 
-        // Check extension
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
-            .to_lowercase();
+            .to_ascii_lowercase();
 
-        // Also handle extensionless files like Makefile, Dockerfile
         let file_name = path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
-            .to_lowercase();
+            .to_ascii_lowercase();
 
         if !SUPPORTED_EXTENSIONS.contains(&ext.as_str())
             && !SUPPORTED_EXTENSIONS.contains(&file_name.as_str())
@@ -136,33 +156,32 @@ pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
             continue;
         }
 
-        // Check file size
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
-
-        if metadata.len() > MAX_FILE_SIZE {
+        if metadata.len() > max_file_size {
             continue;
         }
 
-        // Read content
-        let Ok(content) = std::fs::read_to_string(path) else {
-            continue; // Skip binary / unreadable files
+        let Ok(bytes) = std::fs::read(path) else {
+            continue;
         };
 
-        // Compute SHA-256 content hash
         let content_hash = {
             let mut hasher = Sha256::new();
-            hasher.update(content.as_bytes());
+            hasher.update(&bytes);
             format!("{:x}", hasher.finalize())
         };
 
         let abs_path = path.to_string_lossy().to_string();
-        let file_id =
-            crate::storage::file_identity::file_key(path).unwrap_or_else(|e| {
-                tracing::warn!(path = %path.display(), error = %e, "falling back to path-based identity");
-                crate::storage::file_identity::fallback_file_key(path)
-            });
+        let file_id = crate::storage::file_identity::file_key(path).unwrap_or_else(|e| {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "falling back to path-based identity"
+            );
+            crate::storage::file_identity::fallback_file_key(path)
+        });
         discovered_file_ids.insert(file_id.clone());
 
         let rel_path = path
@@ -177,37 +196,22 @@ pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
             .to_string_lossy()
             .to_string();
 
-        let content_length = content.len();
-        let content_preview = if content.len() > MAX_PREVIEW_LEN {
-            // Find a safe char boundary to truncate at
-            let end = content
-                .char_indices()
-                .map(|(i, _)| i)
-                .take_while(|&i| i <= MAX_PREVIEW_LEN)
-                .last()
-                .unwrap_or(0);
-            content[..end].to_string()
-        } else {
-            content
-        };
-
         let modified_at = metadata
             .modified()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_secs());
 
-        discovered.push(Document::new(
+        discovered.push(CrawlEntry {
             file_id,
             content_hash,
             rel_path,
             abs_path,
             name,
-            ext,
-            content_preview,
-            content_length,
+            extension: ext,
+            bytes,
             modified_at,
-        ));
+        });
     }
 
     tracing::info!(count = discovered.len(), "crawled directory");
@@ -217,12 +221,10 @@ pub fn crawl(root: &Path) -> eyre::Result<CrawlResult> {
     })
 }
 
-/// Returns true if a directory entry should be skipped.
 fn is_skipped_dir(entry: &walkdir::DirEntry) -> bool {
     if !entry.file_type().is_dir() {
         return false;
     }
     let name = entry.file_name().to_string_lossy();
-    // Skip hidden directories (starting with '.') and known skip dirs
     (name.starts_with('.') && name != ".") || SKIP_DIRS.iter().any(|&s| name == s)
 }

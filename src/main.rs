@@ -6,6 +6,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 mod api;
 mod cluster;
 mod config;
+mod cortex;
 mod embeddings;
 mod ingestion;
 mod search;

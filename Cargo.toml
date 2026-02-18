@@ -15,6 +15,7 @@ hdbscan = "0.12"
 mimalloc = "0.1"
 eyre = "0.6"
 anyhow = "1"
+async-trait = "0.1"
 color-eyre = "0.6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -25,6 +26,9 @@ tower-http = { version = "0.6", features = ["cors", "fs"] }
 sha2 = "0.10"
 rusqlite = { version = "0.38", features = ["bundled"] }
 file-id = "0.2"
+infer = "0.19"
+mime_guess = "2.0"
+base64 = "0.22"
 
 [lints.rust]
 missing_debug_implementations = "warn"

@@ -47,7 +47,7 @@ Directory on Disk
        │
        ▼
 ┌──────────────┐
-│  Storage     │  JSON file (.headspace/store.json)
+│  Storage     │  SQLite (.headspace/store.sqlite3)
 └──────┬───────┘
        │
        ▼
@@ -61,7 +61,7 @@ Directory on Disk
 
 ### Pipeline in Detail
 
-1. **Ingestion** — Walks the target directory recursively. Reads text-based files (`.md`, `.rs`, `.py`, `.js`, `.json`, `.toml`, `.yaml`, `.txt`, `.html`, `.css`, and 30+ more). Skips binaries, hidden directories, `node_modules`, `target`, `__pycache__`, etc. Max file size: 1 MB.
+1. **Ingestion** — Walks the target directory recursively. Reads supported text/code files and routes PDF/media files through multimodal extraction providers. Skips hidden directories, `node_modules`, `target`, `__pycache__`, etc. Max file size is configurable (default 1 MB).
 
 2. **Embeddings** — Sends file content (truncated to ~2000 chars) to the [NVIDIA NIM](https://build.nvidia.com/) embedding API in batches of 50. Uses `nv-embedqa-e5-v5` (1024 dimensions). Differentiates between "passage" embeddings (for documents) and "query" embeddings (for search) for better relevance. Falls back to zero vectors if no API key is set.
 
@@ -69,7 +69,7 @@ Directory on Disk
 
 4. **2D Projection** — Projects the high-dimensional embeddings (1024D) down to 2D using PCA (power iteration for the top 2 principal components). Coordinates are normalized to `[0, 1]` for rendering on a canvas.
 
-5. **Storage** — Everything is persisted to a single JSON file at `.headspace/store.json`. Each document stores: ID, paths, name, extension, content preview, embedding vector, cluster ID, 2D coordinates, modification time, and ingestion timestamp.
+5. **Storage** — Everything is persisted to SQLite at `.headspace/store.sqlite3` (with WAL). Each document stores identity, paths, MIME/pipeline metadata, summary/status/topics, embedding vector, clustering fields, and timestamps.
 
 6. **Server** — An [Axum](https://docs.rs/axum) HTTP server serves the REST API and the static frontend. All state is held in memory behind `Arc<RwLock<>>` for safe concurrent access. Ingestion runs as a background `tokio::spawn` task so the UI stays responsive.
 
@@ -92,7 +92,7 @@ cd headspace-5
 Create a `.env` file in the project root:
 
 ```
-NVIDIA-API-KEY = nvapi-your-key-here
+NVIDIA_API_KEY=nvapi-your-key-here
 ```
 
 Build and run:
@@ -109,9 +109,9 @@ All config is via environment variables (or `.env`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NVIDIA-API-KEY` | *(none)* | NVIDIA NIM API key for embeddings |
-| `HEADSPACE_PORT` | `3000` | Port for the web server |
-| `HEADSPACE_DATA_DIR` | `.headspace` | Directory for persistent storage |
+| `NVIDIA_API_KEY` | *(none)* | NVIDIA NIM API key for embeddings |
+| `PORT` | `3000` | Port for the web server |
+| `DATA_DIR` | `.headspace` | Directory for persistent storage |
 
 > Without an API key, headspace will still ingest and display files, but search and clustering won't be meaningful (all embeddings will be zero vectors).
 
@@ -129,7 +129,7 @@ The server will:
 - Generate embeddings via NVIDIA NIM
 - Run HDBSCAN clustering
 - Compute 2D projection coordinates
-- Save everything to `.headspace/store.json`
+- Save everything to `.headspace/store.sqlite3`
 
 The UI polls for status every 2 seconds and refreshes automatically when ingestion completes.
 
@@ -159,9 +159,9 @@ The server exposes these endpoints:
 |--------|-------|---------------|----------|
 | `GET` | `/api/status` | — | `{ document_count, has_embeddings, is_ingesting, root_path }` |
 | `POST` | `/api/ingest` | `{ "path": "C:\\..." }` | `{ message, document_count }` |
-| `GET` | `/api/documents` | — | `[{ id, name, rel_path, extension, content_length, cluster_id }]` |
+| `GET` | `/api/documents` | — | `[{ id, name, rel_path, extension, content_length, cluster_id, status, summary, topics }]` |
 | `GET` | `/api/document/:id` | — | Full document object (without embedding vector) |
-| `GET` | `/api/search` | `?q=...&limit=20` | `[{ id, name, rel_path, score, content_preview, cluster_id }]` |
+| `GET` | `/api/search` | `?q=...&limit=20` | `[{ id, name, rel_path, score, content_preview, summary, cluster_id }]` |
 | `GET` | `/api/clusters` | — | `[{ id, name, rel_path, extension, cluster_id, x, y }]` |
 
 ---
@@ -180,7 +180,15 @@ headspace-5/
 │   ├── config.rs           # Environment/config loading
 │   ├── ingestion.rs        # Directory crawler + text extraction
 │   ├── embeddings.rs       # NVIDIA NIM embedding API client
-│   ├── storage.rs          # Document model + JSON persistence
+│   ├── storage/
+│   │   ├── mod.rs          # Document model + SQLite persistence
+│   │   └── file_identity.rs
+│   ├── cortex/
+│   │   ├── mod.rs          # Router + enrichment pipeline
+│   │   ├── provider.rs     # Provider abstraction + fallback chain
+│   │   ├── router.rs
+│   │   ├── status.rs
+│   │   └── topics.rs
 │   ├── search.rs           # Cosine similarity search
 │   ├── cluster.rs          # HDBSCAN clustering + PCA projection
 │   └── api.rs              # Axum REST API routes + handlers
@@ -196,7 +204,9 @@ headspace-5/
 │   └── rust-guidelines.md  # Microsoft Pragmatic Rust Guidelines
 │
 └── .headspace/             # Runtime data (gitignored)
-    └── store.json          # Persisted document store
+    ├── store.sqlite3       # Persisted document store
+    ├── store.sqlite3-wal   # SQLite WAL
+    └── store.sqlite3-shm   # SQLite shared memory
 ```
 
 ---
@@ -210,7 +220,7 @@ headspace-5/
 | Embeddings | **NVIDIA NIM** (`nv-embedqa-e5-v5`) | High-quality 1024-dim embeddings, free tier |
 | Clustering | **HDBSCAN** | Density-based, no fixed k, handles noise |
 | 2D Projection | **PCA** (power iteration) | Lightweight, no extra dependencies |
-| Storage | **JSON file** | Zero-dependency persistence, human-readable |
+| Storage | **SQLite (rusqlite)** | ACID persistence, scalable indexing, additive migrations |
 | Allocator | **mimalloc** | Faster allocation for data-heavy workloads |
 | Error Handling | **eyre** + color-eyre | Rich, contextual error reports |
 | Logging | **tracing** | Structured, async-aware logging |
@@ -244,8 +254,8 @@ Binary files, files over 1 MB, and hidden directories are automatically skipped.
 
 ## Design Decisions
 
-**Why JSON storage instead of a database?**
-For an MVP, a single JSON file is the simplest thing that works. It avoids database dependencies, is human-readable, and handles ~10K documents with sub-second load times. The storage layer is abstracted so it can be swapped for something like [jasonisnthappy](https://github.com/sohzm/jasonisnthappy) later.
+**Why SQLite instead of JSON?**
+JSON snapshots break down as the index grows and make crash-safety difficult. SQLite gives transactional updates, durability, and better query performance while staying single-file and embeddable.
 
 **Why PCA instead of UMAP?**
 UMAP produces better 2D projections but requires native C dependencies. PCA is trivial to implement in pure Rust (50 iterations of power iteration) and gives a usable scatter plot for MVP. UMAP can be added via the [fast-umap](https://crates.io/crates/fast-umap) crate later.
@@ -268,7 +278,7 @@ The 2D visualization and interactive search need a browser. A server lets the fr
 
 ## Roadmap
 
-- [ ] Multimodal ingestion (images via Moondream API, PDFs)
+- [ ] Provider-native multimodal extraction APIs (PDF/image/audio/video uploads)
 - [ ] Chunked embeddings (paragraph-level, not just file-level)
 - [ ] UMAP for better 2D projections
 - [ ] LLM-powered directory restructuring suggestions

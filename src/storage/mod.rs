@@ -25,9 +25,15 @@ pub struct Document {
     pub name: String,
     /// File extension.
     pub extension: String,
+    /// MIME type inferred from file bytes and extension.
+    #[serde(default)]
+    pub mime_type: String,
+    /// Routed ingestion pipeline kind.
+    #[serde(default = "default_pipeline_kind")]
+    pub pipeline_kind: String,
     /// Preview of the file content (first ~2000 chars).
     pub content_preview: String,
-    /// Full text length in bytes.
+    /// Full content length in bytes.
     pub content_length: usize,
     /// Embedding vector (f32 precision).
     #[serde(default)]
@@ -51,9 +57,27 @@ pub struct Document {
     /// Lifecycle status marker.
     #[serde(default = "default_status")]
     pub status: String,
+    /// Confidence for status classification.
+    #[serde(default)]
+    pub status_confidence: f32,
     /// Extracted topics.
     #[serde(default)]
     pub topics: Vec<String>,
+    /// Confidence for topic extraction.
+    #[serde(default)]
+    pub topics_confidence: f32,
+    /// Named entities discovered in content.
+    #[serde(default)]
+    pub entities: Vec<String>,
+    /// Metadata schema version.
+    #[serde(default = "default_metadata_version")]
+    pub metadata_version: i32,
+    /// Metadata generation source.
+    #[serde(default = "default_metadata_source")]
+    pub metadata_source: String,
+    /// Last metadata enrichment timestamp.
+    #[serde(default)]
+    pub last_enriched_at: String,
 }
 
 fn default_cluster() -> i32 {
@@ -61,7 +85,19 @@ fn default_cluster() -> i32 {
 }
 
 fn default_status() -> String {
-    "reference".to_string()
+    "Reference".to_string()
+}
+
+fn default_pipeline_kind() -> String {
+    "unknown".to_string()
+}
+
+fn default_metadata_version() -> i32 {
+    1
+}
+
+fn default_metadata_source() -> String {
+    "heuristic".to_string()
 }
 
 impl Document {
@@ -86,6 +122,8 @@ impl Document {
             abs_path,
             name,
             extension,
+            mime_type: String::new(),
+            pipeline_kind: default_pipeline_kind(),
             content_preview,
             content_length,
             embedding: Vec::new(),
@@ -96,7 +134,13 @@ impl Document {
             ingested_at: chrono::Utc::now().to_rfc3339(),
             summary: String::new(),
             status: default_status(),
+            status_confidence: 0.0,
             topics: Vec::new(),
+            topics_confidence: 0.0,
+            entities: Vec::new(),
+            metadata_version: default_metadata_version(),
+            metadata_source: default_metadata_source(),
+            last_enriched_at: String::new(),
         }
     }
 }
@@ -176,13 +220,21 @@ impl Store {
                 f.abs_path,
                 f.name,
                 f.extension,
+                f.mime_type,
+                f.pipeline_kind,
                 f.content_preview,
                 f.content_length,
                 f.modified_at,
                 f.ingested_at,
                 m.summary,
                 m.status,
+                m.status_confidence,
                 m.topics,
+                m.topics_confidence,
+                m.entities,
+                m.metadata_version,
+                m.metadata_source,
+                m.last_enriched_at,
                 m.cluster_id,
                 m.x,
                 m.y,
@@ -209,13 +261,21 @@ impl Store {
                 f.abs_path,
                 f.name,
                 f.extension,
+                f.mime_type,
+                f.pipeline_kind,
                 f.content_preview,
                 f.content_length,
                 f.modified_at,
                 f.ingested_at,
                 m.summary,
                 m.status,
+                m.status_confidence,
                 m.topics,
+                m.topics_confidence,
+                m.entities,
+                m.metadata_version,
+                m.metadata_source,
+                m.last_enriched_at,
                 m.cluster_id,
                 m.x,
                 m.y,
@@ -242,13 +302,21 @@ impl Store {
                 f.abs_path,
                 f.name,
                 f.extension,
+                f.mime_type,
+                f.pipeline_kind,
                 f.content_preview,
                 f.content_length,
                 f.modified_at,
                 f.ingested_at,
                 m.summary,
                 m.status,
+                m.status_confidence,
                 m.topics,
+                m.topics_confidence,
+                m.entities,
+                m.metadata_version,
+                m.metadata_source,
+                m.last_enriched_at,
                 m.cluster_id,
                 m.x,
                 m.y,
@@ -328,13 +396,21 @@ impl Store {
                 f.abs_path,
                 f.name,
                 f.extension,
+                f.mime_type,
+                f.pipeline_kind,
                 f.content_preview,
                 f.content_length,
                 f.modified_at,
                 f.ingested_at,
                 m.summary,
                 m.status,
+                m.status_confidence,
                 m.topics,
+                m.topics_confidence,
+                m.entities,
+                m.metadata_version,
+                m.metadata_source,
+                m.last_enriched_at,
                 m.cluster_id,
                 m.x,
                 m.y,
@@ -357,13 +433,21 @@ impl Store {
                 f.abs_path,
                 f.name,
                 f.extension,
+                f.mime_type,
+                f.pipeline_kind,
                 f.content_preview,
                 f.content_length,
                 f.modified_at,
                 f.ingested_at,
                 m.summary,
                 m.status,
+                m.status_confidence,
                 m.topics,
+                m.topics_confidence,
+                m.entities,
+                m.metadata_version,
+                m.metadata_source,
+                m.last_enriched_at,
                 m.cluster_id,
                 m.x,
                 m.y,
@@ -426,6 +510,8 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
             rel_path TEXT NOT NULL,
             name TEXT NOT NULL,
             extension TEXT NOT NULL,
+            mime_type TEXT NOT NULL DEFAULT '',
+            pipeline_kind TEXT NOT NULL DEFAULT 'unknown',
             content_hash TEXT NOT NULL,
             content_preview TEXT NOT NULL,
             content_length INTEGER NOT NULL,
@@ -437,7 +523,13 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
             file_id TEXT PRIMARY KEY REFERENCES files(file_id) ON DELETE CASCADE,
             summary TEXT NOT NULL,
             status TEXT NOT NULL,
+            status_confidence REAL NOT NULL DEFAULT 0.0,
             topics TEXT NOT NULL,
+            topics_confidence REAL NOT NULL DEFAULT 0.0,
+            entities TEXT NOT NULL DEFAULT '[]',
+            metadata_version INTEGER NOT NULL DEFAULT 1,
+            metadata_source TEXT NOT NULL DEFAULT 'heuristic',
+            last_enriched_at TEXT NOT NULL DEFAULT '',
             cluster_id INTEGER NOT NULL DEFAULT -1,
             x REAL NOT NULL DEFAULT 0.0,
             y REAL NOT NULL DEFAULT 0.0
@@ -449,6 +541,64 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_files_abs_path ON files(abs_path);
         CREATE INDEX IF NOT EXISTS idx_files_doc_id ON files(doc_id);",
     )?;
+
+    // Additive migration for pre-Phase2 databases.
+    ensure_column(conn, "files", "mime_type", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(
+        conn,
+        "files",
+        "pipeline_kind",
+        "TEXT NOT NULL DEFAULT 'unknown'",
+    )?;
+    ensure_column(
+        conn,
+        "metadata",
+        "status_confidence",
+        "REAL NOT NULL DEFAULT 0.0",
+    )?;
+    ensure_column(
+        conn,
+        "metadata",
+        "topics_confidence",
+        "REAL NOT NULL DEFAULT 0.0",
+    )?;
+    ensure_column(conn, "metadata", "entities", "TEXT NOT NULL DEFAULT '[]'")?;
+    ensure_column(
+        conn,
+        "metadata",
+        "metadata_version",
+        "INTEGER NOT NULL DEFAULT 1",
+    )?;
+    ensure_column(
+        conn,
+        "metadata",
+        "metadata_source",
+        "TEXT NOT NULL DEFAULT 'heuristic'",
+    )?;
+    ensure_column(
+        conn,
+        "metadata",
+        "last_enriched_at",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    Ok(())
+}
+
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> eyre::Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let existing = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !existing.iter().any(|name| name == column) {
+        conn.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN {column} {definition};"
+        ))?;
+    }
     Ok(())
 }
 
@@ -466,6 +616,11 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
     let topics_json: String = row.get::<_, Option<String>>("topics")?.unwrap_or_default();
     let topics = serde_json::from_str(&topics_json).unwrap_or_default();
 
+    let entities_json: String = row
+        .get::<_, Option<String>>("entities")?
+        .unwrap_or_default();
+    let entities = serde_json::from_str(&entities_json).unwrap_or_default();
+
     let embedding_blob: Option<Vec<u8>> = row.get("embedding")?;
     let embedding = embedding_blob.map_or_else(Vec::new, |bytes| decode_embedding(&bytes));
 
@@ -480,6 +635,12 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         abs_path: row.get("abs_path")?,
         name: row.get("name")?,
         extension: row.get("extension")?,
+        mime_type: row
+            .get::<_, Option<String>>("mime_type")?
+            .unwrap_or_default(),
+        pipeline_kind: row
+            .get::<_, Option<String>>("pipeline_kind")?
+            .unwrap_or_else(default_pipeline_kind),
         content_preview: row.get("content_preview")?,
         content_length: usize::try_from(content_length_i64).unwrap_or(0),
         embedding,
@@ -492,7 +653,23 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         status: row
             .get::<_, Option<String>>("status")?
             .unwrap_or_else(default_status),
+        status_confidence: row
+            .get::<_, Option<f32>>("status_confidence")?
+            .unwrap_or(0.0),
         topics,
+        topics_confidence: row
+            .get::<_, Option<f32>>("topics_confidence")?
+            .unwrap_or(0.0),
+        entities,
+        metadata_version: row
+            .get::<_, Option<i32>>("metadata_version")?
+            .unwrap_or_else(default_metadata_version),
+        metadata_source: row
+            .get::<_, Option<String>>("metadata_source")?
+            .unwrap_or_else(default_metadata_source),
+        last_enriched_at: row
+            .get::<_, Option<String>>("last_enriched_at")?
+            .unwrap_or_default(),
     })
 }
 
@@ -511,15 +688,17 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
 
     tx.execute(
         "INSERT INTO files (
-            file_id, doc_id, abs_path, rel_path, name, extension, content_hash,
-            content_preview, content_length, modified_at, ingested_at, last_seen
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, unixepoch())
+            file_id, doc_id, abs_path, rel_path, name, extension, mime_type, pipeline_kind,
+            content_hash, content_preview, content_length, modified_at, ingested_at, last_seen
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, unixepoch())
          ON CONFLICT(file_id) DO UPDATE SET
             doc_id = excluded.doc_id,
             abs_path = excluded.abs_path,
             rel_path = excluded.rel_path,
             name = excluded.name,
             extension = excluded.extension,
+            mime_type = excluded.mime_type,
+            pipeline_kind = excluded.pipeline_kind,
             content_hash = excluded.content_hash,
             content_preview = excluded.content_preview,
             content_length = excluded.content_length,
@@ -533,6 +712,8 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             doc.rel_path,
             doc.name,
             doc.extension,
+            doc.mime_type,
+            doc.pipeline_kind,
             doc.content_hash,
             doc.content_preview,
             i64::try_from(doc.content_length)?,
@@ -542,12 +723,20 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
     )?;
 
     tx.execute(
-        "INSERT INTO metadata (file_id, summary, status, topics, cluster_id, x, y)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO metadata (
+            file_id, summary, status, status_confidence, topics, topics_confidence, entities,
+            metadata_version, metadata_source, last_enriched_at, cluster_id, x, y
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
          ON CONFLICT(file_id) DO UPDATE SET
             summary = excluded.summary,
             status = excluded.status,
+            status_confidence = excluded.status_confidence,
             topics = excluded.topics,
+            topics_confidence = excluded.topics_confidence,
+            entities = excluded.entities,
+            metadata_version = excluded.metadata_version,
+            metadata_source = excluded.metadata_source,
+            last_enriched_at = excluded.last_enriched_at,
             cluster_id = excluded.cluster_id,
             x = excluded.x,
             y = excluded.y",
@@ -555,7 +744,13 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             doc.file_id,
             doc.summary,
             doc.status,
+            doc.status_confidence,
             serde_json::to_string(&doc.topics)?,
+            doc.topics_confidence,
+            serde_json::to_string(&doc.entities)?,
+            doc.metadata_version,
+            doc.metadata_source,
+            doc.last_enriched_at,
             doc.cluster_id,
             doc.x,
             doc.y,

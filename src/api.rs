@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
@@ -11,6 +13,7 @@ use tokio::sync::RwLock;
 
 use crate::cluster::cluster_documents;
 use crate::config::Config;
+use crate::cortex::{self, IngestInput};
 use crate::embeddings;
 use crate::ingestion;
 use crate::search;
@@ -138,6 +141,12 @@ async fn ingest(
     }))
 }
 
+#[derive(Debug)]
+struct IngestWork {
+    doc: Document,
+    input: IngestInput,
+}
+
 /// Runs the diff-based ingestion pipeline.
 async fn run_ingest(
     path: &std::path::Path,
@@ -147,81 +156,149 @@ async fn run_ingest(
 ) -> eyre::Result<()> {
     tracing::info!(path = %path.display(), "starting ingestion");
 
-    let crawl_result = ingestion::crawl(path)?;
+    let crawl_result = ingestion::crawl(path, config.cortex_max_bytes)?;
     tracing::info!(count = crawl_result.discovered.len(), "files discovered");
 
-    let mut new_docs = Vec::new();
-    let mut changed_docs = Vec::new();
-    let mut unchanged_updates = Vec::new();
+    let mut embed_jobs: Vec<IngestWork> = Vec::new();
+    let mut metadata_jobs: Vec<IngestWork> = Vec::new();
     let mut unchanged_count: usize = 0;
+    let mut new_count: usize = 0;
+    let mut changed_count: usize = 0;
 
     {
         let store = store_lock.read().await;
-        for mut doc in crawl_result.discovered {
-            let existing = match store.find_by_file_id(&doc.file_id)? {
+        for entry in crawl_result.discovered {
+            let existing = match store.find_by_file_id(&entry.file_id)? {
                 Some(existing) => Some(existing),
-                None => store.find_by_path(&doc.abs_path)?,
+                None => store.find_by_path(&entry.abs_path)?,
             };
 
+            let input = IngestInput::new(
+                entry.abs_path.clone(),
+                entry.rel_path.clone(),
+                entry.file_id.clone(),
+                entry.bytes,
+                entry.extension.clone(),
+                entry.modified_at,
+                entry.content_hash.clone(),
+            );
+
+            let mut doc = Document::new(
+                entry.file_id.clone(),
+                entry.content_hash.clone(),
+                entry.rel_path.clone(),
+                entry.abs_path.clone(),
+                entry.name.clone(),
+                entry.extension.clone(),
+                String::new(),
+                input.bytes.len(),
+                entry.modified_at,
+            );
+
             match existing {
-                Some(existing) if existing.content_hash == doc.content_hash => {
+                Some(existing) if existing.content_hash == entry.content_hash => {
                     unchanged_count += 1;
-                    if existing.abs_path != doc.abs_path
-                        || existing.rel_path != doc.rel_path
-                        || existing.modified_at != doc.modified_at
-                        || existing.name != doc.name
-                    {
+                    let path_changed = existing.abs_path != entry.abs_path
+                        || existing.rel_path != entry.rel_path
+                        || existing.modified_at != entry.modified_at
+                        || existing.name != entry.name
+                        || existing.extension != entry.extension;
+                    let metadata_missing = existing.summary.trim().is_empty()
+                        || existing.status.trim().is_empty()
+                        || existing.mime_type.trim().is_empty()
+                        || existing.pipeline_kind.trim().is_empty()
+                        || existing.pipeline_kind.eq_ignore_ascii_case("unknown")
+                        || existing.metadata_version < 1;
+
+                    if path_changed || metadata_missing {
                         let mut updated = existing;
-                        updated.abs_path = doc.abs_path;
-                        updated.rel_path = doc.rel_path;
-                        updated.name = doc.name;
-                        updated.extension = doc.extension;
-                        updated.content_preview = doc.content_preview;
-                        updated.content_length = doc.content_length;
-                        updated.modified_at = doc.modified_at;
-                        unchanged_updates.push(updated);
+                        updated.abs_path = entry.abs_path;
+                        updated.rel_path = entry.rel_path;
+                        updated.name = entry.name;
+                        updated.extension = entry.extension;
+                        updated.content_hash = entry.content_hash;
+                        updated.modified_at = entry.modified_at;
+                        metadata_jobs.push(IngestWork {
+                            doc: updated,
+                            input,
+                        });
                     }
                 }
                 Some(existing) => {
+                    changed_count += 1;
                     doc.id = existing.id;
                     doc.cluster_id = existing.cluster_id;
                     doc.x = existing.x;
                     doc.y = existing.y;
-                    doc.summary = existing.summary;
-                    doc.status = existing.status;
-                    doc.topics = existing.topics;
-                    changed_docs.push(doc);
+                    doc.embedding = existing.embedding;
+                    embed_jobs.push(IngestWork { doc, input });
                 }
                 None => {
-                    new_docs.push(doc);
+                    new_count += 1;
+                    embed_jobs.push(IngestWork { doc, input });
                 }
             }
         }
     }
 
-    let new_count = new_docs.len();
-    let changed_count = changed_docs.len();
-    let needs_embedding = new_count + changed_count;
+    let needs_embedding = embed_jobs.len();
     tracing::info!(
         new = new_count,
         changed = changed_count,
         unchanged = unchanged_count,
+        metadata_refresh = metadata_jobs.len(),
         "diff complete"
     );
 
+    let mut pipeline_counts: HashMap<String, usize> = HashMap::new();
+    let mut metadata_source_counts: HashMap<String, usize> = HashMap::new();
+    let mut total_enrich_ms: u128 = 0;
+    let mut enrich_count: usize = 0;
+
+    let mut unchanged_updates = Vec::with_capacity(metadata_jobs.len());
+    for mut work in metadata_jobs {
+        let started = Instant::now();
+        let _extraction = cortex::enrich_document(&mut work.doc, &work.input, config).await?;
+        let elapsed = started.elapsed().as_millis();
+        total_enrich_ms += elapsed;
+        enrich_count += 1;
+        increment(&mut pipeline_counts, &work.doc.pipeline_kind);
+        increment(&mut metadata_source_counts, &work.doc.metadata_source);
+        tracing::debug!(
+            file = %work.doc.rel_path,
+            pipeline = %work.doc.pipeline_kind,
+            metadata_source = %work.doc.metadata_source,
+            elapsed_ms = elapsed,
+            "metadata refresh complete"
+        );
+        unchanged_updates.push(work.doc);
+    }
+
     let mut docs_to_embed: Vec<Document> = Vec::with_capacity(needs_embedding);
-    docs_to_embed.extend(new_docs);
-    docs_to_embed.extend(changed_docs);
+    let mut embed_texts: Vec<String> = Vec::with_capacity(needs_embedding);
+    for mut work in embed_jobs {
+        let started = Instant::now();
+        let extraction = cortex::enrich_document(&mut work.doc, &work.input, config).await?;
+        let elapsed = started.elapsed().as_millis();
+        total_enrich_ms += elapsed;
+        enrich_count += 1;
+        increment(&mut pipeline_counts, &work.doc.pipeline_kind);
+        increment(&mut metadata_source_counts, &work.doc.metadata_source);
+        tracing::debug!(
+            file = %work.doc.rel_path,
+            pipeline = %work.doc.pipeline_kind,
+            metadata_source = %work.doc.metadata_source,
+            elapsed_ms = elapsed,
+            "document enrichment complete"
+        );
+        embed_texts.push(extraction.canonical_text);
+        docs_to_embed.push(work.doc);
+    }
 
     if docs_to_embed.is_empty() {
         tracing::info!("no files changed, skipping embedding API calls");
     } else {
-        let texts: Vec<String> = docs_to_embed
-            .iter()
-            .map(|d| d.content_preview.clone())
-            .collect();
-        let embeddings = embeddings::generate_embeddings(&texts, config).await?;
-
+        let embeddings = embeddings::generate_embeddings(&embed_texts, config).await?;
         for (doc, emb) in docs_to_embed.iter_mut().zip(embeddings) {
             doc.embedding = emb;
         }
@@ -248,7 +325,18 @@ async fn run_ingest(
     let total_documents = all_docs.len();
     store.replace_documents(&all_docs)?;
     store.save()?;
-    tracing::info!("clustering complete");
+
+    let avg_enrich_ms = if enrich_count == 0 {
+        0
+    } else {
+        (total_enrich_ms / u128::from(enrich_count as u64)) as u64
+    };
+    tracing::info!(
+        ?pipeline_counts,
+        ?metadata_source_counts,
+        average_enrich_ms = avg_enrich_ms,
+        "cortex metrics"
+    );
 
     let stats = IngestStats {
         new_files: new_count,
@@ -278,6 +366,10 @@ async fn run_ingest(
     Ok(())
 }
 
+fn increment(map: &mut HashMap<String, usize>, key: &str) {
+    *map.entry(key.to_string()).or_default() += 1;
+}
+
 #[derive(Serialize)]
 struct DocumentSummary {
     id: String,
@@ -286,6 +378,9 @@ struct DocumentSummary {
     extension: String,
     content_length: usize,
     cluster_id: i32,
+    status: String,
+    summary: String,
+    topics: Vec<String>,
 }
 
 async fn list_documents(State(state): State<AppState>) -> Json<Vec<DocumentSummary>> {
@@ -304,6 +399,9 @@ async fn list_documents(State(state): State<AppState>) -> Json<Vec<DocumentSumma
             extension: d.extension.clone(),
             content_length: d.content_length,
             cluster_id: d.cluster_id,
+            status: d.status.clone(),
+            summary: d.summary.clone(),
+            topics: d.topics.clone(),
         })
         .collect();
     Json(summaries)
@@ -345,6 +443,7 @@ struct SearchResultResponse {
     rel_path: String,
     extension: String,
     content_preview: String,
+    summary: String,
     score: f64,
     cluster_id: i32,
 }
@@ -375,6 +474,7 @@ async fn search_documents(
             rel_path: r.document.rel_path,
             extension: r.document.extension,
             content_preview: r.document.content_preview.chars().take(500).collect(),
+            summary: r.document.summary,
             score: r.score,
             cluster_id: r.document.cluster_id,
         })
