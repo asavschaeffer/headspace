@@ -51,6 +51,7 @@ async fn main() -> eyre::Result<()> {
         config: Arc::new(config.clone()),
         ingesting: Arc::new(RwLock::new(false)),
         last_ingest_stats: Arc::new(RwLock::new(None)),
+        progress_tx: Arc::new(tokio::sync::broadcast::channel(64).0),
     };
 
     // Build routes: API + static frontend

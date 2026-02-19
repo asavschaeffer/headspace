@@ -1,27 +1,35 @@
 use std::collections::HashSet;
+use std::io::{BufReader, Read};
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
-/// File metadata collected during crawl before cortex processing.
+/// Lightweight file metadata collected during discovery.
 #[derive(Debug, Clone)]
-pub struct CrawlEntry {
+pub struct DiscoveredFile {
     pub file_id: String,
     pub content_hash: String,
     pub rel_path: String,
     pub abs_path: String,
     pub name: String,
     pub extension: String,
-    pub bytes: Vec<u8>,
+    pub size_bytes: u64,
     pub modified_at: u64,
 }
 
-/// Result of crawling a directory.
+/// Full entry with content bytes, created only when needed downstream.
+#[derive(Debug, Clone)]
+pub struct CrawlEntry {
+    pub discovered: DiscoveredFile,
+    pub bytes: Vec<u8>,
+}
+
+/// Result of scanning a directory in discovery mode.
 #[derive(Debug)]
-pub struct CrawlResult {
+pub struct DiscoveryResult {
     /// All files found on disk.
-    pub discovered: Vec<CrawlEntry>,
+    pub discovered: Vec<DiscoveredFile>,
     /// Set of all file IDs found (for detecting deletions and renames).
     pub discovered_file_ids: HashSet<String>,
 }
@@ -110,11 +118,11 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "webm",
 ];
 
-/// Crawls a directory and returns candidate files with content hashes.
+/// Walks a directory and discovers candidate files using streaming hashes.
 ///
 /// # Errors
 /// Returns an error if the root path is not a valid directory.
-pub fn crawl(root: &Path, max_file_size: u64) -> eyre::Result<CrawlResult> {
+pub fn discover(root: &Path, max_file_size: u64) -> eyre::Result<DiscoveryResult> {
     if !root.is_dir() {
         eyre::bail!("path is not a directory: {}", root.display());
     }
@@ -159,18 +167,13 @@ pub fn crawl(root: &Path, max_file_size: u64) -> eyre::Result<CrawlResult> {
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
-        if metadata.len() > max_file_size {
+        let size_bytes = metadata.len();
+        if size_bytes > max_file_size {
             continue;
         }
 
-        let Ok(bytes) = std::fs::read(path) else {
+        let Ok(content_hash) = hash_file_streaming(path) else {
             continue;
-        };
-
-        let content_hash = {
-            let mut hasher = Sha256::new();
-            hasher.update(&bytes);
-            format!("{:x}", hasher.finalize())
         };
 
         let abs_path = path.to_string_lossy().to_string();
@@ -202,23 +205,40 @@ pub fn crawl(root: &Path, max_file_size: u64) -> eyre::Result<CrawlResult> {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_secs());
 
-        discovered.push(CrawlEntry {
+        discovered.push(DiscoveredFile {
             file_id,
             content_hash,
             rel_path,
             abs_path,
             name,
             extension: ext,
-            bytes,
+            size_bytes,
             modified_at,
         });
     }
 
-    tracing::info!(count = discovered.len(), "crawled directory");
-    Ok(CrawlResult {
+    tracing::info!(count = discovered.len(), "discovery walk complete");
+    Ok(DiscoveryResult {
         discovered,
         discovered_file_ids,
     })
+}
+
+fn hash_file_streaming(path: &Path) -> eyre::Result<String> {
+    let file = std::fs::File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buf = [0_u8; 64 * 1024];
+
+    loop {
+        let bytes = reader.read(&mut buf)?;
+        if bytes == 0 {
+            break;
+        }
+        hasher.update(&buf[..bytes]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn is_skipped_dir(entry: &walkdir::DirEntry) -> bool {

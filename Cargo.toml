@@ -1,12 +1,13 @@
 [package]
 name = "headspace"
-version = "0.1.0"
-edition = "2024"
+version = "0.2.0"
+edition = "2026"
 description = "Computer information organization and retrieval for humans and LLMs"
 
 [dependencies]
 axum = { version = "0.8", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json"] }

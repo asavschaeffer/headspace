@@ -25,6 +25,9 @@ pub struct Document {
     pub name: String,
     /// File extension.
     pub extension: String,
+    /// Human review status in the approval workflow.
+    #[serde(default = "default_review_status")]
+    pub review_status: String,
     /// MIME type inferred from file bytes and extension.
     #[serde(default)]
     pub mime_type: String,
@@ -33,6 +36,9 @@ pub struct Document {
     pub pipeline_kind: String,
     /// Preview of the file content (first ~2000 chars).
     pub content_preview: String,
+    /// Canonical extracted text used for embeddings (can exceed preview length).
+    #[serde(default)]
+    pub content_canonical: String,
     /// Full content length in bytes.
     pub content_length: usize,
     /// Embedding vector (f32 precision).
@@ -80,12 +86,25 @@ pub struct Document {
     pub last_enriched_at: String,
 }
 
+/// Overseen directory tracked for repeated scans.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverseenDir {
+    pub id: String,
+    pub path: String,
+    pub added_at: String,
+    pub last_scan_at: Option<String>,
+}
+
 fn default_cluster() -> i32 {
     -1
 }
 
 fn default_status() -> String {
     "Reference".to_string()
+}
+
+fn default_review_status() -> String {
+    "pending_review".to_string()
 }
 
 fn default_pipeline_kind() -> String {
@@ -122,9 +141,11 @@ impl Document {
             abs_path,
             name,
             extension,
+            review_status: default_review_status(),
             mime_type: String::new(),
             pipeline_kind: default_pipeline_kind(),
             content_preview,
+            content_canonical: String::new(),
             content_length,
             embedding: Vec::new(),
             cluster_id: -1,
@@ -151,6 +172,39 @@ pub struct Store {
     db_path: PathBuf,
     root_path: String,
 }
+
+const DOCUMENT_SELECT: &str = "SELECT
+    f.doc_id AS id,
+    f.file_id,
+    f.content_hash,
+    f.rel_path,
+    f.abs_path,
+    f.name,
+    f.extension,
+    f.review_status,
+    f.mime_type,
+    f.pipeline_kind,
+    f.content_preview,
+    f.content_canonical,
+    f.content_length,
+    f.modified_at,
+    f.ingested_at,
+    m.summary,
+    m.status,
+    m.status_confidence,
+    m.topics,
+    m.topics_confidence,
+    m.entities,
+    m.metadata_version,
+    m.metadata_source,
+    m.last_enriched_at,
+    m.cluster_id,
+    m.x,
+    m.y,
+    v.embedding
+ FROM files f
+ LEFT JOIN metadata m ON m.file_id = f.file_id
+ LEFT JOIN vectors v ON v.file_id = f.file_id";
 
 impl Store {
     /// Opens (or creates) the SQLite store and runs schema migrations.
@@ -210,124 +264,22 @@ impl Store {
     /// Finds a document by absolute path.
     pub fn find_by_path(&self, abs_path: &str) -> eyre::Result<Option<Document>> {
         let conn = self.connect()?;
-        fetch_single(
-            &conn,
-            "SELECT
-                f.doc_id AS id,
-                f.file_id,
-                f.content_hash,
-                f.rel_path,
-                f.abs_path,
-                f.name,
-                f.extension,
-                f.mime_type,
-                f.pipeline_kind,
-                f.content_preview,
-                f.content_length,
-                f.modified_at,
-                f.ingested_at,
-                m.summary,
-                m.status,
-                m.status_confidence,
-                m.topics,
-                m.topics_confidence,
-                m.entities,
-                m.metadata_version,
-                m.metadata_source,
-                m.last_enriched_at,
-                m.cluster_id,
-                m.x,
-                m.y,
-                v.embedding
-             FROM files f
-             LEFT JOIN metadata m ON m.file_id = f.file_id
-             LEFT JOIN vectors v ON v.file_id = f.file_id
-             WHERE f.abs_path = ?1
-             LIMIT 1",
-            params![abs_path],
-        )
+        let sql = format!("{DOCUMENT_SELECT} WHERE f.abs_path = ?1 LIMIT 1");
+        fetch_single(&conn, &sql, params![abs_path])
     }
 
     /// Finds a document by file identity.
     pub fn find_by_file_id(&self, file_id: &str) -> eyre::Result<Option<Document>> {
         let conn = self.connect()?;
-        fetch_single(
-            &conn,
-            "SELECT
-                f.doc_id AS id,
-                f.file_id,
-                f.content_hash,
-                f.rel_path,
-                f.abs_path,
-                f.name,
-                f.extension,
-                f.mime_type,
-                f.pipeline_kind,
-                f.content_preview,
-                f.content_length,
-                f.modified_at,
-                f.ingested_at,
-                m.summary,
-                m.status,
-                m.status_confidence,
-                m.topics,
-                m.topics_confidence,
-                m.entities,
-                m.metadata_version,
-                m.metadata_source,
-                m.last_enriched_at,
-                m.cluster_id,
-                m.x,
-                m.y,
-                v.embedding
-             FROM files f
-             LEFT JOIN metadata m ON m.file_id = f.file_id
-             LEFT JOIN vectors v ON v.file_id = f.file_id
-             WHERE f.file_id = ?1
-             LIMIT 1",
-            params![file_id],
-        )
+        let sql = format!("{DOCUMENT_SELECT} WHERE f.file_id = ?1 LIMIT 1");
+        fetch_single(&conn, &sql, params![file_id])
     }
 
     /// Finds a document by API ID.
     pub fn find_by_id(&self, id: &str) -> eyre::Result<Option<Document>> {
         let conn = self.connect()?;
-        fetch_single(
-            &conn,
-            "SELECT
-                f.doc_id AS id,
-                f.file_id,
-                f.content_hash,
-                f.rel_path,
-                f.abs_path,
-                f.name,
-                f.extension,
-                f.mime_type,
-                f.pipeline_kind,
-                f.content_preview,
-                f.content_length,
-                f.modified_at,
-                f.ingested_at,
-                m.summary,
-                m.status,
-                m.status_confidence,
-                m.topics,
-                m.topics_confidence,
-                m.entities,
-                m.metadata_version,
-                m.metadata_source,
-                m.last_enriched_at,
-                m.cluster_id,
-                m.x,
-                m.y,
-                v.embedding
-             FROM files f
-             LEFT JOIN metadata m ON m.file_id = f.file_id
-             LEFT JOIN vectors v ON v.file_id = f.file_id
-             WHERE f.doc_id = ?1
-             LIMIT 1",
-            params![id],
-        )
+        let sql = format!("{DOCUMENT_SELECT} WHERE f.doc_id = ?1 LIMIT 1");
+        fetch_single(&conn, &sql, params![id])
     }
 
     /// Inserts or updates a document.
@@ -385,77 +337,35 @@ impl Store {
         Ok(removed)
     }
 
-    /// Returns all documents sorted by relative path.
-    pub fn documents_sorted(&self) -> eyre::Result<Vec<Document>> {
-        self.query_documents(
-            "SELECT
-                f.doc_id AS id,
-                f.file_id,
-                f.content_hash,
-                f.rel_path,
-                f.abs_path,
-                f.name,
-                f.extension,
-                f.mime_type,
-                f.pipeline_kind,
-                f.content_preview,
-                f.content_length,
-                f.modified_at,
-                f.ingested_at,
-                m.summary,
-                m.status,
-                m.status_confidence,
-                m.topics,
-                m.topics_confidence,
-                m.entities,
-                m.metadata_version,
-                m.metadata_source,
-                m.last_enriched_at,
-                m.cluster_id,
-                m.x,
-                m.y,
-                v.embedding
-             FROM files f
-             LEFT JOIN metadata m ON m.file_id = f.file_id
-             LEFT JOIN vectors v ON v.file_id = f.file_id
-             ORDER BY f.rel_path ASC",
-        )
+    /// Returns approved documents sorted by relative path.
+    pub fn documents_sorted_approved(&self) -> eyre::Result<Vec<Document>> {
+        let sql =
+            format!("{DOCUMENT_SELECT} WHERE f.review_status = 'approved' ORDER BY f.rel_path ASC");
+        self.query_documents(&sql)
     }
 
-    /// Returns all indexed documents.
-    pub fn all_documents(&self) -> eyre::Result<Vec<Document>> {
-        self.query_documents(
-            "SELECT
-                f.doc_id AS id,
-                f.file_id,
-                f.content_hash,
-                f.rel_path,
-                f.abs_path,
-                f.name,
-                f.extension,
-                f.mime_type,
-                f.pipeline_kind,
-                f.content_preview,
-                f.content_length,
-                f.modified_at,
-                f.ingested_at,
-                m.summary,
-                m.status,
-                m.status_confidence,
-                m.topics,
-                m.topics_confidence,
-                m.entities,
-                m.metadata_version,
-                m.metadata_source,
-                m.last_enriched_at,
-                m.cluster_id,
-                m.x,
-                m.y,
-                v.embedding
-             FROM files f
-             LEFT JOIN metadata m ON m.file_id = f.file_id
-             LEFT JOIN vectors v ON v.file_id = f.file_id",
-        )
+    /// Returns all approved documents.
+    pub fn approved_documents(&self) -> eyre::Result<Vec<Document>> {
+        let sql = format!("{DOCUMENT_SELECT} WHERE f.review_status = 'approved'");
+        self.query_documents(&sql)
+    }
+
+    /// Returns all pending review documents.
+    pub fn pending_review_documents(&self) -> eyre::Result<Vec<Document>> {
+        let sql = format!(
+            "{DOCUMENT_SELECT} WHERE f.review_status = 'pending_review' ORDER BY f.abs_path ASC"
+        );
+        self.query_documents(&sql)
+    }
+
+    /// Sets a review status for a file identity.
+    pub fn set_review_status(&mut self, file_id: &str, status: &str) -> eyre::Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE files SET review_status = ?1, last_seen = unixepoch() WHERE file_id = ?2",
+            params![status, file_id],
+        )?;
+        Ok(())
     }
 
     /// Writes back an updated set of documents (used after clustering).
@@ -466,6 +376,72 @@ impl Store {
             write_document(&tx, doc)?;
         }
         tx.commit()?;
+        Ok(())
+    }
+
+    /// Lists all overseen directories.
+    pub fn list_overseen_dirs(&self) -> eyre::Result<Vec<OverseenDir>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, path, added_at, last_scan_at FROM overseen_dirs ORDER BY path ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(OverseenDir {
+                    id: row.get("id")?,
+                    path: row.get("path")?,
+                    added_at: row.get("added_at")?,
+                    last_scan_at: row.get("last_scan_at")?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Adds a directory to overseen list (or returns existing if present).
+    pub fn add_overseen_dir(&mut self, path: &str) -> eyre::Result<OverseenDir> {
+        let conn = self.connect()?;
+        let id = Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO overseen_dirs (id, path, added_at, last_scan_at)
+             VALUES (?1, ?2, ?3, NULL)
+             ON CONFLICT(path) DO NOTHING",
+            params![id, path, now],
+        )?;
+
+        let dir = conn.query_row(
+            "SELECT id, path, added_at, last_scan_at FROM overseen_dirs WHERE path = ?1 LIMIT 1",
+            params![path],
+            |row| {
+                Ok(OverseenDir {
+                    id: row.get("id")?,
+                    path: row.get("path")?,
+                    added_at: row.get("added_at")?,
+                    last_scan_at: row.get("last_scan_at")?,
+                })
+            },
+        )?;
+
+        Ok(dir)
+    }
+
+    /// Removes a directory from overseen list.
+    pub fn remove_overseen_dir(&mut self, id: &str) -> eyre::Result<()> {
+        let conn = self.connect()?;
+        conn.execute("DELETE FROM overseen_dirs WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Updates scan timestamp for an overseen directory.
+    pub fn touch_overseen_dir(&mut self, id: &str) -> eyre::Result<()> {
+        let conn = self.connect()?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE overseen_dirs SET last_scan_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
         Ok(())
     }
 
@@ -510,10 +486,12 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
             rel_path TEXT NOT NULL,
             name TEXT NOT NULL,
             extension TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'pending_review',
             mime_type TEXT NOT NULL DEFAULT '',
             pipeline_kind TEXT NOT NULL DEFAULT 'unknown',
             content_hash TEXT NOT NULL,
             content_preview TEXT NOT NULL,
+            content_canonical TEXT NOT NULL DEFAULT '',
             content_length INTEGER NOT NULL,
             modified_at INTEGER NOT NULL,
             ingested_at TEXT NOT NULL,
@@ -538,12 +516,30 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
             file_id TEXT PRIMARY KEY REFERENCES files(file_id) ON DELETE CASCADE,
             embedding BLOB NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS overseen_dirs (
+            id TEXT PRIMARY KEY,
+            path TEXT NOT NULL UNIQUE,
+            added_at TEXT NOT NULL,
+            last_scan_at TEXT
+        );
         CREATE INDEX IF NOT EXISTS idx_files_abs_path ON files(abs_path);
         CREATE INDEX IF NOT EXISTS idx_files_doc_id ON files(doc_id);",
     )?;
 
     // Additive migration for pre-Phase2 databases.
+    ensure_column(
+        conn,
+        "files",
+        "review_status",
+        "TEXT NOT NULL DEFAULT 'pending_review'",
+    )?;
     ensure_column(conn, "files", "mime_type", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(
+        conn,
+        "files",
+        "content_canonical",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
     ensure_column(
         conn,
         "files",
@@ -635,6 +631,9 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         abs_path: row.get("abs_path")?,
         name: row.get("name")?,
         extension: row.get("extension")?,
+        review_status: row
+            .get::<_, Option<String>>("review_status")?
+            .unwrap_or_else(default_review_status),
         mime_type: row
             .get::<_, Option<String>>("mime_type")?
             .unwrap_or_default(),
@@ -642,6 +641,9 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
             .get::<_, Option<String>>("pipeline_kind")?
             .unwrap_or_else(default_pipeline_kind),
         content_preview: row.get("content_preview")?,
+        content_canonical: row
+            .get::<_, Option<String>>("content_canonical")?
+            .unwrap_or_default(),
         content_length: usize::try_from(content_length_i64).unwrap_or(0),
         embedding,
         cluster_id: row.get::<_, Option<i32>>("cluster_id")?.unwrap_or(-1),
@@ -688,19 +690,21 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
 
     tx.execute(
         "INSERT INTO files (
-            file_id, doc_id, abs_path, rel_path, name, extension, mime_type, pipeline_kind,
-            content_hash, content_preview, content_length, modified_at, ingested_at, last_seen
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, unixepoch())
+            file_id, doc_id, abs_path, rel_path, name, extension, review_status, mime_type,
+            pipeline_kind, content_hash, content_preview, content_canonical, content_length, modified_at, ingested_at, last_seen
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, unixepoch())
          ON CONFLICT(file_id) DO UPDATE SET
             doc_id = excluded.doc_id,
             abs_path = excluded.abs_path,
             rel_path = excluded.rel_path,
             name = excluded.name,
             extension = excluded.extension,
+            review_status = excluded.review_status,
             mime_type = excluded.mime_type,
             pipeline_kind = excluded.pipeline_kind,
             content_hash = excluded.content_hash,
             content_preview = excluded.content_preview,
+            content_canonical = excluded.content_canonical,
             content_length = excluded.content_length,
             modified_at = excluded.modified_at,
             ingested_at = excluded.ingested_at,
@@ -712,10 +716,12 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             doc.rel_path,
             doc.name,
             doc.extension,
+            doc.review_status,
             doc.mime_type,
             doc.pipeline_kind,
             doc.content_hash,
             doc.content_preview,
+            doc.content_canonical,
             i64::try_from(doc.content_length)?,
             i64::try_from(doc.modified_at)?,
             doc.ingested_at,
