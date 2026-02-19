@@ -4,6 +4,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
+const MAX_RETRIES: u32 = 3;
+const RETRY_BASE_MS: u64 = 500;
+
+/// Waits with exponential backoff + jitter for a given attempt index (0-based).
+async fn backoff_delay(attempt: u32) {
+    use std::time::Duration;
+    let base = RETRY_BASE_MS * u64::from(1u32 << attempt);
+    let jitter = u64::from(rand_jitter(attempt));
+    tokio::time::sleep(Duration::from_millis(base + jitter)).await;
+}
+
+/// Cheap deterministic jitter: just reuse the attempt index as a seed offset.
+fn rand_jitter(attempt: u32) -> u32 {
+    // Not truly random, but avoids the `rand` dependency and prevents thundering herd
+    // within a single ingest run. Good enough for a single-client app.
+    (attempt.wrapping_mul(6_364_136_u32)).wrapping_add(1_442_695) % 300
+}
+
 /// Embedding dimension for NVIDIA nv-embedqa-e5-v5 (and compatible models).
 pub const EMBEDDING_DIM: usize = 1024;
 
@@ -71,29 +89,25 @@ pub async fn generate_embeddings(texts: &[String], config: &Config) -> eyre::Res
             truncate: "END".to_string(),
         };
 
-        let response = client
-            .post(&embed_url)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await?;
+        let batch_result = send_batch_with_retry(
+            &client,
+            &embed_url,
+            api_key,
+            &request,
+            chunk.len(),
+        )
+        .await;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            tracing::error!(%status, body, "embedding API error");
-            // Fall back to zero vectors for this batch
-            for _ in chunk {
-                all_embeddings.push(vec![0.0_f32; EMBEDDING_DIM]);
+        match batch_result {
+            Ok(embeddings) => {
+                all_embeddings.extend(embeddings);
             }
-            continue;
-        }
-
-        let embed_response: EmbedResponse = response.json().await?;
-        for obj in embed_response.data {
-            // Downcast f64 → f32 at the API boundary
-            all_embeddings.push(obj.embedding.into_iter().map(|v| v as f32).collect());
+            Err(err) => {
+                tracing::error!(error = %err, batch_size = chunk.len(), "embedding batch failed after retries; using zero vectors");
+                for _ in chunk {
+                    all_embeddings.push(vec![0.0_f32; EMBEDDING_DIM]);
+                }
+            }
         }
 
         // Brief pause between batches to avoid rate limiting
@@ -106,6 +120,68 @@ pub async fn generate_embeddings(texts: &[String], config: &Config) -> eyre::Res
     }
 
     Ok(all_embeddings)
+}
+
+/// Sends a single embedding batch, retrying up to `MAX_RETRIES` times on 429.
+async fn send_batch_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    request: &EmbedRequest,
+    expected_count: usize,
+) -> eyre::Result<Vec<Vec<f32>>> {
+    let mut last_err = String::new();
+    for attempt in 0..=MAX_RETRIES {
+        let response = client
+            .post(url)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .header("Content-Type", "application/json")
+            .json(request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = response
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok());
+            if attempt < MAX_RETRIES {
+                if let Some(secs) = retry_after {
+                    tracing::warn!(attempt, secs, "embedding 429 — honouring Retry-After");
+                    tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+                } else {
+                    tracing::warn!(attempt, "embedding 429 — backing off");
+                    backoff_delay(attempt).await;
+                }
+                last_err = format!("429 on attempt {attempt}");
+                continue;
+            }
+            eyre::bail!("embedding rate-limited after {MAX_RETRIES} retries");
+        }
+
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            tracing::error!(%status, body, "embedding API error");
+            eyre::bail!("http {status}");
+        }
+
+        let embed_response: EmbedResponse = response.json().await?;
+        if embed_response.data.len() != expected_count {
+            tracing::warn!(
+                got = embed_response.data.len(),
+                expected = expected_count,
+                "embedding response length mismatch"
+            );
+        }
+        return Ok(embed_response
+            .data
+            .into_iter()
+            .map(|o| o.embedding.into_iter().map(|v| v as f32).collect())
+            .collect());
+    }
+    eyre::bail!("embedding batch failed: {last_err}")
 }
 
 /// Generates an embedding for a single query string.

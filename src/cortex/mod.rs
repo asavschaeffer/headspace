@@ -228,9 +228,19 @@ pub async fn enrich_document(
         PipelineKind::Unknown => Box::new(UnknownPipeline),
     };
 
+    let mut warnings: Vec<String> = Vec::new();
+
+    // Warn on unsupported file types that cannot be meaningfully enriched.
+    if kind == PipelineKind::Unknown {
+        warnings.push("Extraction: unsupported file type".to_string());
+    }
+
     let mut extraction = pipeline.extract(input)?;
     let mut extraction_source = "heuristic".to_string();
-    if let Some(result) = extract_multimodal_text(input, extraction.pipeline_kind, config).await {
+
+    if let Some(result) =
+        extract_multimodal_text(input, extraction.pipeline_kind, config, &mut warnings).await
+    {
         extraction.canonical_text = result.text;
         extraction.content_preview = truncate_chars(&extraction.canonical_text, MAX_PREVIEW_LEN);
         extraction_source = result.provider.as_str().to_string();
@@ -245,7 +255,11 @@ pub async fn enrich_document(
         );
     }
 
-    let metadata = generate_metadata(&extraction, input, document, config).await?;
+    let (metadata, summary_warning) =
+        generate_metadata(&extraction, input, document, config).await?;
+    if let Some(w) = summary_warning {
+        warnings.push(w);
+    }
 
     document.file_id.clone_from(&input.file_id);
     document.abs_path.clone_from(&input.abs_path);
@@ -269,6 +283,7 @@ pub async fn enrich_document(
         metadata.metadata_source
     };
     document.last_enriched_at = chrono::Utc::now().to_rfc3339();
+    document.enrichment_warnings = warnings;
 
     Ok(extraction)
 }
@@ -277,6 +292,7 @@ async fn extract_multimodal_text(
     input: &IngestInput,
     kind: PipelineKind,
     config: &Config,
+    warnings: &mut Vec<String>,
 ) -> Option<provider::ProviderResult> {
     let task = match kind {
         PipelineKind::Pdf => Some(provider::TaskKind::PdfExtract),
@@ -301,6 +317,7 @@ async fn extract_multimodal_text(
                 error = %err,
                 "multimodal extraction fallback to deterministic placeholder"
             );
+            warnings.push("Extraction: provider fallback used (all providers failed)".to_string());
             None
         }
     }
@@ -361,7 +378,7 @@ async fn generate_metadata(
     input: &IngestInput,
     document: &Document,
     config: &Config,
-) -> eyre::Result<HeadspaceMetadata> {
+) -> eyre::Result<(HeadspaceMetadata, Option<String>)> {
     let summary_prompt = if let Some(note) = input.user_note.as_deref() {
         let trimmed = note.trim();
         if trimmed.is_empty() {
@@ -372,7 +389,7 @@ async fn generate_metadata(
     } else {
         extraction.canonical_text.clone()
     };
-    let summary = summarize_with_fallback(&summary_prompt, config).await?;
+    let (summary, summary_warning) = summarize_with_fallback(&summary_prompt, config).await?;
     let (topics, topics_confidence, entities) =
         topics::extract_topics_and_entities(&extraction.canonical_text, &input.ext);
 
@@ -398,19 +415,25 @@ async fn generate_metadata(
         &thresholds,
     );
 
-    Ok(HeadspaceMetadata {
-        summary: summary.summary,
-        status,
-        status_confidence,
-        topics,
-        topics_confidence,
-        entities,
-        metadata_version: METADATA_VERSION,
-        metadata_source: summary.source,
-    })
+    Ok((
+        HeadspaceMetadata {
+            summary: summary.summary,
+            status,
+            status_confidence,
+            topics,
+            topics_confidence,
+            entities,
+            metadata_version: METADATA_VERSION,
+            metadata_source: summary.source,
+        },
+        summary_warning,
+    ))
 }
 
-async fn summarize_with_fallback(text: &str, config: &Config) -> eyre::Result<SummaryOutput> {
+async fn summarize_with_fallback(
+    text: &str,
+    config: &Config,
+) -> eyre::Result<(SummaryOutput, Option<String>)> {
     let provider_summarizer = ProviderSummarizer { config };
     if let Ok(result) = provider_summarizer.summarize(text).await
         && !result.summary.trim().is_empty()
@@ -420,10 +443,14 @@ async fn summarize_with_fallback(text: &str, config: &Config) -> eyre::Result<Su
             confidence = result.confidence,
             "summary generated from provider"
         );
-        return Ok(result);
+        return Ok((result, None));
     }
 
-    HeuristicSummarizer.summarize(text).await
+    let fallback = HeuristicSummarizer.summarize(text).await?;
+    Ok((
+        fallback,
+        Some("Summary: heuristic fallback (all providers failed)".to_string()),
+    ))
 }
 
 fn heuristic_summary(text: &str) -> String {

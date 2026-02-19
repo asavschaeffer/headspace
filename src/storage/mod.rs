@@ -90,6 +90,9 @@ pub struct Document {
     /// Indicates embedding origin: "provider", "`zero_fallback`", or "none".
     #[serde(default = "default_embedding_source")]
     pub embedding_source: String,
+    /// Warnings collected during enrichment (e.g. fallback used, zero vector).
+    #[serde(default)]
+    pub enrichment_warnings: Vec<String>,
 }
 
 /// Overseen directory tracked for repeated scans.
@@ -174,6 +177,7 @@ impl Document {
             metadata_source: default_metadata_source(),
             last_enriched_at: String::new(),
             embedding_source: default_embedding_source(),
+            enrichment_warnings: Vec::new(),
         }
     }
 }
@@ -215,6 +219,7 @@ const DOCUMENT_SELECT: &str = "SELECT
     m.x,
     m.y,
     m.embedding_source,
+    m.enrichment_warnings,
     v.embedding
  FROM files f
  LEFT JOIN metadata m ON m.file_id = f.file_id
@@ -399,6 +404,45 @@ impl Store {
         Ok(())
     }
 
+    /// Inserts or updates multiple documents in a single transaction.
+    ///
+    /// More efficient than calling `upsert` in a loop — one transaction commit
+    /// instead of N, which significantly reduces write-lock hold time during ingestion.
+    pub fn upsert_batch(&mut self, docs: Vec<Document>) -> eyre::Result<()> {
+        if docs.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.connect()?;
+        let tx = conn.transaction()?;
+
+        for mut doc in docs {
+            // Preserve existing API id for known file identities.
+            if let Some(existing_id) = tx
+                .query_row(
+                    "SELECT doc_id FROM files WHERE file_id = ?1 LIMIT 1",
+                    params![doc.file_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+            {
+                doc.id = existing_id;
+            } else if let Some(existing_id) = tx
+                .query_row(
+                    "SELECT doc_id FROM files WHERE abs_path = ?1 LIMIT 1",
+                    params![doc.abs_path],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+            {
+                doc.id = existing_id;
+            }
+            write_document(&tx, &doc)?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Writes back an updated set of documents (used after clustering).
     pub fn replace_documents(&mut self, documents: &[Document]) -> eyre::Result<()> {
         let mut conn = self.connect()?;
@@ -541,6 +585,7 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
             metadata_source TEXT NOT NULL DEFAULT 'heuristic',
             last_enriched_at TEXT NOT NULL DEFAULT '',
             embedding_source TEXT NOT NULL DEFAULT 'none',
+            enrichment_warnings TEXT NOT NULL DEFAULT '[]',
             cluster_id INTEGER NOT NULL DEFAULT -1,
             x REAL NOT NULL DEFAULT 0.0,
             y REAL NOT NULL DEFAULT 0.0
@@ -558,6 +603,13 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_files_abs_path ON files(abs_path);
         CREATE INDEX IF NOT EXISTS idx_files_doc_id ON files(doc_id);",
     )?;
+
+    // Additive migration: add enrichment_warnings column to existing databases.
+    conn.execute_batch(
+        "ALTER TABLE metadata ADD COLUMN enrichment_warnings TEXT NOT NULL DEFAULT '[]';",
+    )
+    .ok(); // Ignore error — column already exists on fresh DBs.
+
     Ok(())
 }
 
@@ -645,6 +697,12 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         embedding_source: row
             .get::<_, Option<String>>("embedding_source")?
             .unwrap_or_else(default_embedding_source),
+        enrichment_warnings: {
+            let json: String = row
+                .get::<_, Option<String>>("enrichment_warnings")?
+                .unwrap_or_else(|| "[]".to_string());
+            serde_json::from_str(&json).unwrap_or_default()
+        },
     })
 }
 
@@ -706,8 +764,9 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
     tx.execute(
         "INSERT INTO metadata (
             file_id, summary, status, status_confidence, topics, topics_confidence, entities,
-            metadata_version, metadata_source, last_enriched_at, cluster_id, x, y, embedding_source
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            metadata_version, metadata_source, last_enriched_at, cluster_id, x, y, embedding_source,
+            enrichment_warnings
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT(file_id) DO UPDATE SET
             summary = excluded.summary,
             status = excluded.status,
@@ -721,7 +780,8 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             cluster_id = excluded.cluster_id,
             x = excluded.x,
             y = excluded.y,
-            embedding_source = excluded.embedding_source",
+            embedding_source = excluded.embedding_source,
+            enrichment_warnings = excluded.enrichment_warnings",
         params![
             doc.file_id,
             doc.summary,
@@ -737,6 +797,7 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             doc.x,
             doc.y,
             doc.embedding_source,
+            serde_json::to_string(&doc.enrichment_warnings)?,
         ],
     )?;
 

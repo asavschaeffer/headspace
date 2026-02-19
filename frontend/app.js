@@ -63,7 +63,10 @@
 
         dom.ambientStatus.addEventListener("click", onAmbientClick);
         dom.finalizeBtn.addEventListener("click", finishReview);
-        dom.searchInput.addEventListener("input", renderSearch);
+        dom.searchInput.addEventListener("input", () => {
+            renderSearch();
+        });
+        dom.searchInput.addEventListener("focus", renderFilterChips);
     }
 
     async function refreshCanvas(fit = false) {
@@ -165,12 +168,18 @@
             .map((topic) => `<span class="topic-chip">${esc(topic)}<button type="button" data-topic="${encodeURIComponent(topic)}">x</button></span>`)
             .join("") || '<span class="topic-chip">no topics</span>';
 
+        const warnings = node.enrichment_warnings || [];
+        const warningHtml = warnings.length
+            ? `<div class="warning-chip-row">${warnings.map((w) => `<span class="warning-chip">${esc(w)}</span>`).join("")}</div>`
+            : "";
+
         dom.cardAiZone.innerHTML = `
             <p class="card-summary">${esc(node.summary || "No summary yet.")}</p>
             <div class="card-status-row">
                 <span class="status-pill ${statusClass(status)}">${esc(node.status || "Unknown")}</span>
                 ${topics}
             </div>
+            ${warningHtml}
         `;
 
         dom.cardAiZone.querySelectorAll(".topic-chip button").forEach((button) => {
@@ -369,11 +378,14 @@
             if (dom.searchOverlay.hidden) {
                 dom.searchOverlay.hidden = false;
                 dom.searchInput.value = "";
+                state.activeFilters = { extension: null, status: null };
+                renderFilterChips();
                 renderSearch();
                 dom.searchInput.focus();
             } else {
                 dom.searchOverlay.hidden = true;
                 state.searchMatches = null;
+                state.activeFilters = { extension: null, status: null };
             }
             return;
         }
@@ -382,6 +394,7 @@
             if (!dom.searchOverlay.hidden) {
                 dom.searchOverlay.hidden = true;
                 state.searchMatches = null;
+                state.activeFilters = { extension: null, status: null };
                 return;
             }
             if (!dom.cardPanel.hidden) {
@@ -392,17 +405,71 @@
         }
     }
 
+    function renderFilterChips() {
+        if (!dom.searchFilters) return;
+
+        // Collect unique extensions from loaded nodes (top 8 most common)
+        const extCounts = new Map();
+        for (const node of state.nodes) {
+            const ext = (node.extension || "").toLowerCase();
+            if (ext) extCounts.set(ext, (extCounts.get(ext) || 0) + 1);
+        }
+        const topExts = [...extCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([ext]) => ext);
+
+        const statusOptions = [
+            { label: "pending", value: "pending_review" },
+            { label: "approved", value: "approved" },
+        ];
+
+        function chip(label, type, value) {
+            const active = state.activeFilters[type] === value ? "active" : "";
+            return `<button class="filter-chip ${active}" data-type="${escAttr(type)}" data-value="${escAttr(value)}">${esc(label)}</button>`;
+        }
+
+        const extChips = topExts.map((ext) => chip(`.${ext}`, "extension", ext)).join("");
+        const statusChips = statusOptions.map(({ label, value }) => chip(label, "status", value)).join("");
+
+        dom.searchFilters.innerHTML = `
+            <div class="filter-chip-group">${statusChips}${extChips}</div>
+        `;
+
+        dom.searchFilters.querySelectorAll(".filter-chip").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const type = btn.dataset.type;
+                const value = btn.dataset.value;
+                // Toggle: clicking active chip clears it
+                state.activeFilters[type] = state.activeFilters[type] === value ? null : value;
+                renderFilterChips();
+                renderSearch();
+            });
+        });
+    }
+
     function renderSearch() {
         const query = dom.searchInput.value.trim().toLowerCase();
-        if (!query) {
+        const hasFilters = state.activeFilters.extension || state.activeFilters.status;
+
+        if (!query && !hasFilters) {
             state.searchMatches = null;
             dom.searchResults.innerHTML =
                 '<div class="search-item">Type to filter nodes by name, path, summary, topic, or note.</div>';
             return;
         }
 
-        const ranked = state.nodes
+        const filtered = state.nodes.filter((node) => {
+            if (state.activeFilters.extension &&
+                (node.extension || "").toLowerCase() !== state.activeFilters.extension) return false;
+            if (state.activeFilters.status &&
+                node.review_status !== state.activeFilters.status) return false;
+            return true;
+        });
+
+        const ranked = filtered
             .map((node) => {
+                if (!query) return { node, index: 0 };
                 const haystack = [
                     node.name,
                     node.rel_path,
@@ -418,7 +485,7 @@
             .sort((a, b) => a.index - b.index)
             .slice(0, 40);
 
-        state.searchMatches = new Set(ranked.map((item) => item.node.id));
+        state.searchMatches = ranked.length ? new Set(ranked.map((item) => item.node.id)) : new Set();
         if (!ranked.length) {
             dom.searchResults.innerHTML = '<div class="search-item">No matches.</div>';
             return;

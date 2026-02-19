@@ -5,6 +5,9 @@
 )]
 
 use hdbscan::Hdbscan;
+use linfa::traits::Transformer as _;
+use linfa_tsne::TSneParams;
+use ndarray::Array2;
 
 use crate::storage::Document;
 
@@ -71,10 +74,17 @@ pub fn cluster_documents(documents: &mut [Document]) {
     assign_2d_positions(documents);
 }
 
-/// Assigns 2D (x, y) coordinates to documents using simple PCA on embeddings.
+/// Minimum number of samples required for t-SNE (must be > 3 * perplexity).
+const TSNE_MIN_SAMPLES: usize = 10;
+/// t-SNE perplexity — balances local vs global structure.
+const TSNE_PERPLEXITY: f64 = 15.0;
+/// t-SNE approximation threshold (0.5 = good quality / speed trade-off).
+const TSNE_APPROX_THRESHOLD: f64 = 0.5;
+
+/// Assigns 2D (x, y) coordinates to documents using t-SNE projection.
 ///
-/// Uses f32 embeddings internally, upcast to f64 for the linear algebra
-/// (PCA needs the precision for eigenvalue convergence).
+/// Falls back to PCA when there are too few documents for t-SNE, and to
+/// a grid layout when no embeddings are present.
 pub fn assign_2d_positions(documents: &mut [Document]) {
     if documents.is_empty() {
         return;
@@ -96,24 +106,69 @@ pub fn assign_2d_positions(documents: &mut [Document]) {
         return;
     }
 
-    // Upcast embeddings to f64 for PCA math
-    let embeddings_f64: Vec<Vec<f64>> = documents
+    let n = documents.len();
+
+    // Build flat f64 embedding matrix (n × dim)
+    let flat: Vec<f64> = documents
         .iter()
-        .map(|d| {
+        .flat_map(|d| {
             if d.embedding.len() == dim {
-                d.embedding.iter().map(|&v| f64::from(v)).collect()
+                d.embedding.iter().map(|&v| f64::from(v)).collect::<Vec<_>>()
             } else {
-                vec![0.0; dim]
+                vec![0.0_f64; dim]
             }
         })
         .collect();
 
+    if n >= TSNE_MIN_SAMPLES {
+        match run_tsne(&flat, n, dim) {
+            Ok(coords) => {
+                for (i, doc) in documents.iter_mut().enumerate() {
+                    doc.x = coords[i * 2];
+                    doc.y = coords[i * 2 + 1];
+                }
+                normalize_positions(documents);
+                return;
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "t-SNE failed; falling back to PCA");
+            }
+        }
+    } else {
+        tracing::debug!(n, "too few documents for t-SNE; using PCA");
+    }
+
+    // PCA fallback
+    pca_positions(documents, &flat, n, dim);
+}
+
+/// Runs t-SNE and returns a flat `[x0, y0, x1, y1, ...]` coordinate array.
+fn run_tsne(flat: &[f64], n: usize, dim: usize) -> eyre::Result<Vec<f64>> {
+    let data = Array2::from_shape_vec((n, dim), flat.to_vec())
+        .map_err(|e| eyre::eyre!("ndarray shape error: {e}"))?;
+
+    // TSneParams::embedding_size defaults to SmallRng seeded at 42 — deterministic output.
+    // F = f64 is inferred from the Array2<f64> data; R = SmallRng from the impl.
+    let result = TSneParams::embedding_size(2)
+        .perplexity(TSNE_PERPLEXITY)
+        .approx_threshold(TSNE_APPROX_THRESHOLD)
+        .transform(data)
+        .map_err(|e| eyre::eyre!("t-SNE error: {e:?}"))?;
+
+    let coords: Vec<f64> = result.iter().copied().collect();
+    Ok(coords)
+}
+
+/// PCA projection fallback (power iteration for 2 principal components).
+fn pca_positions(documents: &mut [Document], flat: &[f64], n: usize, dim: usize) {
+    let embeddings_f64: Vec<Vec<f64>> = flat.chunks(dim).map(<[f64]>::to_vec).collect();
+
     // Compute mean
-    let n = documents.len() as f64;
-    let mut mean = vec![0.0; dim];
+    let n_f = n as f64;
+    let mut mean = vec![0.0_f64; dim];
     for emb in &embeddings_f64 {
         for (j, val) in emb.iter().enumerate() {
-            mean[j] += val / n;
+            mean[j] += val / n_f;
         }
     }
 
@@ -123,11 +178,9 @@ pub fn assign_2d_positions(documents: &mut [Document]) {
         .map(|emb| emb.iter().zip(&mean).map(|(a, b)| a - b).collect())
         .collect();
 
-    // Power iteration for first principal component
     let pc1 = power_iteration(&centered, dim);
     let projections1: Vec<f64> = centered.iter().map(|row| dot(row, &pc1)).collect();
 
-    // Compute residual for PC2
     let residual: Vec<Vec<f64>> = centered
         .iter()
         .zip(&projections1)
@@ -137,7 +190,6 @@ pub fn assign_2d_positions(documents: &mut [Document]) {
     let pc2 = power_iteration(&residual, dim);
     let projections2: Vec<f64> = residual.iter().map(|row| dot(row, &pc2)).collect();
 
-    // Assign positions
     for (i, doc) in documents.iter_mut().enumerate() {
         doc.x = projections1[i];
         doc.y = projections2[i];

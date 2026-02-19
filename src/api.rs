@@ -463,8 +463,13 @@ async fn run_ingest(
                 break;
             };
             if let Some(doc) = enriched_docs.get_mut(doc_idx) {
+                let is_zero = embedding.iter().all(|&v| v == 0.0);
                 doc.embedding = embedding;
                 doc.embedding_source = source.to_string();
+                if is_zero && config.has_embeddings() {
+                    doc.enrichment_warnings
+                        .push("Embedding: zero vector (API unavailable)".to_string());
+                }
             }
         }
     }
@@ -476,12 +481,10 @@ async fn run_ingest(
         store.set_root_path(path)?;
         let deleted_count = store.retain_existing(&discovered_file_ids)?;
 
-        for doc in unchanged_updates {
-            store.upsert(doc)?;
-        }
-        for doc in enriched_docs {
-            store.upsert(doc)?;
-        }
+        // Write unchanged path updates and enriched docs in batch transactions
+        // to minimize the number of write-lock acquisitions.
+        store.upsert_batch(unchanged_updates)?;
+        store.upsert_batch(enriched_docs)?;
         store.save()?;
 
         pending_count = store.pending_review_documents()?.len();
@@ -606,6 +609,7 @@ struct CanvasNode {
     content_length: usize,
     modified_at: u64,
     content_hash: String,
+    enrichment_warnings: Vec<String>,
 }
 
 async fn canvas_data(State(state): State<AppState>) -> Json<Vec<CanvasNode>> {
@@ -645,6 +649,7 @@ async fn canvas_data(State(state): State<AppState>) -> Json<Vec<CanvasNode>> {
                 content_length: d.content_length,
                 modified_at: d.modified_at,
                 content_hash: d.content_hash,
+                enrichment_warnings: d.enrichment_warnings,
             }
         })
         .collect();
@@ -683,6 +688,15 @@ struct SearchQuery {
     q: String,
     #[serde(default = "default_limit")]
     limit: usize,
+    /// Filter by review_status (e.g. "approved", "pending_review")
+    #[serde(default)]
+    status: Option<String>,
+    /// Filter by file extension (e.g. "rs", "md")
+    #[serde(default)]
+    extension: Option<String>,
+    /// Filter by cluster_id (-1 = noise)
+    #[serde(default)]
+    cluster_id: Option<i32>,
 }
 
 fn default_limit() -> usize {
@@ -724,7 +738,27 @@ async fn search_documents(
         tracing::error!("failed to load documents for search: {e:?}");
         Vec::new()
     });
-    let doc_refs: Vec<&Document> = docs.iter().collect();
+    let doc_refs: Vec<&Document> = docs
+        .iter()
+        .filter(|d| {
+            if let Some(ref s) = query.status {
+                if &d.review_status != s {
+                    return false;
+                }
+            }
+            if let Some(ref ext) = query.extension {
+                if d.extension.to_ascii_lowercase() != ext.to_ascii_lowercase() {
+                    return false;
+                }
+            }
+            if let Some(cid) = query.cluster_id {
+                if d.cluster_id != cid {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
     let results = search::search(&query_embedding, &doc_refs, query.limit);
 
     let response: Vec<SearchResultResponse> = results

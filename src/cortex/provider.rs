@@ -6,6 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
+const MAX_RETRIES: u32 = 3;
+
+async fn backoff_delay(attempt: u32) {
+    let base_ms: u64 = 500 * u64::from(1u32 << attempt);
+    let jitter_ms: u64 = u64::from((attempt.wrapping_mul(6_364_136_u32)).wrapping_add(1_442_695) % 300);
+    tokio::time::sleep(Duration::from_millis(base_ms + jitter_ms)).await;
+}
+
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 /// External task class executed against providers.
@@ -278,41 +286,67 @@ async fn call_openai_compatible(
         ],
     };
 
-    let mut request_builder = shared_http_client()
-        .post(endpoint)
-        .timeout(Duration::from_secs(timeout_secs.max(1)))
-        .header("Content-Type", "application/json");
-    if let Some(key) = api_key {
-        request_builder = request_builder.header("Authorization", format!("Bearer {key}"));
-    }
-    if let Some((header_name, header_value)) = extra_header {
-        request_builder = request_builder.header(header_name, header_value);
-    }
-
     let started = Instant::now();
-    let response = request_builder.json(&payload).send().await?;
-    if !response.status().is_success() {
-        eyre::bail!("http {}", response.status());
-    }
+    let mut last_err = String::from("no attempts made");
+    for attempt in 0..=MAX_RETRIES {
+        let mut builder = shared_http_client()
+            .post(&endpoint)
+            .timeout(Duration::from_secs(timeout_secs.max(1)))
+            .header("Content-Type", "application/json");
+        if let Some(key) = api_key {
+            builder = builder.header("Authorization", format!("Bearer {key}"));
+        }
+        if let Some((header_name, header_value)) = extra_header {
+            builder = builder.header(header_name, header_value);
+        }
 
-    let body: ChatResponse = response.json().await?;
-    let text = body
-        .choices
-        .first()
-        .map(|choice| sanitize_text(&choice.message.content))
-        .unwrap_or_default();
-    if text.is_empty() {
-        eyre::bail!("empty response text");
-    }
+        let response = builder.json(&payload).send().await?;
+        let status = response.status();
 
-    Ok(ProviderResult {
-        text,
-        confidence: 0.75,
-        provider,
-        model: model.to_string(),
-        latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        warnings: Vec::new(),
-    })
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            if attempt < MAX_RETRIES {
+                let retry_after = response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok());
+                if let Some(secs) = retry_after {
+                    tracing::warn!(provider = %provider.as_str(), attempt, secs, "LLM 429 — honouring Retry-After");
+                    tokio::time::sleep(Duration::from_secs(secs)).await;
+                } else {
+                    tracing::warn!(provider = %provider.as_str(), attempt, "LLM 429 — backing off");
+                    backoff_delay(attempt).await;
+                }
+                last_err = format!("429 on attempt {attempt}");
+                continue;
+            }
+            eyre::bail!("rate-limited after {MAX_RETRIES} retries");
+        }
+
+        if !status.is_success() {
+            eyre::bail!("http {status}");
+        }
+
+        let body: ChatResponse = response.json().await?;
+        let text = body
+            .choices
+            .first()
+            .map(|choice| sanitize_text(&choice.message.content))
+            .unwrap_or_default();
+        if text.is_empty() {
+            eyre::bail!("empty response text");
+        }
+
+        return Ok(ProviderResult {
+            text,
+            confidence: 0.75,
+            provider,
+            model: model.to_string(),
+            latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            warnings: Vec::new(),
+        });
+    }
+    eyre::bail!("LLM call failed after retries: {last_err}")
 }
 
 fn shared_http_client() -> &'static reqwest::Client {

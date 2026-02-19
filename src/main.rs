@@ -30,7 +30,9 @@ async fn main() -> eyre::Result<()> {
         .init();
 
     // Load .env and config
-    dotenvy::dotenv().ok();
+    if let Err(e) = dotenvy::dotenv() {
+        tracing::warn!("failed to load .env: {}", e);
+    }
     let config = config::Config::from_env()?;
 
     tracing::info!(port = config.port, "starting headspace");
