@@ -30,6 +30,8 @@ pub struct AppState {
     pub ingesting: Arc<RwLock<bool>>,
     /// Stats from the most recent ingestion (if any).
     pub last_ingest_stats: Arc<RwLock<Option<IngestStats>>>,
+    /// Error message from the most recent failed ingestion (if any).
+    pub last_ingest_error: Arc<RwLock<Option<String>>>,
     /// Broadcast stream for ingestion progress updates.
     pub progress_tx: Arc<broadcast::Sender<ProgressEvent>>,
 }
@@ -86,12 +88,14 @@ struct StatusResponse {
     is_ingesting: bool,
     root_path: String,
     last_ingest: Option<IngestStats>,
+    last_ingest_error: Option<String>,
 }
 
 async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
     let store = state.store.read().await;
     let ingesting = *state.ingesting.read().await;
     let last_ingest = state.last_ingest_stats.read().await.clone();
+    let last_ingest_error = state.last_ingest_error.read().await.clone();
     let document_count = store.document_count().unwrap_or_else(|e| {
         tracing::error!("failed to count documents: {e:?}");
         0
@@ -110,6 +114,7 @@ async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
         is_ingesting: ingesting,
         root_path: store.root_path().to_string(),
         last_ingest,
+        last_ingest_error,
     })
 }
 
@@ -196,9 +201,16 @@ async fn start_ingest_job(
     let store_lock = state.store.clone();
     let ingesting_flag = state.ingesting.clone();
     let stats_lock = state.last_ingest_stats.clone();
+    let error_lock = state.last_ingest_error.clone();
     let progress_tx = state.progress_tx.clone();
 
     tokio::spawn(async move {
+        // Clear any previous error when starting a new job.
+        {
+            let mut last_error = error_lock.write().await;
+            *last_error = None;
+        }
+
         let result = run_ingest(&path, &config, &store_lock, &stats_lock, &progress_tx).await;
 
         if result.is_ok() {
@@ -208,17 +220,20 @@ async fn start_ingest_job(
                     tracing::warn!(id = %id, error = %err, "failed to touch overseen dir");
                 }
             }
-        } else if let Err(err) = &result {
+        } else if let Err(ref err) = result {
+            let msg = format!("{err:#}");
             emit_progress(
                 &progress_tx,
                 ProgressEvent {
                     phase: "error".to_string(),
-                    message: format!("Ingestion failed: {err}"),
+                    message: format!("Ingestion failed: {msg}"),
                     done: 0,
                     total: 0,
                     current_file: None,
                 },
             );
+            let mut last_error = error_lock.write().await;
+            *last_error = Some(msg);
         }
 
         let mut ingesting = ingesting_flag.write().await;
@@ -233,6 +248,7 @@ async fn start_ingest_job(
 }
 
 /// Runs the diff-based ingestion pipeline and leaves files pending review.
+#[allow(clippy::too_many_lines)]
 async fn run_ingest(
     path: &FsPath,
     config: &Config,
@@ -283,10 +299,10 @@ async fn run_ingest(
                         || updated.content_length != new_len;
 
                     if path_changed {
-                        updated.abs_path = discovered.abs_path.clone();
-                        updated.rel_path = discovered.rel_path.clone();
-                        updated.name = discovered.name.clone();
-                        updated.extension = discovered.extension.clone();
+                        updated.abs_path.clone_from(&discovered.abs_path);
+                        updated.rel_path.clone_from(&discovered.rel_path);
+                        updated.name.clone_from(&discovered.name);
+                        updated.extension.clone_from(&discovered.extension);
                         updated.modified_at = discovered.modified_at;
                         updated.content_length = new_len;
                         unchanged_updates.push(updated);
@@ -441,12 +457,14 @@ async fn run_ingest(
 
         let generated = embeddings::generate_embeddings(&texts_to_embed, config).await?;
         embeddings_generated = generated.len().min(embed_doc_indexes.len());
+        let source = if config.has_embeddings() { "provider" } else { "zero_fallback" };
         for (idx, embedding) in generated.into_iter().enumerate() {
             let Some(&doc_idx) = embed_doc_indexes.get(idx) else {
                 break;
             };
             if let Some(doc) = enriched_docs.get_mut(doc_idx) {
                 doc.embedding = embedding;
+                doc.embedding_source = source.to_string();
             }
         }
     }
@@ -560,7 +578,7 @@ async fn get_document(
         .map_err(internal_error)?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?;
 
-    let mut value = serde_json::to_value(doc).unwrap_or_default();
+    let mut value = serde_json::to_value(doc).map_err(internal_error)?;
     if let Some(obj) = value.as_object_mut() {
         obj.remove("embedding");
     }
@@ -690,9 +708,17 @@ async fn search_documents(
     let config = state.config.clone();
     let store = state.store.read().await;
 
-    let query_embedding = embeddings::generate_query_embedding(&query.q, &config)
-        .await
-        .unwrap_or_default();
+    let query_embedding = match embeddings::generate_query_embedding(&query.q, &config).await {
+        Ok(emb) => emb,
+        Err(e) => {
+            tracing::error!("query embedding failed: {e:?}");
+            return Json(vec![]);
+        }
+    };
+
+    if query_embedding.is_empty() {
+        return Json(vec![]);
+    }
 
     let docs = store.approved_documents().unwrap_or_else(|e| {
         tracing::error!("failed to load documents for search: {e:?}");
@@ -855,6 +881,11 @@ async fn enrich_with_context(
         .await
         .map_err(internal_error)?;
     doc.embedding = embedding.into_iter().next().unwrap_or_default();
+    doc.embedding_source = if state.config.has_embeddings() {
+        "provider".to_string()
+    } else {
+        "zero_fallback".to_string()
+    };
 
     let mut store = state.store.write().await;
     store.upsert(doc).map_err(internal_error)?;

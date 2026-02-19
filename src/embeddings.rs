@@ -4,14 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
-/// Embedding dimension for NVIDIA nv-embedqa-e5-v5.
-const EMBEDDING_DIM: usize = 1024;
-
-/// Maximum input texts per batch.
-const BATCH_SIZE: usize = 50;
-
-/// NVIDIA NIM embeddings API endpoint.
-const NVIDIA_EMBED_URL: &str = "https://integrate.api.nvidia.com/v1/embeddings";
+/// Embedding dimension for NVIDIA nv-embedqa-e5-v5 (and compatible models).
+pub const EMBEDDING_DIM: usize = 1024;
 
 /// Request body for NVIDIA embeddings API.
 #[derive(Debug, Serialize)]
@@ -34,7 +28,7 @@ struct EmbedResponse {
     data: Vec<EmbeddingObject>,
 }
 
-/// Generates embeddings for a list of texts using NVIDIA NIM.
+/// Generates embeddings for a list of texts using NVIDIA NIM (or compatible endpoint).
 ///
 /// Returns f32 vectors (downcast from the API's f64 response — no meaningful
 /// precision loss for cosine similarity, and halves memory usage).
@@ -42,24 +36,25 @@ struct EmbedResponse {
 /// # Errors
 /// Returns an error if the API call fails.
 pub async fn generate_embeddings(texts: &[String], config: &Config) -> eyre::Result<Vec<Vec<f32>>> {
-    let Some(api_key) = &config.nvidia_api_key else {
-        tracing::warn!("no NVIDIA API key configured; using zero vectors");
+    let Some(api_key) = &config.embedding_api_key else {
+        tracing::warn!("no embedding API key configured; using zero vectors");
         return Ok(texts.iter().map(|_| vec![0.0_f32; EMBEDDING_DIM]).collect());
     };
 
+    let embed_url = format!("{}/embeddings", config.embedding_base_url.trim_end_matches('/'));
     let client = reqwest::Client::new();
     let mut all_embeddings: Vec<Vec<f32>> = Vec::with_capacity(texts.len());
 
-    for chunk in texts.chunks(BATCH_SIZE) {
+    for chunk in texts.chunks(config.embedding_batch_size) {
         let truncated: Vec<String> = chunk
             .iter()
             .map(|t| {
-                // Truncate to ~2000 chars to stay within token limits
-                if t.len() > 2000 {
+                let limit = config.embedding_truncate_chars;
+                if t.len() > limit {
                     let end = t
                         .char_indices()
                         .map(|(i, _)| i)
-                        .take_while(|&i| i <= 2000)
+                        .take_while(|&i| i <= limit)
                         .last()
                         .unwrap_or(0);
                     t[..end].to_string()
@@ -71,13 +66,13 @@ pub async fn generate_embeddings(texts: &[String], config: &Config) -> eyre::Res
 
         let request = EmbedRequest {
             input: truncated,
-            model: "nvidia/nv-embedqa-e5-v5".to_string(),
+            model: config.embedding_model.clone(),
             input_type: "passage".to_string(),
             truncate: "END".to_string(),
         };
 
         let response = client
-            .post(NVIDIA_EMBED_URL)
+            .post(&embed_url)
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request)
@@ -102,8 +97,11 @@ pub async fn generate_embeddings(texts: &[String], config: &Config) -> eyre::Res
         }
 
         // Brief pause between batches to avoid rate limiting
-        if texts.len() > BATCH_SIZE {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if texts.len() > config.embedding_batch_size {
+            tokio::time::sleep(std::time::Duration::from_millis(
+                config.embedding_batch_delay_ms,
+            ))
+            .await;
         }
     }
 
@@ -117,21 +115,22 @@ pub async fn generate_embeddings(texts: &[String], config: &Config) -> eyre::Res
 /// # Errors
 /// Returns an error if the API call fails.
 pub async fn generate_query_embedding(query: &str, config: &Config) -> eyre::Result<Vec<f32>> {
-    let Some(api_key) = &config.nvidia_api_key else {
+    let Some(api_key) = &config.embedding_api_key else {
         return Ok(vec![0.0_f32; EMBEDDING_DIM]);
     };
 
+    let embed_url = format!("{}/embeddings", config.embedding_base_url.trim_end_matches('/'));
     let client = reqwest::Client::new();
 
     let request = EmbedRequest {
         input: vec![query.to_string()],
-        model: "nvidia/nv-embedqa-e5-v5".to_string(),
+        model: config.embedding_model.clone(),
         input_type: "query".to_string(),
         truncate: "END".to_string(),
     };
 
     let response = client
-        .post(NVIDIA_EMBED_URL)
+        .post(&embed_url)
         .header("Authorization", format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
         .json(&request)

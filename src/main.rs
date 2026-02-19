@@ -25,7 +25,7 @@ async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "headspace=info,tower_http=info".parse().unwrap()),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
 
@@ -36,9 +36,9 @@ async fn main() -> eyre::Result<()> {
     tracing::info!(port = config.port, "starting headspace");
 
     if config.has_embeddings() {
-        tracing::info!("NVIDIA embedding API key found");
+        tracing::info!(model = %config.embedding_model, "embedding API key found");
     } else {
-        tracing::warn!("no embedding API key; search will be limited");
+        tracing::warn!("no embedding API key (EMBEDDING_API_KEY or NVIDIA_API_KEY); search will be limited");
     }
 
     // Load existing store
@@ -51,6 +51,7 @@ async fn main() -> eyre::Result<()> {
         config: Arc::new(config.clone()),
         ingesting: Arc::new(RwLock::new(false)),
         last_ingest_stats: Arc::new(RwLock::new(None)),
+        last_ingest_error: Arc::new(RwLock::new(None)),
         progress_tx: Arc::new(tokio::sync::broadcast::channel(64).0),
     };
 

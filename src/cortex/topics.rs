@@ -75,6 +75,7 @@ fn extract_entities(text: &str) -> Vec<String> {
     entities
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn confidence_score(text: &str, topic_count: usize, entity_count: usize) -> f32 {
     let signal = text.chars().filter(|c| c.is_alphanumeric()).count();
     if signal < 20 {

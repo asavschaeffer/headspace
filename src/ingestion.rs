@@ -228,7 +228,7 @@ fn hash_file_streaming(path: &Path) -> eyre::Result<String> {
     let file = std::fs::File::open(path)?;
     let mut reader = BufReader::new(file);
     let mut hasher = Sha256::new();
-    let mut buf = [0_u8; 64 * 1024];
+    let mut buf = vec![0_u8; 64 * 1024];
 
     loop {
         let bytes = reader.read(&mut buf)?;

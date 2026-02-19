@@ -194,7 +194,7 @@ impl Summarizer for ProviderSummarizer<'_> {
         };
         let result = provider::execute_with_fallback(&request, self.config).await?;
         Ok(SummaryOutput {
-            summary: sanitize_summary(result.text),
+            summary: sanitize_summary(&result.text),
             source: result.provider.as_str().to_string(),
             confidence: result.confidence,
         })
@@ -247,14 +247,14 @@ pub async fn enrich_document(
 
     let metadata = generate_metadata(&extraction, input, document, config).await?;
 
-    document.file_id = input.file_id.clone();
-    document.abs_path = input.abs_path.clone();
-    document.rel_path = input.rel_path.clone();
-    document.content_hash = input.content_hash.clone();
+    document.file_id.clone_from(&input.file_id);
+    document.abs_path.clone_from(&input.abs_path);
+    document.rel_path.clone_from(&input.rel_path);
+    document.content_hash.clone_from(&input.content_hash);
     document.modified_at = input.modified_at;
     document.content_length = input.bytes.len();
-    document.content_preview = extraction.content_preview.clone();
-    document.mime_type = extraction.mime_type.clone();
+    document.content_preview.clone_from(&extraction.content_preview);
+    document.mime_type.clone_from(&extraction.mime_type);
     document.pipeline_kind = extraction.pipeline_kind.as_str().to_string();
     document.summary = metadata.summary;
     document.status = metadata.status;
@@ -379,6 +379,13 @@ async fn generate_metadata(
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
+    let thresholds = status::StatusThresholds {
+        draft_days: config.status_draft_days,
+        active_days: config.status_active_days,
+        rot_days: config.status_rot_days,
+        active_min_bytes: config.status_active_min_bytes,
+        rot_max_bytes: config.status_rot_max_bytes,
+    };
     let (status, status_confidence) = status::classify_status(
         &input.rel_path,
         &document.name,
@@ -388,6 +395,7 @@ async fn generate_metadata(
         topics.len(),
         entities.len(),
         now,
+        &thresholds,
     );
 
     Ok(HeadspaceMetadata {
@@ -404,15 +412,15 @@ async fn generate_metadata(
 
 async fn summarize_with_fallback(text: &str, config: &Config) -> eyre::Result<SummaryOutput> {
     let provider_summarizer = ProviderSummarizer { config };
-    if let Ok(result) = provider_summarizer.summarize(text).await {
-        if !result.summary.trim().is_empty() {
-            tracing::debug!(
-                provider = %result.source,
-                confidence = result.confidence,
-                "summary generated from provider"
-            );
-            return Ok(result);
-        }
+    if let Ok(result) = provider_summarizer.summarize(text).await
+        && !result.summary.trim().is_empty()
+    {
+        tracing::debug!(
+            provider = %result.source,
+            confidence = result.confidence,
+            "summary generated from provider"
+        );
+        return Ok(result);
     }
 
     HeuristicSummarizer.summarize(text).await
@@ -435,7 +443,7 @@ fn heuristic_summary(text: &str) -> String {
     if sentences.len() > 2 {
         sentences.truncate(2);
     }
-    sanitize_summary(sentences.join(" "))
+    sanitize_summary(&sentences.join(" "))
 }
 
 fn split_sentences(text: &str) -> Vec<String> {
@@ -462,8 +470,8 @@ fn normalize_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn sanitize_summary(summary: String) -> String {
-    let compact = normalize_whitespace(&summary);
+fn sanitize_summary(summary: &str) -> String {
+    let compact = normalize_whitespace(summary);
     if compact.is_empty() {
         return compact;
     }

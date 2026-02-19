@@ -13,7 +13,12 @@
         shortPath,
         statusClass,
         sleep,
+        showError,
+        showWarningBanner,
     } = H;
+
+    let pollErrorCount = 0;
+    const POLL_ERROR_THRESHOLD = 3;
 
     async function init() {
         setupEvents();
@@ -91,12 +96,19 @@
 
         if (state.lastStatus.is_ingesting && !state.isIngesting) startIngestPoll();
         if (!state.lastStatus.is_ingesting && state.isIngesting) stopIngestPoll();
+
+        if (!state.lastStatus.has_embeddings) {
+            showWarningBanner("Semantic search is unavailable \u2014 set EMBEDDING_API_KEY (or NVIDIA_API_KEY) to enable.");
+        } else {
+            showWarningBanner(null);
+        }
     }
 
     async function refreshOverseen() {
         try {
             state.overseenDirs = await fetchJSON("/api/overseen");
-        } catch (_error) {
+        } catch (error) {
+            console.warn("Failed to load overseen directories:", error);
             state.overseenDirs = [];
         }
     }
@@ -114,7 +126,7 @@
             renderTerritory();
             updateAmbientStatus();
         } catch (error) {
-            alert(`Bulk action failed: ${error.message}`);
+            showError(`Bulk action failed: ${error.message}`);
         }
     }
 
@@ -213,7 +225,7 @@
             const updated = state.nodes.find((node) => node.id === state.selectedId);
             if (updated) openCard(updated);
         } catch (error) {
-            alert(`Enrichment failed: ${error.message}`);
+            showError(`Enrichment failed: ${error.message}`);
         } finally {
             dom.enrichBtn.disabled = false;
             dom.enrichBtn.textContent = "Enrich with context (rerun)";
@@ -231,7 +243,7 @@
             updateAmbientStatus();
         } catch (error) {
             dom.cardPanel.classList.remove("card-placing");
-            alert(`Approve failed: ${error.message}`);
+            showError(`Approve failed: ${error.message}`);
         }
     }
 
@@ -243,7 +255,7 @@
             renderTerritory();
             updateAmbientStatus();
         } catch (error) {
-            alert(`Reject failed: ${error.message}`);
+            showError(`Reject failed: ${error.message}`);
         }
     }
 
@@ -347,7 +359,7 @@
             renderTerritory();
             updateAmbientStatus();
         } catch (error) {
-            alert(`Finalize failed: ${error.message}`);
+            showError(`Finalize failed: ${error.message}`);
         }
     }
 
@@ -440,7 +452,7 @@
             dom.ingestModal.classList.remove("visible");
             startIngestPoll();
         } catch (error) {
-            alert(`Ingestion failed: ${error.message}`);
+            showError(`Ingestion failed: ${error.message}`);
         }
     }
 
@@ -467,8 +479,12 @@
                 renderTerritory();
                 updateAmbientStatus();
                 if (!status.is_ingesting) stopIngestPoll();
+                pollErrorCount = 0;
             } catch (_error) {
-                // Continue polling until successful completion.
+                pollErrorCount++;
+                if (pollErrorCount >= POLL_ERROR_THRESHOLD) {
+                    showWarningBanner("Connection lost \u2014 retrying...");
+                }
             }
         }, 3000);
     }
@@ -488,8 +504,12 @@
                 await Promise.all([refreshCanvas(), refreshStatus(), refreshOverseen()]);
                 renderTerritory();
                 updateAmbientStatus();
+                pollErrorCount = 0;
             } catch (_error) {
-                // Ignore transient refresh errors.
+                pollErrorCount++;
+                if (pollErrorCount >= POLL_ERROR_THRESHOLD) {
+                    showWarningBanner("Connection lost \u2014 retrying...");
+                }
             }
         }, 5000);
     }

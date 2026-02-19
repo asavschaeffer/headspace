@@ -310,7 +310,7 @@ async fn call_openai_compatible(
         confidence: 0.75,
         provider,
         model: model.to_string(),
-        latency_ms: started.elapsed().as_millis() as u64,
+        latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         warnings: Vec::new(),
     })
 }
@@ -320,9 +320,10 @@ fn shared_http_client() -> &'static reqwest::Client {
 }
 
 fn build_prompt(request: &ProviderRequest<'_>) -> String {
+    use std::fmt::Write;
     let mut prompt = String::new();
-    prompt.push_str(&format!("Path: {}\n", request.rel_path));
-    prompt.push_str(&format!("MIME: {}\n", request.mime_type));
+    let _ = writeln!(prompt, "Path: {}", request.rel_path);
+    let _ = writeln!(prompt, "MIME: {}", request.mime_type);
 
     if let Some(text) = request.text {
         prompt.push_str("Text excerpt:\n");

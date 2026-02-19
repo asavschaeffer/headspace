@@ -87,6 +87,9 @@ pub struct Document {
     /// Last metadata enrichment timestamp.
     #[serde(default)]
     pub last_enriched_at: String,
+    /// Indicates embedding origin: "provider", "`zero_fallback`", or "none".
+    #[serde(default = "default_embedding_source")]
+    pub embedding_source: String,
 }
 
 /// Overseen directory tracked for repeated scans.
@@ -120,6 +123,10 @@ fn default_metadata_version() -> i32 {
 
 fn default_metadata_source() -> String {
     "heuristic".to_string()
+}
+
+fn default_embedding_source() -> String {
+    "none".to_string()
 }
 
 impl Document {
@@ -166,6 +173,7 @@ impl Document {
             metadata_version: default_metadata_version(),
             metadata_source: default_metadata_source(),
             last_enriched_at: String::new(),
+            embedding_source: default_embedding_source(),
         }
     }
 }
@@ -206,18 +214,19 @@ const DOCUMENT_SELECT: &str = "SELECT
     m.cluster_id,
     m.x,
     m.y,
+    m.embedding_source,
     v.embedding
  FROM files f
  LEFT JOIN metadata m ON m.file_id = f.file_id
  LEFT JOIN vectors v ON v.file_id = f.file_id";
 
 impl Store {
-    /// Opens (or creates) the SQLite store and runs schema migrations.
+    /// Opens (or creates) the `SQLite` store and runs schema migrations.
     pub fn load(path: &Path) -> eyre::Result<Self> {
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)?;
         }
 
         let conn = open_connection(path)?;
@@ -467,7 +476,7 @@ impl Store {
         Ok(())
     }
 
-    /// Flushes SQLite optimizations.
+    /// Flushes `SQLite` optimizations.
     pub fn save(&self) -> eyre::Result<()> {
         let conn = self.connect()?;
         conn.execute_batch("PRAGMA optimize;")?;
@@ -531,6 +540,7 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
             metadata_version INTEGER NOT NULL DEFAULT 1,
             metadata_source TEXT NOT NULL DEFAULT 'heuristic',
             last_enriched_at TEXT NOT NULL DEFAULT '',
+            embedding_source TEXT NOT NULL DEFAULT 'none',
             cluster_id INTEGER NOT NULL DEFAULT -1,
             x REAL NOT NULL DEFAULT 0.0,
             y REAL NOT NULL DEFAULT 0.0
@@ -548,77 +558,6 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_files_abs_path ON files(abs_path);
         CREATE INDEX IF NOT EXISTS idx_files_doc_id ON files(doc_id);",
     )?;
-
-    // Additive migration for pre-Phase2 databases.
-    ensure_column(
-        conn,
-        "files",
-        "review_status",
-        "TEXT NOT NULL DEFAULT 'pending_review'",
-    )?;
-    ensure_column(conn, "files", "mime_type", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(conn, "files", "user_note", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(
-        conn,
-        "files",
-        "content_canonical",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        conn,
-        "files",
-        "pipeline_kind",
-        "TEXT NOT NULL DEFAULT 'unknown'",
-    )?;
-    ensure_column(
-        conn,
-        "metadata",
-        "status_confidence",
-        "REAL NOT NULL DEFAULT 0.0",
-    )?;
-    ensure_column(
-        conn,
-        "metadata",
-        "topics_confidence",
-        "REAL NOT NULL DEFAULT 0.0",
-    )?;
-    ensure_column(conn, "metadata", "entities", "TEXT NOT NULL DEFAULT '[]'")?;
-    ensure_column(
-        conn,
-        "metadata",
-        "metadata_version",
-        "INTEGER NOT NULL DEFAULT 1",
-    )?;
-    ensure_column(
-        conn,
-        "metadata",
-        "metadata_source",
-        "TEXT NOT NULL DEFAULT 'heuristic'",
-    )?;
-    ensure_column(
-        conn,
-        "metadata",
-        "last_enriched_at",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    Ok(())
-}
-
-fn ensure_column(
-    conn: &Connection,
-    table: &str,
-    column: &str,
-    definition: &str,
-) -> eyre::Result<()> {
-    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-    let existing = stmt
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<Result<Vec<_>, _>>()?;
-    if !existing.iter().any(|name| name == column) {
-        conn.execute_batch(&format!(
-            "ALTER TABLE {table} ADD COLUMN {column} {definition};"
-        ))?;
-    }
     Ok(())
 }
 
@@ -634,12 +573,18 @@ fn fetch_single(
 
 fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
     let topics_json: String = row.get::<_, Option<String>>("topics")?.unwrap_or_default();
-    let topics = serde_json::from_str(&topics_json).unwrap_or_default();
+    let topics = serde_json::from_str::<Vec<String>>(&topics_json).unwrap_or_else(|e| {
+        tracing::warn!(json = %topics_json, error = %e, "failed to parse topics JSON; defaulting to empty");
+        vec![]
+    });
 
     let entities_json: String = row
         .get::<_, Option<String>>("entities")?
         .unwrap_or_default();
-    let entities = serde_json::from_str(&entities_json).unwrap_or_default();
+    let entities = serde_json::from_str::<Vec<String>>(&entities_json).unwrap_or_else(|e| {
+        tracing::warn!(json = %entities_json, error = %e, "failed to parse entities JSON; defaulting to empty");
+        vec![]
+    });
 
     let embedding_blob: Option<Vec<u8>> = row.get("embedding")?;
     let embedding = embedding_blob.map_or_else(Vec::new, |bytes| decode_embedding(&bytes));
@@ -697,6 +642,9 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         last_enriched_at: row
             .get::<_, Option<String>>("last_enriched_at")?
             .unwrap_or_default(),
+        embedding_source: row
+            .get::<_, Option<String>>("embedding_source")?
+            .unwrap_or_else(default_embedding_source),
     })
 }
 
@@ -758,8 +706,8 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
     tx.execute(
         "INSERT INTO metadata (
             file_id, summary, status, status_confidence, topics, topics_confidence, entities,
-            metadata_version, metadata_source, last_enriched_at, cluster_id, x, y
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            metadata_version, metadata_source, last_enriched_at, cluster_id, x, y, embedding_source
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
          ON CONFLICT(file_id) DO UPDATE SET
             summary = excluded.summary,
             status = excluded.status,
@@ -772,7 +720,8 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             last_enriched_at = excluded.last_enriched_at,
             cluster_id = excluded.cluster_id,
             x = excluded.x,
-            y = excluded.y",
+            y = excluded.y,
+            embedding_source = excluded.embedding_source",
         params![
             doc.file_id,
             doc.summary,
@@ -787,6 +736,7 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             doc.cluster_id,
             doc.x,
             doc.y,
+            doc.embedding_source,
         ],
     )?;
 
@@ -801,7 +751,7 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
 }
 
 fn encode_embedding(embedding: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(embedding.len() * std::mem::size_of::<f32>());
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(embedding));
     for value in embedding {
         bytes.extend_from_slice(&value.to_le_bytes());
     }

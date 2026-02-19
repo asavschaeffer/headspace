@@ -33,7 +33,7 @@ pub fn cluster_documents(documents: &mut [Document]) {
         .iter()
         .map(|d| {
             if d.embedding.is_empty() {
-                vec![0.0; 1024]
+                vec![0.0; crate::embeddings::EMBEDDING_DIM]
             } else {
                 d.embedding.iter().map(|&v| f64::from(v)).collect()
             }

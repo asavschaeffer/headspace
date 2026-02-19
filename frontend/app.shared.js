@@ -58,12 +58,10 @@
 
     async function fetchJSON(url, options) {
         const response = await fetch(API + url, options);
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(text || `Request failed (${response.status})`);
-        }
         const text = await response.text();
-        return text ? JSON.parse(text) : null;
+        if (!response.ok) throw new Error(text || `Request failed (${response.status})`);
+        try { return text ? JSON.parse(text) : null; }
+        catch { throw new Error(`Invalid JSON from ${url}`); }
     }
 
     function inDir(node, dir) {
@@ -146,6 +144,32 @@
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
+    function showError(msg) {
+        const container = document.getElementById("toastContainer");
+        if (!container) return;
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        toast.textContent = msg;
+        const close = document.createElement("button");
+        close.className = "toast-close";
+        close.textContent = "\u00d7";
+        close.addEventListener("click", () => toast.remove());
+        toast.appendChild(close);
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 8000);
+    }
+
+    function showWarningBanner(msg) {
+        const banner = document.getElementById("warningBanner");
+        if (!banner) return;
+        if (msg) {
+            banner.textContent = msg;
+            banner.hidden = false;
+        } else {
+            banner.hidden = true;
+        }
+    }
+
     window.Headspace = {
         API,
         CANVAS_W,
@@ -168,5 +192,7 @@
         norm,
         clamp,
         sleep,
+        showError,
+        showWarningBanner,
     };
 })();
