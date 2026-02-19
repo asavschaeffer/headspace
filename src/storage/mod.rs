@@ -60,6 +60,9 @@ pub struct Document {
     /// Human-readable gist.
     #[serde(default)]
     pub summary: String,
+    /// User-authored note used to steer re-enrichment.
+    #[serde(default)]
+    pub user_note: String,
     /// Lifecycle status marker.
     #[serde(default = "default_status")]
     pub status: String,
@@ -154,6 +157,7 @@ impl Document {
             modified_at,
             ingested_at: chrono::Utc::now().to_rfc3339(),
             summary: String::new(),
+            user_note: String::new(),
             status: default_status(),
             status_confidence: 0.0,
             topics: Vec::new(),
@@ -186,6 +190,7 @@ const DOCUMENT_SELECT: &str = "SELECT
     f.pipeline_kind,
     f.content_preview,
     f.content_canonical,
+    f.user_note,
     f.content_length,
     f.modified_at,
     f.ingested_at,
@@ -358,12 +363,29 @@ impl Store {
         self.query_documents(&sql)
     }
 
+    /// Returns all non-rejected documents for the semantic canvas surface.
+    pub fn canvas_documents(&self) -> eyre::Result<Vec<Document>> {
+        let sql =
+            format!("{DOCUMENT_SELECT} WHERE f.review_status != 'rejected' ORDER BY f.abs_path ASC");
+        self.query_documents(&sql)
+    }
+
     /// Sets a review status for a file identity.
     pub fn set_review_status(&mut self, file_id: &str, status: &str) -> eyre::Result<()> {
         let conn = self.connect()?;
         conn.execute(
             "UPDATE files SET review_status = ?1, last_seen = unixepoch() WHERE file_id = ?2",
             params![status, file_id],
+        )?;
+        Ok(())
+    }
+
+    /// Updates the user note for a file identity.
+    pub fn update_user_note(&mut self, file_id: &str, note: &str) -> eyre::Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE files SET user_note = ?1, last_seen = unixepoch() WHERE file_id = ?2",
+            params![note, file_id],
         )?;
         Ok(())
     }
@@ -492,6 +514,7 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
             content_hash TEXT NOT NULL,
             content_preview TEXT NOT NULL,
             content_canonical TEXT NOT NULL DEFAULT '',
+            user_note TEXT NOT NULL DEFAULT '',
             content_length INTEGER NOT NULL,
             modified_at INTEGER NOT NULL,
             ingested_at TEXT NOT NULL,
@@ -534,6 +557,7 @@ fn initialize_schema(conn: &Connection) -> eyre::Result<()> {
         "TEXT NOT NULL DEFAULT 'pending_review'",
     )?;
     ensure_column(conn, "files", "mime_type", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(conn, "files", "user_note", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(
         conn,
         "files",
@@ -644,6 +668,7 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         content_canonical: row
             .get::<_, Option<String>>("content_canonical")?
             .unwrap_or_default(),
+        user_note: row.get::<_, Option<String>>("user_note")?.unwrap_or_default(),
         content_length: usize::try_from(content_length_i64).unwrap_or(0),
         embedding,
         cluster_id: row.get::<_, Option<i32>>("cluster_id")?.unwrap_or(-1),
@@ -691,8 +716,8 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
     tx.execute(
         "INSERT INTO files (
             file_id, doc_id, abs_path, rel_path, name, extension, review_status, mime_type,
-            pipeline_kind, content_hash, content_preview, content_canonical, content_length, modified_at, ingested_at, last_seen
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, unixepoch())
+            pipeline_kind, content_hash, content_preview, content_canonical, user_note, content_length, modified_at, ingested_at, last_seen
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, unixepoch())
          ON CONFLICT(file_id) DO UPDATE SET
             doc_id = excluded.doc_id,
             abs_path = excluded.abs_path,
@@ -705,6 +730,7 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             content_hash = excluded.content_hash,
             content_preview = excluded.content_preview,
             content_canonical = excluded.content_canonical,
+            user_note = excluded.user_note,
             content_length = excluded.content_length,
             modified_at = excluded.modified_at,
             ingested_at = excluded.ingested_at,
@@ -722,6 +748,7 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             doc.content_hash,
             doc.content_preview,
             doc.content_canonical,
+            doc.user_note,
             i64::try_from(doc.content_length)?,
             i64::try_from(doc.modified_at)?,
             doc.ingested_at,

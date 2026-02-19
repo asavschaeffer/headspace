@@ -14,7 +14,7 @@ use tokio::sync::{RwLock, broadcast};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use crate::cluster::cluster_documents;
+use crate::cluster::{cluster_documents, project_all};
 use crate::config::Config;
 use crate::cortex::{self, IngestInput};
 use crate::embeddings;
@@ -61,11 +61,13 @@ pub fn router(state: AppState) -> Router {
         .route("/api/status", get(status))
         .route("/api/ingest", post(ingest))
         .route("/api/ingest/stream", get(ingest_stream))
+        .route("/api/canvas", get(canvas_data))
         .route("/api/documents", get(list_documents))
-        .route("/api/document/{id}", get(get_document))
+        .route("/api/document/{id}", get(get_document).patch(update_note))
         .route("/api/search", get(search_documents))
         .route("/api/clusters", get(get_clusters))
         .route("/api/review/queue", get(review_queue))
+        .route("/api/review/{id}/enrich", post(enrich_with_context))
         .route("/api/review/{id}/approve", post(approve_review))
         .route("/api/review/{id}/reject", post(reject_review))
         .route("/api/review/bulk", post(bulk_review))
@@ -341,6 +343,8 @@ async fn run_ingest(
     );
 
     let mut enriched_docs = Vec::with_capacity(enrich_queue.len());
+    let mut embed_doc_indexes = Vec::new();
+    let mut texts_to_embed = Vec::new();
     let enrich_total = enrich_queue.len();
     for (idx, mut work) in enrich_queue.into_iter().enumerate() {
         tracing::debug!(
@@ -412,7 +416,39 @@ async fn run_ingest(
         work.doc.x = 0.0;
         work.doc.y = 0.0;
         work.doc.review_status = "pending_review".to_string();
+
+        let should_embed = !(work.doc.status == "Rot" && work.doc.status_confidence > 0.72);
+        if should_embed {
+            embed_doc_indexes.push(enriched_docs.len());
+            texts_to_embed.push(embedding_text_for_doc(&work.doc));
+        }
+
         enriched_docs.push(work.doc);
+    }
+
+    let mut embeddings_generated = 0usize;
+    if !texts_to_embed.is_empty() {
+        emit_progress(
+            progress_tx,
+            ProgressEvent {
+                phase: "embed".to_string(),
+                message: format!("Embedding {} documents", texts_to_embed.len()),
+                done: texts_to_embed.len(),
+                total: texts_to_embed.len(),
+                current_file: None,
+            },
+        );
+
+        let generated = embeddings::generate_embeddings(&texts_to_embed, config).await?;
+        embeddings_generated = generated.len().min(embed_doc_indexes.len());
+        for (idx, embedding) in generated.into_iter().enumerate() {
+            let Some(&doc_idx) = embed_doc_indexes.get(idx) else {
+                break;
+            };
+            if let Some(doc) = enriched_docs.get_mut(doc_idx) {
+                doc.embedding = embedding;
+            }
+        }
     }
 
     let stats;
@@ -438,7 +474,7 @@ async fn run_ingest(
             unchanged_files: unchanged_count,
             deleted_files: deleted_count,
             total_documents,
-            embeddings_generated: 0,
+            embeddings_generated,
         };
     }
 
@@ -530,6 +566,98 @@ async fn get_document(
     }
 
     Ok(Json(value))
+}
+
+#[derive(Serialize)]
+struct CanvasNode {
+    id: String,
+    name: String,
+    rel_path: String,
+    abs_path: String,
+    extension: String,
+    review_status: String,
+    cluster_id: i32,
+    x: f64,
+    y: f64,
+    status: String,
+    status_confidence: f32,
+    content_preview: String,
+    summary: String,
+    topics: Vec<String>,
+    user_note: String,
+    content_length: usize,
+    modified_at: u64,
+    content_hash: String,
+}
+
+async fn canvas_data(State(state): State<AppState>) -> Json<Vec<CanvasNode>> {
+    let store = state.store.read().await;
+    let mut docs = store.canvas_documents().unwrap_or_else(|e| {
+        tracing::error!("failed to load canvas documents: {e:?}");
+        Vec::new()
+    });
+
+    project_all(&mut docs);
+
+    let nodes = docs
+        .into_iter()
+        .map(|d| {
+            let cluster_id = if d.review_status == "approved" {
+                d.cluster_id
+            } else {
+                -1
+            };
+
+            CanvasNode {
+                id: d.id,
+                name: d.name,
+                rel_path: d.rel_path,
+                abs_path: d.abs_path,
+                extension: d.extension,
+                review_status: d.review_status,
+                cluster_id,
+                x: d.x,
+                y: d.y,
+                status: d.status,
+                status_confidence: d.status_confidence,
+                content_preview: d.content_preview,
+                summary: d.summary,
+                topics: d.topics,
+                user_note: d.user_note,
+                content_length: d.content_length,
+                modified_at: d.modified_at,
+                content_hash: d.content_hash,
+            }
+        })
+        .collect();
+
+    Json(nodes)
+}
+
+#[derive(Deserialize)]
+struct NoteUpdateRequest {
+    note: String,
+}
+
+async fn update_note(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<NoteUpdateRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let file_id = {
+        let store = state.store.read().await;
+        store
+            .find_by_id(&id)
+            .map_err(internal_error)?
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?
+            .file_id
+    };
+
+    let mut store = state.store.write().await;
+    store
+        .update_user_note(&file_id, &body.note)
+        .map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -691,7 +819,7 @@ struct ReviewActionResponse {
     message: String,
 }
 
-async fn approve_review(
+async fn enrich_with_context(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<ReviewActionResponse>, (StatusCode, String)> {
@@ -703,15 +831,57 @@ async fn approve_review(
             .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?
     };
 
-    let texts = vec![embedding_text_for_doc(&doc)];
-    let mut generated = embeddings::generate_embeddings(&texts, &state.config)
+    let bytes = std::fs::read(&doc.abs_path).map_err(internal_error)?;
+    let mut input = IngestInput::new(
+        doc.abs_path.clone(),
+        doc.rel_path.clone(),
+        doc.file_id.clone(),
+        bytes,
+        doc.extension.clone(),
+        doc.modified_at,
+        doc.content_hash.clone(),
+    );
+    input.user_note = Some(doc.user_note.clone());
+
+    let extraction = cortex::enrich_document(&mut doc, &input, &state.config)
         .await
         .map_err(internal_error)?;
-    doc.embedding = generated.pop().unwrap_or_default();
-    doc.review_status = "approved".to_string();
+    doc.content_canonical = extraction.canonical_text;
+    doc.cluster_id = -1;
+    doc.x = 0.0;
+    doc.y = 0.0;
+
+    let embedding = embeddings::generate_embeddings(&[embedding_text_for_doc(&doc)], &state.config)
+        .await
+        .map_err(internal_error)?;
+    doc.embedding = embedding.into_iter().next().unwrap_or_default();
 
     let mut store = state.store.write().await;
     store.upsert(doc).map_err(internal_error)?;
+    store.save().map_err(internal_error)?;
+
+    Ok(Json(ReviewActionResponse {
+        message: "enriched".to_string(),
+    }))
+}
+
+async fn approve_review(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<ReviewActionResponse>, (StatusCode, String)> {
+    let file_id = {
+        let store = state.store.read().await;
+        store
+            .find_by_id(&id)
+            .map_err(internal_error)?
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?
+            .file_id
+    };
+
+    let mut store = state.store.write().await;
+    store
+        .set_review_status(&file_id, "approved")
+        .map_err(internal_error)?;
     store.save().map_err(internal_error)?;
 
     Ok(Json(ReviewActionResponse {
@@ -784,44 +954,28 @@ async fn bulk_approve(
 ) -> Result<Json<BulkReviewResponse>, (StatusCode, String)> {
     let id_set: HashSet<String> = ids.into_iter().collect();
 
-    let docs = {
+    let file_ids = {
         let store = state.store.read().await;
-        let mut docs = Vec::new();
+        let mut file_ids = Vec::new();
         for id in id_set {
             if let Some(doc) = store.find_by_id(&id).map_err(internal_error)? {
-                docs.push(doc);
+                file_ids.push(doc.file_id);
             }
         }
-        docs
+        file_ids
     };
 
-    let mut approved_docs = Vec::new();
-    let mut texts = Vec::new();
     let skipped = 0usize;
-
-    for mut doc in docs {
-        doc.review_status = "approved".to_string();
-        texts.push(embedding_text_for_doc(&doc));
-        approved_docs.push(doc);
-    }
-
-    if !approved_docs.is_empty() {
-        let embeddings = embeddings::generate_embeddings(&texts, &state.config)
-            .await
+    let mut store = state.store.write().await;
+    for file_id in &file_ids {
+        store
+            .set_review_status(file_id, "approved")
             .map_err(internal_error)?;
-        for (doc, embedding) in approved_docs.iter_mut().zip(embeddings) {
-            doc.embedding = embedding;
-        }
-
-        let mut store = state.store.write().await;
-        for doc in &approved_docs {
-            store.upsert(doc.clone()).map_err(internal_error)?;
-        }
-        store.save().map_err(internal_error)?;
     }
+    store.save().map_err(internal_error)?;
 
     Ok(Json(BulkReviewResponse {
-        approved: approved_docs.len(),
+        approved: file_ids.len(),
         rejected: 0,
         skipped,
     }))

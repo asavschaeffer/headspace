@@ -75,7 +75,7 @@ pub fn cluster_documents(documents: &mut [Document]) {
 ///
 /// Uses f32 embeddings internally, upcast to f64 for the linear algebra
 /// (PCA needs the precision for eigenvalue convergence).
-fn assign_2d_positions(documents: &mut [Document]) {
+pub fn assign_2d_positions(documents: &mut [Document]) {
     if documents.is_empty() {
         return;
     }
@@ -144,6 +144,11 @@ fn assign_2d_positions(documents: &mut [Document]) {
     }
 
     normalize_positions(documents);
+}
+
+/// Projects all documents into 2D space without modifying cluster IDs.
+pub fn project_all(documents: &mut [Document]) {
+    assign_2d_positions(documents);
 }
 
 /// Normalizes positions to [0, 1] range.

@@ -44,6 +44,7 @@ pub struct IngestInput {
     pub ext: String,
     pub modified_at: u64,
     pub content_hash: String,
+    pub user_note: Option<String>,
 }
 
 impl IngestInput {
@@ -68,6 +69,7 @@ impl IngestInput {
             ext,
             modified_at,
             content_hash,
+            user_note: None,
         }
     }
 }
@@ -360,7 +362,17 @@ async fn generate_metadata(
     document: &Document,
     config: &Config,
 ) -> eyre::Result<HeadspaceMetadata> {
-    let summary = summarize_with_fallback(&extraction.canonical_text, config).await?;
+    let summary_prompt = if let Some(note) = input.user_note.as_deref() {
+        let trimmed = note.trim();
+        if trimmed.is_empty() {
+            extraction.canonical_text.clone()
+        } else {
+            format!("User context: {trimmed}\n\n{}", extraction.canonical_text)
+        }
+    } else {
+        extraction.canonical_text.clone()
+    };
+    let summary = summarize_with_fallback(&summary_prompt, config).await?;
     let (topics, topics_confidence, entities) =
         topics::extract_topics_and_entities(&extraction.canonical_text, &input.ext);
 
