@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>headspace</title>
+    <meta name="description" content="A diegetic semantic canvas for your document territory">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <aside id="territoryPanel">
+            <div id="territoryHeader">
+                <span class="territory-title">Territory</span>
+                <div class="territory-actions">
+                    <button id="finalizeBtn" title="Finalize clusters" hidden>Finalize</button>
+                    <button id="ingestBtn" title="Ingest directory">+</button>
+                    <button id="territoryCollapseBtn" class="territory-collapse-btn" title="Collapse panel">&lsaquo;</button>
+                </div>
+            </div>
+            <div id="territoryTree"></div>
+        </aside>
+
+        <button id="territoryExpandBtn" class="territory-expand-btn" hidden title="Expand territory panel">&rsaquo;</button>
+
+        <main id="spaceMain">
+            <canvas id="spaceCanvas"></canvas>
+            <div id="ambientStatus"></div>
+
+            <!-- Compact top bar -->
+            <div id="topBar">
+                <button id="searchToggle" class="topbar-icon" title="Search (Ctrl+K)">&#x2315;</button>
+                <button id="lassoToggle" class="topbar-icon" title="Lasso select (Shift+drag)">&#x2B1A;</button>
+
+                <div id="searchExpand" class="topbar-expand" hidden>
+                    <input id="searchInput" placeholder="Search..." autocomplete="off">
+                </div>
+
+                <div id="lassoExpand" class="topbar-expand" hidden>
+                    <span id="lassoCount">0 selected</span>
+                    <button id="lassoApprove">Approve</button>
+                    <button id="lassoReject">Reject</button>
+                    <button id="lassoClear">Clear</button>
+                </div>
+            </div>
+
+            <!-- Search dropdown (below topBar) -->
+            <div id="searchDropdown" hidden>
+                <div id="searchFilters"></div>
+                <div id="searchResults"></div>
+            </div>
+        </main>
+
+        <aside id="cardPanel" hidden>
+            <button id="cardClose" title="Close">&times;</button>
+            <div class="card-content-zone" id="cardContentZone"></div>
+            <div class="card-divider"></div>
+            <div class="card-ai-zone" id="cardAiZone"></div>
+            <div class="card-divider card-divider-note"></div>
+            <div class="card-note-zone">
+                <textarea id="cardNote" placeholder="What do you know about this that the system doesn't?"></textarea>
+                <button id="enrichBtn" hidden>Enrich with context ?</button>
+            </div>
+            <div class="card-actions" id="cardActions"></div>
+        </aside>
+    </div>
+
+    <div class="modal-overlay" id="ingestModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Ingest Directory</h3>
+                <button class="close-btn" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="ingestRecent" class="ingest-recent" hidden>
+                    <label>Recent directories</label>
+                    <div id="ingestRecentList" class="ingest-recent-list"></div>
+                </div>
+
+                <label>Browse</label>
+                <div id="ingestBrowser" class="ingest-browser">
+                    <div id="ingestBreadcrumb" class="ingest-breadcrumb"></div>
+                    <div id="ingestDirList" class="ingest-dir-list"></div>
+                </div>
+
+                <label for="ingestPath" style="margin-top:10px">Or paste a path</label>
+                <input type="text" id="ingestPath" placeholder="C:\Users\you\Documents\project" autocomplete="off">
+            </div>
+            <div class="modal-footer">
+                <button id="cancelIngest">Cancel</button>
+                <button id="confirmIngest">Start Ingestion</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer"></div>
+    <div id="warningBanner" hidden></div>
+
+    <script src="app.shared.js"></script>
+    <script src="app.canvas.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

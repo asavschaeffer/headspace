@@ -1,25 +1,4 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-venv/
-
-# Environment Variables (Secrets)
 .env
-
-# Database
+target/
+.headspace/
 *.db
-*.sqlite
-
-# IDEs
-.vscode/
-.idea/
-.gemini/
-
-# Runtime Artifacts
-search_index.pkl
-file_index.db
-transaction_log.json
-proposal.md
-proposed_changes.json

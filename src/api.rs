@@ -1,0 +1,1288 @@
+//! HTTP API endpoints and WebSocket progress streaming.
+//!
+//! Provides REST endpoints for document management, search, ingestion,
+//! and the review workflow. Also serves the static frontend.
+
+use std::collections::{HashMap, HashSet};
+use std::convert::Infallible;
+use std::path::{Path as FsPath, PathBuf};
+use std::sync::Arc;
+
+use axum::Router;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::Json;
+use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::routing::{delete, get, post};
+use serde::{Deserialize, Serialize};
+use tokio::sync::{RwLock, broadcast};
+use tokio_stream::StreamExt;
+use tokio_stream::wrappers::BroadcastStream;
+
+use crate::cluster::{cluster_documents, project_all};
+use crate::config::Config;
+use crate::cortex::{self, IngestInput};
+use crate::embeddings;
+use crate::ingestion;
+use crate::search;
+use crate::storage::{Document, OverseenDir, ReviewStatus, Status, Store};
+
+/// Shared application state.
+#[derive(Debug, Clone)]
+pub struct AppState {
+    pub store: Arc<RwLock<Store>>,
+    pub config: Arc<Config>,
+    pub ingesting: Arc<RwLock<bool>>,
+    /// Stats from the most recent ingestion (if any).
+    pub last_ingest_stats: Arc<RwLock<Option<IngestStats>>>,
+    /// Error message from the most recent failed ingestion (if any).
+    pub last_ingest_error: Arc<RwLock<Option<String>>>,
+    /// Broadcast stream for ingestion progress updates.
+    pub progress_tx: Arc<broadcast::Sender<ProgressEvent>>,
+}
+
+/// Statistics from a diff-based ingestion run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestStats {
+    pub new_files: usize,
+    pub changed_files: usize,
+    pub unchanged_files: usize,
+    pub deleted_files: usize,
+    pub total_documents: usize,
+    pub embeddings_generated: usize,
+}
+
+/// Progress event emitted while ingestion is running.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProgressEvent {
+    pub phase: String,
+    pub message: String,
+    pub done: usize,
+    pub total: usize,
+    pub current_file: Option<String>,
+}
+
+/// Creates the API router.
+pub fn router(state: AppState) -> Router {
+    Router::new()
+        .route("/api/status", get(status))
+        .route("/api/ingest", post(ingest))
+        .route("/api/ingest/stream", get(ingest_stream))
+        .route("/api/canvas", get(canvas_data))
+        .route("/api/documents", get(list_documents))
+        .route("/api/document/{id}", get(get_document).patch(update_note))
+        .route("/api/search", get(search_documents))
+        .route("/api/clusters", get(get_clusters))
+        .route("/api/review/queue", get(review_queue))
+        .route("/api/review/{id}/enrich", post(enrich_with_context))
+        .route("/api/review/{id}/approve", post(approve_review))
+        .route("/api/review/{id}/reject", post(reject_review))
+        .route("/api/review/bulk", post(bulk_review))
+        .route("/api/review/finish", post(finish_review))
+        .route("/api/fs/browse", get(browse_fs))
+        .route("/api/overseen", get(list_overseen).post(add_overseen))
+        .route("/api/overseen/{id}", delete(remove_overseen))
+        .with_state(state)
+}
+
+#[derive(Serialize)]
+struct StatusResponse {
+    document_count: usize,
+    approved_count: usize,
+    pending_review_count: usize,
+    has_embeddings: bool,
+    is_ingesting: bool,
+    root_path: String,
+    last_ingest: Option<IngestStats>,
+    last_ingest_error: Option<String>,
+}
+
+async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
+    let store = state.store.read().await;
+    let ingesting = *state.ingesting.read().await;
+    let last_ingest = state.last_ingest_stats.read().await.clone();
+    let last_ingest_error = state.last_ingest_error.read().await.clone();
+    let document_count = store.document_count().unwrap_or_else(|e| {
+        tracing::error!("failed to count documents: {e:?}");
+        0
+    });
+    let approved_count = store.approved_documents().map(|d| d.len()).unwrap_or(0);
+    let pending_review_count = store
+        .pending_review_documents()
+        .map(|d| d.len())
+        .unwrap_or(0);
+
+    Json(StatusResponse {
+        document_count,
+        approved_count,
+        pending_review_count,
+        has_embeddings: state.config.has_embeddings(),
+        is_ingesting: ingesting,
+        root_path: store.root_path().to_string(),
+        last_ingest,
+        last_ingest_error,
+    })
+}
+
+#[derive(Deserialize)]
+struct IngestRequest {
+    path: String,
+}
+
+#[derive(Serialize)]
+struct IngestResponse {
+    message: String,
+    document_count: usize,
+}
+
+async fn ingest(
+    State(state): State<AppState>,
+    Json(body): Json<IngestRequest>,
+) -> Result<Json<IngestResponse>, (StatusCode, String)> {
+    start_ingest_job(state.clone(), PathBuf::from(&body.path), None).await?;
+    Ok(Json(IngestResponse {
+        message: "ingestion started".to_string(),
+        document_count: 0,
+    }))
+}
+
+async fn ingest_stream(
+    State(state): State<AppState>,
+) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.progress_tx.subscribe();
+    let stream = BroadcastStream::new(rx).filter_map(|result| {
+        let serialized = result
+            .ok()
+            .and_then(|event| serde_json::to_string(&event).ok());
+        serialized.map(|data| Ok(Event::default().data(data)))
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+#[derive(Debug)]
+struct EnrichWork {
+    discovered: ingestion::DiscoveredFile,
+    doc: Document,
+}
+
+async fn start_ingest_job(
+    state: AppState,
+    path: PathBuf,
+    overseen_id: Option<String>,
+) -> Result<(), (StatusCode, String)> {
+    if !path.is_dir() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("not a directory: {}", path.display()),
+        ));
+    }
+
+    {
+        let ingesting = state.ingesting.read().await;
+        if *ingesting {
+            return Err((
+                StatusCode::CONFLICT,
+                "ingestion already in progress".to_string(),
+            ));
+        }
+    }
+
+    {
+        let mut ingesting = state.ingesting.write().await;
+        *ingesting = true;
+    }
+
+    emit_progress(
+        &state.progress_tx,
+        ProgressEvent {
+            phase: "discover".to_string(),
+            message: format!("Starting discovery in {}", path.display()),
+            done: 0,
+            total: 0,
+            current_file: None,
+        },
+    );
+
+    let config = state.config.clone();
+    let store_lock = state.store.clone();
+    let ingesting_flag = state.ingesting.clone();
+    let stats_lock = state.last_ingest_stats.clone();
+    let error_lock = state.last_ingest_error.clone();
+    let progress_tx = state.progress_tx.clone();
+
+    tokio::spawn(async move {
+        // Clear any previous error when starting a new job.
+        {
+            let mut last_error = error_lock.write().await;
+            *last_error = None;
+        }
+
+        let result = run_ingest(&path, &config, &store_lock, &stats_lock, &progress_tx).await;
+
+        if result.is_ok() {
+            if let Some(id) = overseen_id {
+                let mut store = store_lock.write().await;
+                if let Err(err) = store.touch_overseen_dir(&id) {
+                    tracing::warn!(id = %id, error = %err, "failed to touch overseen dir");
+                }
+            }
+        } else if let Err(ref err) = result {
+            let msg = format!("{err:#}");
+            emit_progress(
+                &progress_tx,
+                ProgressEvent {
+                    phase: "error".to_string(),
+                    message: format!("Ingestion failed: {msg}"),
+                    done: 0,
+                    total: 0,
+                    current_file: None,
+                },
+            );
+            let mut last_error = error_lock.write().await;
+            *last_error = Some(msg);
+        }
+
+        let mut ingesting = ingesting_flag.write().await;
+        *ingesting = false;
+
+        if let Err(err) = result {
+            tracing::error!("ingestion failed: {err:?}");
+        }
+    });
+
+    Ok(())
+}
+
+/// Runs the diff-based ingestion pipeline and leaves files pending review.
+#[allow(clippy::too_many_lines, reason = "Ingestion pipeline stages are sequential and cohesive")]
+async fn run_ingest(
+    path: &FsPath,
+    config: &Config,
+    store_lock: &Arc<RwLock<Store>>,
+    stats_lock: &Arc<RwLock<Option<IngestStats>>>,
+    progress_tx: &broadcast::Sender<ProgressEvent>,
+) -> eyre::Result<()> {
+    tracing::info!(path = %path.display(), "starting ingestion");
+
+    let discovery = ingestion::discover(path, config.cortex_max_bytes)?;
+    let discovered_count = discovery.discovered.len();
+    emit_progress(
+        progress_tx,
+        ProgressEvent {
+            phase: "discover".to_string(),
+            message: format!("Discovered {discovered_count} files"),
+            done: discovered_count,
+            total: discovered_count,
+            current_file: None,
+        },
+    );
+
+    let discovered_file_ids = discovery.discovered_file_ids;
+    let mut enrich_queue: Vec<EnrichWork> = Vec::new();
+    let mut unchanged_updates: Vec<Document> = Vec::new();
+    let mut unchanged_count = 0usize;
+    let mut new_count = 0usize;
+    let mut changed_count = 0usize;
+
+    {
+        let store = store_lock.read().await;
+        for discovered in discovery.discovered {
+            let existing = match store.find_by_file_id(&discovered.file_id)? {
+                Some(existing) => Some(existing),
+                None => store.find_by_path(&discovered.abs_path)?,
+            };
+
+            match existing {
+                Some(existing) if existing.content_hash == discovered.content_hash => {
+                    unchanged_count += 1;
+                    let mut updated = existing.clone();
+                    let new_len = usize::try_from(discovered.size_bytes).unwrap_or(0);
+                    let path_changed = updated.abs_path != discovered.abs_path
+                        || updated.rel_path != discovered.rel_path
+                        || updated.name != discovered.name
+                        || updated.extension != discovered.extension
+                        || updated.modified_at != discovered.modified_at
+                        || updated.content_length != new_len;
+
+                    if path_changed {
+                        updated.abs_path.clone_from(&discovered.abs_path);
+                        updated.rel_path.clone_from(&discovered.rel_path);
+                        updated.name.clone_from(&discovered.name);
+                        updated.extension.clone_from(&discovered.extension);
+                        updated.modified_at = discovered.modified_at;
+                        updated.content_length = new_len;
+                        unchanged_updates.push(updated);
+                    }
+                }
+                Some(existing) => {
+                    changed_count += 1;
+                    let mut doc = Document::new(
+                        discovered.file_id.clone(),
+                        discovered.content_hash.clone(),
+                        discovered.rel_path.clone(),
+                        discovered.abs_path.clone(),
+                        discovered.name.clone(),
+                        discovered.extension.clone(),
+                        String::new(),
+                        usize::try_from(discovered.size_bytes).unwrap_or(0),
+                        discovered.modified_at,
+                    );
+                    doc.id = existing.id;
+                    doc.review_status = ReviewStatus::PendingReview;
+                    enrich_queue.push(EnrichWork { discovered, doc });
+                }
+                None => {
+                    new_count += 1;
+                    let mut doc = Document::new(
+                        discovered.file_id.clone(),
+                        discovered.content_hash.clone(),
+                        discovered.rel_path.clone(),
+                        discovered.abs_path.clone(),
+                        discovered.name.clone(),
+                        discovered.extension.clone(),
+                        String::new(),
+                        usize::try_from(discovered.size_bytes).unwrap_or(0),
+                        discovered.modified_at,
+                    );
+                    doc.review_status = ReviewStatus::PendingReview;
+                    enrich_queue.push(EnrichWork { discovered, doc });
+                }
+            }
+        }
+    }
+
+    emit_progress(
+        progress_tx,
+        ProgressEvent {
+            phase: "diff".to_string(),
+            message: format!(
+                "{new_count} new | {changed_count} changed | {unchanged_count} unchanged"
+            ),
+            done: new_count + changed_count,
+            total: discovered_count,
+            current_file: None,
+        },
+    );
+
+    let mut enriched_docs = Vec::with_capacity(enrich_queue.len());
+    let mut embed_doc_indexes = Vec::new();
+    let mut texts_to_embed = Vec::new();
+    let enrich_total = enrich_queue.len();
+    for (idx, mut work) in enrich_queue.into_iter().enumerate() {
+        tracing::debug!(
+            file = %work.discovered.rel_path,
+            "reading bytes for enrichment"
+        );
+        let bytes = match std::fs::read(&work.discovered.abs_path) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                tracing::warn!(
+                    file = %work.discovered.abs_path,
+                    error = %err,
+                    "failed to read file during enrichment; skipping"
+                );
+                emit_progress(
+                    progress_tx,
+                    ProgressEvent {
+                        phase: "enrich".to_string(),
+                        message: format!(
+                            "Skipped unreadable file {} ({}/{})",
+                            work.discovered.rel_path,
+                            idx + 1,
+                            enrich_total
+                        ),
+                        done: idx + 1,
+                        total: enrich_total,
+                        current_file: Some(work.discovered.rel_path.clone()),
+                    },
+                );
+                continue;
+            }
+        };
+
+        let crawl_entry = ingestion::CrawlEntry {
+            discovered: work.discovered,
+            bytes,
+        };
+
+        let input = IngestInput::new(
+            crawl_entry.discovered.abs_path.clone(),
+            crawl_entry.discovered.rel_path.clone(),
+            crawl_entry.discovered.file_id.clone(),
+            crawl_entry.bytes,
+            crawl_entry.discovered.extension.clone(),
+            crawl_entry.discovered.modified_at,
+            crawl_entry.discovered.content_hash.clone(),
+        );
+
+        emit_progress(
+            progress_tx,
+            ProgressEvent {
+                phase: "enrich".to_string(),
+                message: format!(
+                    "Enriching {} ({}/{})",
+                    input.rel_path,
+                    idx + 1,
+                    enrich_total
+                ),
+                done: idx + 1,
+                total: enrich_total,
+                current_file: Some(input.rel_path.clone()),
+            },
+        );
+
+        let extraction = cortex::enrich_document(&mut work.doc, &input, config).await?;
+        work.doc.content_canonical = extraction.canonical_text;
+        work.doc.embedding.clear();
+        work.doc.cluster_id = -1;
+        work.doc.x = 0.0;
+        work.doc.y = 0.0;
+        work.doc.review_status = ReviewStatus::PendingReview;
+
+        let should_embed = !(work.doc.status == Status::Rot && work.doc.status_confidence > 0.72);
+        if should_embed {
+            embed_doc_indexes.push(enriched_docs.len());
+            texts_to_embed.push(embedding_text_for_doc(&work.doc));
+        }
+
+        enriched_docs.push(work.doc);
+    }
+
+    let mut embeddings_generated = 0usize;
+    if !texts_to_embed.is_empty() {
+        emit_progress(
+            progress_tx,
+            ProgressEvent {
+                phase: "embed".to_string(),
+                message: format!("Embedding {} documents", texts_to_embed.len()),
+                done: texts_to_embed.len(),
+                total: texts_to_embed.len(),
+                current_file: None,
+            },
+        );
+
+        let generated = embeddings::generate_embeddings(&texts_to_embed, config).await?;
+        embeddings_generated = generated.len().min(embed_doc_indexes.len());
+        let source = if config.has_embeddings() { "provider" } else { "zero_fallback" };
+        for (idx, embedding) in generated.into_iter().enumerate() {
+            let Some(&doc_idx) = embed_doc_indexes.get(idx) else {
+                break;
+            };
+            if let Some(doc) = enriched_docs.get_mut(doc_idx) {
+                let is_zero = embedding.iter().all(|&v| v == 0.0);
+                doc.embedding = embedding;
+                doc.embedding_source = source.to_string();
+                if is_zero && config.has_embeddings() {
+                    doc.enrichment_warnings
+                        .push("Embedding: zero vector (API unavailable)".to_string());
+                }
+            }
+        }
+    }
+
+    let stats;
+    let pending_count;
+    {
+        let mut store = store_lock.write().await;
+        let dir_str = path.to_string_lossy().to_string();
+        let deleted_count = store.retain_existing_in_dir(&dir_str, &discovered_file_ids)?;
+
+        // Write unchanged path updates and enriched docs in batch transactions
+        // to minimize the number of write-lock acquisitions.
+        store.upsert_batch(unchanged_updates)?;
+        store.upsert_batch(enriched_docs)?;
+        store.save()?;
+
+        pending_count = store.pending_review_documents()?.len();
+        let total_documents = store.document_count()?;
+        stats = IngestStats {
+            new_files: new_count,
+            changed_files: changed_count,
+            unchanged_files: unchanged_count,
+            deleted_files: deleted_count,
+            total_documents,
+            embeddings_generated,
+        };
+    }
+
+    {
+        let mut last_stats = stats_lock.write().await;
+        *last_stats = Some(stats.clone());
+    }
+
+    emit_progress(
+        progress_tx,
+        ProgressEvent {
+            phase: "complete".to_string(),
+            message: format!("Complete - {pending_count} files pending review"),
+            done: pending_count,
+            total: pending_count,
+            current_file: None,
+        },
+    );
+
+    tracing::info!(
+        new = stats.new_files,
+        changed = stats.changed_files,
+        unchanged = stats.unchanged_files,
+        deleted = stats.deleted_files,
+        total = stats.total_documents,
+        pending = pending_count,
+        "ingestion complete"
+    );
+
+    Ok(())
+}
+
+fn emit_progress(tx: &broadcast::Sender<ProgressEvent>, event: ProgressEvent) {
+    let _ = tx.send(event);
+}
+
+#[derive(Serialize)]
+struct DocumentSummary {
+    id: String,
+    name: String,
+    rel_path: String,
+    extension: String,
+    content_length: usize,
+    cluster_id: i32,
+    status: Status,
+    summary: String,
+    topics: Vec<String>,
+    review_status: ReviewStatus,
+}
+
+async fn list_documents(State(state): State<AppState>) -> Json<Vec<DocumentSummary>> {
+    let store = state.store.read().await;
+    let docs = store.documents_sorted_approved().unwrap_or_else(|e| {
+        tracing::error!("failed to list documents: {e:?}");
+        Vec::new()
+    });
+
+    let summaries: Vec<DocumentSummary> = docs
+        .iter()
+        .map(|d| DocumentSummary {
+            id: d.id.clone(),
+            name: d.name.clone(),
+            rel_path: d.rel_path.clone(),
+            extension: d.extension.clone(),
+            content_length: d.content_length,
+            cluster_id: d.cluster_id,
+            status: d.status.clone(),
+            summary: d.summary.clone(),
+            topics: d.topics.clone(),
+            review_status: d.review_status.clone(),
+        })
+        .collect();
+    Json(summaries)
+}
+
+async fn get_document(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let store = state.store.read().await;
+    let doc = store
+        .find_by_id(&id)
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?;
+
+    let mut value = serde_json::to_value(doc).map_err(internal_error)?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("embedding");
+    }
+
+    Ok(Json(value))
+}
+
+#[derive(Serialize)]
+struct CanvasNode {
+    id: String,
+    name: String,
+    rel_path: String,
+    abs_path: String,
+    extension: String,
+    review_status: ReviewStatus,
+    cluster_id: i32,
+    x: f64,
+    y: f64,
+    status: Status,
+    status_confidence: f32,
+    content_preview: String,
+    summary: String,
+    topics: Vec<String>,
+    user_note: String,
+    content_length: usize,
+    modified_at: u64,
+    content_hash: String,
+    enrichment_warnings: Vec<String>,
+}
+
+async fn canvas_data(State(state): State<AppState>) -> Json<Vec<CanvasNode>> {
+    let store = state.store.read().await;
+    let mut docs = store.canvas_documents().unwrap_or_else(|e| {
+        tracing::error!("failed to load canvas documents: {e:?}");
+        Vec::new()
+    });
+
+    project_all(&mut docs);
+
+    let nodes = docs
+        .into_iter()
+        .map(|d| {
+            let cluster_id = if d.review_status == ReviewStatus::Approved {
+                d.cluster_id
+            } else {
+                -1
+            };
+
+            CanvasNode {
+                id: d.id,
+                name: d.name,
+                rel_path: d.rel_path,
+                abs_path: d.abs_path,
+                extension: d.extension,
+                review_status: d.review_status,
+                cluster_id,
+                x: d.x,
+                y: d.y,
+                status: d.status,
+                status_confidence: d.status_confidence,
+                content_preview: d.content_preview,
+                summary: d.summary,
+                topics: d.topics,
+                user_note: d.user_note,
+                content_length: d.content_length,
+                modified_at: d.modified_at,
+                content_hash: d.content_hash,
+                enrichment_warnings: d.enrichment_warnings,
+            }
+        })
+        .collect();
+
+    Json(nodes)
+}
+
+#[derive(Deserialize)]
+struct NoteUpdateRequest {
+    note: String,
+}
+
+async fn update_note(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<NoteUpdateRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let file_id = {
+        let store = state.store.read().await;
+        store
+            .find_by_id(&id)
+            .map_err(internal_error)?
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?
+            .file_id
+    };
+
+    let mut store = state.store.write().await;
+    store
+        .update_user_note(&file_id, &body.note)
+        .map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct SearchQuery {
+    q: String,
+    #[serde(default = "default_limit")]
+    limit: usize,
+    /// Filter by review_status (e.g. "approved", "pending_review")
+    #[serde(default)]
+    review_status: Option<String>,
+    /// Filter by file extension (e.g. "rs", "md")
+    #[serde(default)]
+    extension: Option<String>,
+    /// Filter by cluster_id (-1 = noise)
+    #[serde(default)]
+    cluster_id: Option<i32>,
+}
+
+fn default_limit() -> usize {
+    20
+}
+
+#[derive(Serialize)]
+struct SearchResultResponse {
+    id: String,
+    name: String,
+    rel_path: String,
+    extension: String,
+    content_preview: String,
+    summary: String,
+    score: f64,
+    cluster_id: i32,
+}
+
+async fn search_documents(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> Json<Vec<SearchResultResponse>> {
+    let config = state.config.clone();
+    let store = state.store.read().await;
+
+    let query_embedding = match embeddings::generate_query_embedding(&query.q, &config).await {
+        Ok(emb) => emb,
+        Err(e) => {
+            tracing::error!("query embedding failed: {e:?}");
+            return Json(vec![]);
+        }
+    };
+
+    if query_embedding.is_empty() {
+        return Json(vec![]);
+    }
+
+    let docs = store.approved_documents().unwrap_or_else(|e| {
+        tracing::error!("failed to load documents for search: {e:?}");
+        Vec::new()
+    });
+    let doc_refs: Vec<&Document> = docs
+        .iter()
+        .filter(|d| {
+            if let Some(ref s) = query.review_status {
+                if d.review_status != ReviewStatus::from_str(s) {
+                    return false;
+                }
+            }
+            if let Some(ref ext) = query.extension {
+                if d.extension.to_ascii_lowercase() != ext.to_ascii_lowercase() {
+                    return false;
+                }
+            }
+            if let Some(cid) = query.cluster_id {
+                if d.cluster_id != cid {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+    let results = search::search(&query_embedding, &doc_refs, query.limit);
+
+    let response: Vec<SearchResultResponse> = results
+        .into_iter()
+        .map(|r| SearchResultResponse {
+            id: r.document.id,
+            name: r.document.name,
+            rel_path: r.document.rel_path,
+            extension: r.document.extension,
+            content_preview: r.document.content_preview.chars().take(500).collect(),
+            summary: r.document.summary,
+            score: r.score,
+            cluster_id: r.document.cluster_id,
+        })
+        .collect();
+
+    Json(response)
+}
+
+#[derive(Serialize)]
+struct ClusterPoint {
+    id: String,
+    name: String,
+    rel_path: String,
+    extension: String,
+    cluster_id: i32,
+    x: f64,
+    y: f64,
+}
+
+async fn get_clusters(State(state): State<AppState>) -> Json<Vec<ClusterPoint>> {
+    let store = state.store.read().await;
+    let docs = store.approved_documents().unwrap_or_else(|e| {
+        tracing::error!("failed to load clusters: {e:?}");
+        Vec::new()
+    });
+
+    let points: Vec<ClusterPoint> = docs
+        .iter()
+        .map(|d| ClusterPoint {
+            id: d.id.clone(),
+            name: d.name.clone(),
+            rel_path: d.rel_path.clone(),
+            extension: d.extension.clone(),
+            cluster_id: d.cluster_id,
+            x: d.x,
+            y: d.y,
+        })
+        .collect();
+    Json(points)
+}
+
+#[derive(Serialize)]
+struct ReviewQueueItem {
+    id: String,
+    name: String,
+    rel_path: String,
+    abs_path: String,
+    extension: String,
+    content_length: usize,
+    cluster_id: i32,
+    status: Status,
+    summary: String,
+    topics: Vec<String>,
+    review_status: ReviewStatus,
+    content_hash: String,
+    dupe_count: usize,
+    dir_path: String,
+    modified_at: u64,
+}
+
+async fn review_queue(State(state): State<AppState>) -> Json<Vec<ReviewQueueItem>> {
+    let store = state.store.read().await;
+    let docs = store.pending_review_documents().unwrap_or_else(|e| {
+        tracing::error!("failed to load review queue: {e:?}");
+        Vec::new()
+    });
+
+    let mut by_hash: HashMap<String, usize> = HashMap::new();
+    for doc in &docs {
+        *by_hash.entry(doc.content_hash.clone()).or_default() += 1;
+    }
+
+    let items = docs
+        .into_iter()
+        .map(|doc| {
+            let dupe_total = by_hash.get(&doc.content_hash).copied().unwrap_or(1);
+            let dir_path = FsPath::new(&doc.abs_path)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            ReviewQueueItem {
+                id: doc.id,
+                name: doc.name,
+                rel_path: doc.rel_path,
+                abs_path: doc.abs_path,
+                extension: doc.extension,
+                content_length: doc.content_length,
+                cluster_id: doc.cluster_id,
+                status: doc.status,
+                summary: doc.summary,
+                topics: doc.topics,
+                review_status: doc.review_status,
+                content_hash: doc.content_hash,
+                dupe_count: dupe_total.saturating_sub(1),
+                dir_path,
+                modified_at: doc.modified_at,
+            }
+        })
+        .collect();
+
+    Json(items)
+}
+
+#[derive(Serialize)]
+struct ReviewActionResponse {
+    message: String,
+}
+
+async fn enrich_with_context(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<ReviewActionResponse>, (StatusCode, String)> {
+    let mut doc = {
+        let store = state.store.read().await;
+        store
+            .find_by_id(&id)
+            .map_err(internal_error)?
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?
+    };
+
+    let bytes = std::fs::read(&doc.abs_path).map_err(internal_error)?;
+    let mut input = IngestInput::new(
+        doc.abs_path.clone(),
+        doc.rel_path.clone(),
+        doc.file_id.clone(),
+        bytes,
+        doc.extension.clone(),
+        doc.modified_at,
+        doc.content_hash.clone(),
+    );
+    input.user_note = Some(doc.user_note.clone());
+
+    let extraction = cortex::enrich_document(&mut doc, &input, &state.config)
+        .await
+        .map_err(internal_error)?;
+    doc.content_canonical = extraction.canonical_text;
+    doc.cluster_id = -1;
+    doc.x = 0.0;
+    doc.y = 0.0;
+
+    let embedding = embeddings::generate_embeddings(&[embedding_text_for_doc(&doc)], &state.config)
+        .await
+        .map_err(internal_error)?;
+    doc.embedding = embedding.into_iter().next().unwrap_or_default();
+    doc.embedding_source = if state.config.has_embeddings() {
+        "provider".to_string()
+    } else {
+        "zero_fallback".to_string()
+    };
+
+    let mut store = state.store.write().await;
+    store.upsert(doc).map_err(internal_error)?;
+    store.save().map_err(internal_error)?;
+
+    Ok(Json(ReviewActionResponse {
+        message: "enriched".to_string(),
+    }))
+}
+
+async fn approve_review(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<ReviewActionResponse>, (StatusCode, String)> {
+    let file_id = {
+        let store = state.store.read().await;
+        store
+            .find_by_id(&id)
+            .map_err(internal_error)?
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?
+            .file_id
+    };
+
+    let mut store = state.store.write().await;
+    store
+        .set_review_status(&file_id, ReviewStatus::Approved)
+        .map_err(internal_error)?;
+    store.save().map_err(internal_error)?;
+
+    Ok(Json(ReviewActionResponse {
+        message: "approved".to_string(),
+    }))
+}
+
+async fn reject_review(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<ReviewActionResponse>, (StatusCode, String)> {
+    let file_id = {
+        let store = state.store.read().await;
+        store
+            .find_by_id(&id)
+            .map_err(internal_error)?
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "document not found".to_string()))?
+            .file_id
+    };
+
+    let mut store = state.store.write().await;
+    store
+        .set_review_status(&file_id, ReviewStatus::Rejected)
+        .map_err(internal_error)?;
+    store.save().map_err(internal_error)?;
+
+    Ok(Json(ReviewActionResponse {
+        message: "rejected".to_string(),
+    }))
+}
+
+#[derive(Deserialize)]
+struct BulkReviewRequest {
+    ids: Vec<String>,
+    action: String,
+}
+
+#[derive(Serialize)]
+struct BulkReviewResponse {
+    approved: usize,
+    rejected: usize,
+    skipped: usize,
+}
+
+async fn bulk_review(
+    State(state): State<AppState>,
+    Json(body): Json<BulkReviewRequest>,
+) -> Result<Json<BulkReviewResponse>, (StatusCode, String)> {
+    if body.ids.is_empty() {
+        return Ok(Json(BulkReviewResponse {
+            approved: 0,
+            rejected: 0,
+            skipped: 0,
+        }));
+    }
+
+    match body.action.as_str() {
+        "approve" => bulk_approve(state, body.ids).await,
+        "reject" => bulk_reject(state, body.ids).await,
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            "action must be 'approve' or 'reject'".to_string(),
+        )),
+    }
+}
+
+async fn bulk_approve(
+    state: AppState,
+    ids: Vec<String>,
+) -> Result<Json<BulkReviewResponse>, (StatusCode, String)> {
+    let id_set: HashSet<String> = ids.into_iter().collect();
+
+    let file_ids = {
+        let store = state.store.read().await;
+        let mut file_ids = Vec::new();
+        for id in id_set {
+            if let Some(doc) = store.find_by_id(&id).map_err(internal_error)? {
+                file_ids.push(doc.file_id);
+            }
+        }
+        file_ids
+    };
+
+    let skipped = 0usize;
+    let mut store = state.store.write().await;
+    for file_id in &file_ids {
+        store
+            .set_review_status(file_id, ReviewStatus::Approved)
+            .map_err(internal_error)?;
+    }
+    store.save().map_err(internal_error)?;
+
+    Ok(Json(BulkReviewResponse {
+        approved: file_ids.len(),
+        rejected: 0,
+        skipped,
+    }))
+}
+
+async fn bulk_reject(
+    state: AppState,
+    ids: Vec<String>,
+) -> Result<Json<BulkReviewResponse>, (StatusCode, String)> {
+    let id_set: HashSet<String> = ids.into_iter().collect();
+    let file_ids = {
+        let store = state.store.read().await;
+        let mut file_ids = Vec::new();
+        for id in id_set {
+            if let Some(doc) = store.find_by_id(&id).map_err(internal_error)? {
+                file_ids.push(doc.file_id);
+            }
+        }
+        file_ids
+    };
+
+    let mut store = state.store.write().await;
+    for file_id in &file_ids {
+        store
+            .set_review_status(file_id, ReviewStatus::Rejected)
+            .map_err(internal_error)?;
+    }
+    store.save().map_err(internal_error)?;
+
+    Ok(Json(BulkReviewResponse {
+        approved: 0,
+        rejected: file_ids.len(),
+        skipped: 0,
+    }))
+}
+
+#[derive(Serialize)]
+struct FinishReviewResponse {
+    approved_documents: usize,
+    cluster_count: usize,
+    noise_documents: usize,
+}
+
+async fn finish_review(
+    State(state): State<AppState>,
+) -> Result<Json<FinishReviewResponse>, (StatusCode, String)> {
+    let mut approved_docs = {
+        let store = state.store.read().await;
+        store.approved_documents().map_err(internal_error)?
+    };
+
+    if approved_docs.is_empty() {
+        return Ok(Json(FinishReviewResponse {
+            approved_documents: 0,
+            cluster_count: 0,
+            noise_documents: 0,
+        }));
+    }
+
+    cluster_documents(&mut approved_docs);
+
+    let cluster_count = approved_docs
+        .iter()
+        .filter(|d| d.cluster_id >= 0)
+        .map(|d| d.cluster_id)
+        .collect::<HashSet<_>>()
+        .len();
+    let noise_documents = approved_docs.iter().filter(|d| d.cluster_id < 0).count();
+
+    let mut store = state.store.write().await;
+    store
+        .replace_documents(&approved_docs)
+        .map_err(internal_error)?;
+    store.save().map_err(internal_error)?;
+
+    Ok(Json(FinishReviewResponse {
+        approved_documents: approved_docs.len(),
+        cluster_count,
+        noise_documents,
+    }))
+}
+
+#[derive(Deserialize)]
+struct OverseenRequest {
+    path: String,
+}
+
+#[derive(Serialize)]
+struct OverseenAddResponse {
+    overseen: OverseenDir,
+    message: String,
+}
+
+async fn list_overseen(State(state): State<AppState>) -> Json<Vec<OverseenDir>> {
+    let store = state.store.read().await;
+    let dirs = store.list_overseen_dirs().unwrap_or_else(|e| {
+        tracing::error!("failed to list overseen dirs: {e:?}");
+        Vec::new()
+    });
+    Json(dirs)
+}
+
+async fn add_overseen(
+    State(state): State<AppState>,
+    Json(body): Json<OverseenRequest>,
+) -> Result<Json<OverseenAddResponse>, (StatusCode, String)> {
+    let canonical = std::fs::canonicalize(&body.path).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("not a directory: {}", body.path),
+        )
+    })?;
+    if !canonical.is_dir() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("not a directory: {}", body.path),
+        ));
+    }
+    let canonical_string = canonical.to_string_lossy().to_string();
+
+    let overseen = {
+        let mut store = state.store.write().await;
+        store
+            .add_overseen_dir(&canonical_string)
+            .map_err(internal_error)?
+    };
+
+    start_ingest_job(state.clone(), canonical, Some(overseen.id.clone())).await?;
+
+    Ok(Json(OverseenAddResponse {
+        overseen,
+        message: "overseen directory added and ingestion started".to_string(),
+    }))
+}
+
+async fn remove_overseen(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut store = state.store.write().await;
+    store.remove_overseen_dir(&id).map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct BrowseQuery {
+    #[serde(default)]
+    path: Option<String>,
+}
+
+#[derive(Serialize)]
+struct BrowseEntry {
+    name: String,
+    path: String,
+    has_children: bool,
+}
+
+async fn browse_fs(Query(query): Query<BrowseQuery>) -> Json<Vec<BrowseEntry>> {
+    let entries = match query.path.as_deref() {
+        Some(p) if !p.is_empty() => list_child_dirs(FsPath::new(p)),
+        _ => list_roots(),
+    };
+    Json(entries)
+}
+
+fn list_roots() -> Vec<BrowseEntry> {
+    #[cfg(windows)]
+    {
+        let mut roots = Vec::new();
+        for letter in b'A'..=b'Z' {
+            let drive = format!("{}:\\", letter as char);
+            let path = FsPath::new(&drive);
+            if path.exists() {
+                roots.push(BrowseEntry {
+                    name: drive.clone(),
+                    path: drive,
+                    has_children: true,
+                });
+            }
+        }
+        roots
+    }
+
+    #[cfg(not(windows))]
+    {
+        vec![BrowseEntry {
+            name: "/".to_string(),
+            path: "/".to_string(),
+            has_children: true,
+        }]
+    }
+}
+
+fn list_child_dirs(path: &FsPath) -> Vec<BrowseEntry> {
+    let Ok(read_dir) = std::fs::read_dir(path) else {
+        return Vec::new();
+    };
+
+    let hidden_prefixes = [".git", ".hg", ".svn", "node_modules", "__pycache__", ".DS_Store"];
+
+    let mut entries: Vec<BrowseEntry> = read_dir
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let ft = entry.file_type().ok()?;
+            if !ft.is_dir() {
+                return None;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || hidden_prefixes.contains(&name.as_str()) {
+                return None;
+            }
+            let child_path = entry.path().to_string_lossy().to_string();
+            let has_children = std::fs::read_dir(entry.path())
+                .map(|mut rd| rd.any(|e| e.ok().map_or(false, |e| e.file_type().ok().map_or(false, |ft| ft.is_dir()))))
+                .unwrap_or(false);
+            Some(BrowseEntry {
+                name,
+                path: child_path,
+                has_children,
+            })
+        })
+        .collect();
+
+    entries.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    entries
+}
+
+fn embedding_text_for_doc(doc: &Document) -> String {
+    let canonical = doc.content_canonical.trim();
+    if canonical.is_empty() {
+        doc.content_preview.clone()
+    } else {
+        canonical.to_string()
+    }
+}
+
+fn internal_error<E: std::fmt::Display>(err: E) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
