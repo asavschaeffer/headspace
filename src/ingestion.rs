@@ -1,3 +1,8 @@
+//! File discovery and content hashing for ingestion.
+//!
+//! Walks directories to find candidate files, computes streaming SHA-256 hashes,
+//! and collects lightweight metadata for the diff-based ingestion pipeline.
+
 use std::collections::HashSet;
 use std::io::{BufReader, Read};
 use std::path::Path;

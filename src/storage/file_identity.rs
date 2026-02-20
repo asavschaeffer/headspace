@@ -1,6 +1,8 @@
+//! Cross-platform file identity extraction for stable document tracking.
+
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use eyre::{Result, WrapErr};
 use file_id::FileId;
 
 /// Computes a stable, cross-platform file identity string.
@@ -8,7 +10,7 @@ use file_id::FileId;
 /// On Unix this is `(device,inode)`, on Windows `(volume,file-id)`.
 pub fn file_key(path: &Path) -> Result<String> {
     let id = file_id::get_file_id(path)
-        .with_context(|| format!("failed to read file id: {}", path.display()))?;
+        .wrap_err_with(|| format!("failed to read file id: {}", path.display()))?;
 
     let key = match id {
         FileId::Inode {

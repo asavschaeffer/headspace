@@ -1,3 +1,26 @@
+//! Headspace - Computer information organization and retrieval for humans and LLMs.
+//!
+//! This application provides semantic search and organization of local files through:
+//!
+//! - **Ingestion**: Discovers and indexes files from watched directories
+//! - **Enrichment**: Extracts metadata, summaries, and topics using LLM providers
+//! - **Embeddings**: Generates vector embeddings for semantic similarity
+//! - **Clustering**: Groups related documents using HDBSCAN
+//! - **Search**: Provides semantic search via cosine similarity
+//!
+//! # Architecture
+//!
+//! The crate is organized into the following modules:
+//!
+//! - [`api`]: HTTP API endpoints and WebSocket progress streaming
+//! - [`config`]: Environment-based configuration
+//! - [`storage`]: SQLite-backed document persistence
+//! - [`cortex`]: Content extraction and metadata enrichment pipelines
+//! - [`embeddings`]: Vector embedding generation via NVIDIA NIM
+//! - [`ingestion`]: File discovery and content hashing
+//! - [`cluster`]: Document clustering and 2D projection
+//! - [`search`]: Semantic similarity search
+
 use mimalloc::MiMalloc;
 
 #[global_allocator]

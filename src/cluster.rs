@@ -1,7 +1,13 @@
+//! Document clustering and 2D visualization projection.
+//!
+//! Uses HDBSCAN for density-based clustering and t-SNE/PCA for dimensionality
+//! reduction to produce 2D coordinates for the semantic canvas.
+
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::cast_precision_loss
+    clippy::cast_precision_loss,
+    reason = "Clustering math requires f64/f32 conversions for ndarray/hdbscan interop"
 )]
 
 use hdbscan::Hdbscan;
@@ -74,11 +80,18 @@ pub fn cluster_documents(documents: &mut [Document]) {
     assign_2d_positions(documents);
 }
 
-/// Minimum number of samples required for t-SNE (must be > 3 * perplexity).
+/// Minimum number of documents for t-SNE to produce meaningful results.
+/// t-SNE requires perplexity < n/3, and perplexity >= 5 is recommended.
+/// 10 samples allows perplexity of 3 with some margin.
 const TSNE_MIN_SAMPLES: usize = 10;
-/// t-SNE perplexity — balances local vs global structure.
-const TSNE_PERPLEXITY: f64 = 15.0;
-/// t-SNE approximation threshold (0.5 = good quality / speed trade-off).
+
+/// Maximum t-SNE perplexity. Lower values preserve local structure,
+/// which is desirable for document similarity visualization.
+/// Must satisfy: n > 3 * perplexity, so this works for n >= 46.
+const TSNE_MAX_PERPLEXITY: f64 = 15.0;
+
+/// t-SNE approximation threshold for the Barnes-Hut algorithm.
+/// 0.5 provides a good balance between visualization quality and speed.
 const TSNE_APPROX_THRESHOLD: f64 = 0.5;
 
 /// Assigns 2D (x, y) coordinates to documents using t-SNE projection.
@@ -113,7 +126,10 @@ pub fn assign_2d_positions(documents: &mut [Document]) {
         .iter()
         .flat_map(|d| {
             if d.embedding.len() == dim {
-                d.embedding.iter().map(|&v| f64::from(v)).collect::<Vec<_>>()
+                d.embedding
+                    .iter()
+                    .map(|&v| f64::from(v))
+                    .collect::<Vec<_>>()
             } else {
                 vec![0.0_f64; dim]
             }
@@ -142,15 +158,44 @@ pub fn assign_2d_positions(documents: &mut [Document]) {
     pca_positions(documents, &flat, n, dim);
 }
 
+/// Stack size for the t-SNE worker thread (32 MB).
+///
+/// linfa-tsne allocates large intermediate arrays on the stack during
+/// the Barnes-Hut approximation. Debug builds especially need extra headroom.
+/// 32 MB handles large document collections (1000+ docs) in debug mode.
+/// Release builds use significantly less stack due to optimizations.
+const TSNE_STACK_SIZE: usize = 32 * 1024 * 1024;
+
 /// Runs t-SNE and returns a flat `[x0, y0, x1, y1, ...]` coordinate array.
+///
+/// Spawns a dedicated thread with a larger stack to avoid overflow.
 fn run_tsne(flat: &[f64], n: usize, dim: usize) -> eyre::Result<Vec<f64>> {
+    let flat = flat.to_vec();
+    let handle = std::thread::Builder::new()
+        .name("tsne-worker".into())
+        .stack_size(TSNE_STACK_SIZE)
+        .spawn(move || run_tsne_inner(&flat, n, dim))
+        .map_err(|e| eyre::eyre!("failed to spawn t-SNE thread: {e}"))?;
+
+    handle
+        .join()
+        .map_err(|_| eyre::eyre!("t-SNE thread panicked"))?
+}
+
+fn run_tsne_inner(flat: &[f64], n: usize, dim: usize) -> eyre::Result<Vec<f64>> {
     let data = Array2::from_shape_vec((n, dim), flat.to_vec())
         .map_err(|e| eyre::eyre!("ndarray shape error: {e}"))?;
+
+    // Perplexity must satisfy: n > 3 * perplexity.
+    // Clamp to stay safely within bounds (floor(n/3) - 1, minimum 1).
+    let safe_perplexity = TSNE_MAX_PERPLEXITY.min(((n / 3).saturating_sub(1).max(1)) as f64);
+
+    tracing::debug!(n, perplexity = safe_perplexity, "running t-SNE");
 
     // TSneParams::embedding_size defaults to SmallRng seeded at 42 — deterministic output.
     // F = f64 is inferred from the Array2<f64> data; R = SmallRng from the impl.
     let result = TSneParams::embedding_size(2)
-        .perplexity(TSNE_PERPLEXITY)
+        .perplexity(safe_perplexity)
         .approx_threshold(TSNE_APPROX_THRESHOLD)
         .transform(data)
         .map_err(|e| eyre::eyre!("t-SNE error: {e:?}"))?;

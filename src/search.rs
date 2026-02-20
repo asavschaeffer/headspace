@@ -1,3 +1,7 @@
+//! Semantic similarity search using cosine distance.
+//!
+//! Ranks documents by cosine similarity between query and document embeddings.
+
 use crate::storage::Document;
 
 /// A search result with its relevance score.
@@ -67,5 +71,9 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     }
 
     let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 { 0.0 } else { dot / denom }
+    if denom == 0.0 {
+        0.0
+    } else {
+        dot / denom
+    }
 }

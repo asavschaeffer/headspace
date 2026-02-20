@@ -293,11 +293,21 @@
     }
 
     function finalizeLasso() {
-        state.lassoSelected.clear();
         if (state.lassoPath.length < 3) {
+            // Shift+click (no drag): toggle the node under cursor
+            const downInfo = state.pointerDown;
+            if (downInfo && !downInfo.moved && downInfo.id) {
+                if (state.lassoSelected.has(downInfo.id)) {
+                    state.lassoSelected.delete(downInfo.id);
+                } else {
+                    state.lassoSelected.add(downInfo.id);
+                }
+            }
             updateLassoBar();
             return;
         }
+        // Shift+drag (polygon): replace selection with enclosed nodes
+        state.lassoSelected.clear();
         for (const node of state.nodes) {
             const point = worldToScreen(world(node).x, world(node).y);
             if (inPoly(point.x, point.y, state.lassoPath)) state.lassoSelected.add(node.id);
@@ -306,14 +316,26 @@
     }
 
     function updateLassoBar() {
-        dom.lassoBar.hidden = state.lassoSelected.size === 0;
+        const hasSelection = state.lassoSelected.size > 0;
+        dom.lassoExpand.hidden = !hasSelection;
+        if (hasSelection) {
+            dom.lassoToggle.classList.add("active");
+            // Close search expand if open — only one tool at a time
+            dom.searchExpand.hidden = true;
+            dom.searchDropdown.hidden = true;
+            dom.searchToggle.classList.remove("active");
+        } else {
+            dom.lassoToggle.classList.remove("active");
+        }
         dom.lassoCount.textContent = `${state.lassoSelected.size} selected`;
     }
 
     function clearLasso() {
         state.lassoSelected.clear();
         state.lassoPath = [];
-        updateLassoBar();
+        dom.lassoExpand.hidden = true;
+        dom.lassoToggle.classList.remove("active");
+        dom.lassoCount.textContent = "0 selected";
     }
 
     H.canvas = {

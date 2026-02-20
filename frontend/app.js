@@ -26,6 +26,12 @@
         H.canvas.resize();
         state.handlers.onNodeActivate = selectNode;
 
+        // Apply saved territory collapse state
+        if (state.territoryCollapsed) {
+            dom.territoryPanel.classList.add("collapsed");
+            dom.territoryExpandBtn.hidden = false;
+        }
+
         await Promise.all([refreshCanvas(true), refreshStatus(), refreshOverseen()]);
         renderTerritory();
         updateAmbientStatus();
@@ -37,10 +43,7 @@
     function setupEvents() {
         document.addEventListener("keydown", onKey);
 
-        $("#ingestBtn").addEventListener("click", () => {
-            dom.ingestModal.classList.add("visible");
-            dom.ingestPath.focus();
-        });
+        $("#ingestBtn").addEventListener("click", openIngestModal);
         $("#closeModal").addEventListener("click", () => dom.ingestModal.classList.remove("visible"));
         $("#cancelIngest").addEventListener("click", () => dom.ingestModal.classList.remove("visible"));
         $("#confirmIngest").addEventListener("click", startIngest);
@@ -63,12 +66,82 @@
 
         dom.ambientStatus.addEventListener("click", onAmbientClick);
         dom.finalizeBtn.addEventListener("click", finishReview);
-        dom.searchInput.addEventListener("input", () => {
-            renderSearch();
-        });
+
+        // Top bar: search toggle
+        dom.searchToggle.addEventListener("click", toggleSearch);
+        dom.searchInput.addEventListener("input", () => renderSearch());
         dom.searchInput.addEventListener("focus", renderFilterChips);
+
+        // Top bar: lasso toggle
+        dom.lassoToggle.addEventListener("click", toggleLassoMode);
+
+        // Territory collapse/expand
+        dom.territoryCollapseBtn.addEventListener("click", collapseTerritory);
+        dom.territoryExpandBtn.addEventListener("click", expandTerritory);
     }
 
+    // ---- Territory collapse/expand ----
+    function collapseTerritory() {
+        state.territoryCollapsed = true;
+        localStorage.setItem("hs5_territory_collapsed", "true");
+        dom.territoryPanel.classList.add("collapsed");
+        dom.territoryExpandBtn.hidden = false;
+        H.canvas.resize();
+    }
+
+    function expandTerritory() {
+        state.territoryCollapsed = false;
+        localStorage.setItem("hs5_territory_collapsed", "false");
+        dom.territoryPanel.classList.remove("collapsed");
+        dom.territoryExpandBtn.hidden = true;
+        H.canvas.resize();
+    }
+
+    // ---- Top bar: search ----
+    function toggleSearch() {
+        if (state.searchOpen) {
+            closeSearch();
+        } else {
+            openSearch();
+        }
+    }
+
+    function openSearch() {
+        // Close lasso expand if open
+        dom.lassoExpand.hidden = true;
+
+        state.searchOpen = true;
+        dom.searchToggle.classList.add("active");
+        dom.searchExpand.hidden = false;
+        dom.searchDropdown.hidden = false;
+        dom.searchInput.value = "";
+        state.activeFilters = { extension: null, status: null };
+        renderFilterChips();
+        renderSearch();
+        dom.searchInput.focus();
+    }
+
+    function closeSearch() {
+        state.searchOpen = false;
+        dom.searchToggle.classList.remove("active");
+        dom.searchExpand.hidden = true;
+        dom.searchDropdown.hidden = true;
+        state.searchMatches = null;
+        state.activeFilters = { extension: null, status: null };
+    }
+
+    // ---- Top bar: lasso mode ----
+    function toggleLassoMode() {
+        state.lassoModeActive = !state.lassoModeActive;
+        if (state.lassoModeActive) {
+            dom.lassoToggle.classList.add("active");
+        } else {
+            dom.lassoToggle.classList.remove("active");
+            H.canvas.clearLasso();
+        }
+    }
+
+    // ---- Canvas refresh ----
     async function refreshCanvas(fit = false) {
         const fresh = await fetchJSON("/api/canvas");
         const prevById = new Map(state.nodes.map((node) => [node.id, node]));
@@ -148,12 +221,14 @@
         dom.cardPanel.classList.add("card-entering");
         setTimeout(() => dom.cardPanel.classList.remove("card-entering"), 260);
         renderCard(node);
+        H.canvas.resize();
     }
 
     function closeCard() {
         state.selectedId = null;
         dom.cardPanel.hidden = true;
         dom.cardPanel.classList.remove("card-entering", "card-placing");
+        H.canvas.resize();
     }
 
     function renderCard(node) {
@@ -375,26 +450,13 @@
     function onKey(event) {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
             event.preventDefault();
-            if (dom.searchOverlay.hidden) {
-                dom.searchOverlay.hidden = false;
-                dom.searchInput.value = "";
-                state.activeFilters = { extension: null, status: null };
-                renderFilterChips();
-                renderSearch();
-                dom.searchInput.focus();
-            } else {
-                dom.searchOverlay.hidden = true;
-                state.searchMatches = null;
-                state.activeFilters = { extension: null, status: null };
-            }
+            toggleSearch();
             return;
         }
 
         if (event.key === "Escape") {
-            if (!dom.searchOverlay.hidden) {
-                dom.searchOverlay.hidden = true;
-                state.searchMatches = null;
-                state.activeFilters = { extension: null, status: null };
+            if (state.searchOpen) {
+                closeSearch();
                 return;
             }
             if (!dom.cardPanel.hidden) {
@@ -408,7 +470,6 @@
     function renderFilterChips() {
         if (!dom.searchFilters) return;
 
-        // Collect unique extensions from loaded nodes (top 8 most common)
         const extCounts = new Map();
         for (const node of state.nodes) {
             const ext = (node.extension || "").toLowerCase();
@@ -440,7 +501,6 @@
             btn.addEventListener("click", () => {
                 const type = btn.dataset.type;
                 const value = btn.dataset.value;
-                // Toggle: clicking active chip clears it
                 state.activeFilters[type] = state.activeFilters[type] === value ? null : value;
                 renderFilterChips();
                 renderSearch();
@@ -501,8 +561,112 @@
         dom.searchResults.querySelectorAll(".search-item[data-id]").forEach((element) => {
             element.addEventListener("click", () => {
                 selectNode(element.dataset.id, true, true);
-                dom.searchOverlay.hidden = true;
-                state.searchMatches = null;
+                closeSearch();
+            });
+        });
+    }
+
+    // ---- Ingest Modal ----
+    function openIngestModal() {
+        dom.ingestModal.classList.add("visible");
+        dom.ingestPath.value = "";
+        renderIngestRecent();
+        browseDirectory("");
+        dom.ingestPath.focus();
+    }
+
+    function renderIngestRecent() {
+        const dirs = state.overseenDirs || [];
+        if (!dirs.length) {
+            dom.ingestRecent.hidden = true;
+            return;
+        }
+        dom.ingestRecent.hidden = false;
+        dom.ingestRecentList.innerHTML = dirs.map((d) =>
+            `<button class="ingest-recent-pill" data-path="${escAttr(d.path)}">${esc(shortPath(d.path))}</button>`
+        ).join("");
+
+        dom.ingestRecentList.querySelectorAll(".ingest-recent-pill").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                dom.ingestPath.value = btn.dataset.path;
+            });
+        });
+    }
+
+    async function browseDirectory(path) {
+        state.browserPath = path;
+        try {
+            const url = path ? `/api/fs/browse?path=${encodeURIComponent(path)}` : "/api/fs/browse";
+            const entries = await fetchJSON(url);
+            renderBreadcrumb(path);
+            renderDirList(entries, path);
+        } catch (error) {
+            dom.ingestDirList.innerHTML = `<div class="search-item" style="color:var(--danger)">${esc(error.message)}</div>`;
+        }
+    }
+
+    function renderBreadcrumb(path) {
+        if (!path) {
+            dom.ingestBreadcrumb.innerHTML = '<span>Filesystem roots</span>';
+            return;
+        }
+
+        // Split path into segments
+        const sep = path.includes("\\") ? "\\" : "/";
+        const parts = path.split(/[/\\]/).filter(Boolean);
+        let html = '<button data-path="">Roots</button><span>/</span>';
+        let accumulated = "";
+        for (let i = 0; i < parts.length; i++) {
+            // On Windows, first part may be "C:" — reconstruct with separator
+            if (i === 0 && parts[0].endsWith(":")) {
+                accumulated = parts[0] + sep;
+            } else {
+                accumulated += parts[i] + sep;
+            }
+            const isLast = i === parts.length - 1;
+            if (isLast) {
+                html += `<span style="color:var(--text-main)">${esc(parts[i])}</span>`;
+            } else {
+                html += `<button data-path="${escAttr(accumulated)}">${esc(parts[i])}</button><span>/</span>`;
+            }
+        }
+
+        dom.ingestBreadcrumb.innerHTML = html;
+        dom.ingestBreadcrumb.querySelectorAll("button").forEach((btn) => {
+            btn.addEventListener("click", () => browseDirectory(btn.dataset.path));
+        });
+    }
+
+    function renderDirList(entries, currentPath) {
+        if (!entries.length) {
+            let html = '<div class="search-item" style="color:var(--text-muted)">No subdirectories</div>';
+            if (currentPath) {
+                html += `<button class="ingest-select-btn" data-path="${escAttr(currentPath)}">Select this directory</button>`;
+            }
+            dom.ingestDirList.innerHTML = html;
+        } else {
+            let html = entries.map((e) => `
+                <div class="ingest-dir-item" data-path="${escAttr(e.path)}">
+                    <span class="dir-icon">&#x1F4C1;</span>
+                    <span class="dir-name">${esc(e.name)}</span>
+                    ${e.has_children ? '<span class="dir-arrow">&#x25B8;</span>' : ""}
+                </div>
+            `).join("");
+
+            if (currentPath) {
+                html += `<button class="ingest-select-btn" data-path="${escAttr(currentPath)}">Select this directory</button>`;
+            }
+
+            dom.ingestDirList.innerHTML = html;
+        }
+
+        dom.ingestDirList.querySelectorAll(".ingest-dir-item").forEach((item) => {
+            item.addEventListener("click", () => browseDirectory(item.dataset.path));
+        });
+
+        dom.ingestDirList.querySelectorAll(".ingest-select-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                dom.ingestPath.value = btn.dataset.path;
             });
         });
     }
@@ -545,7 +709,12 @@
                 state.isIngesting = Boolean(status.is_ingesting);
                 renderTerritory();
                 updateAmbientStatus();
-                if (!status.is_ingesting) stopIngestPoll();
+                if (!status.is_ingesting) {
+                    stopIngestPoll();
+                    // Refresh without fitting to preserve pan/zoom
+                    await refreshOverseen();
+                    renderTerritory();
+                }
                 pollErrorCount = 0;
             } catch (_error) {
                 pollErrorCount++;

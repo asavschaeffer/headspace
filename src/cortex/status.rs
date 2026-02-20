@@ -1,3 +1,7 @@
+//! Lifecycle status classification based on file age, size, and signal strength.
+
+use crate::storage::Status;
+
 /// Configurable thresholds for lifecycle status classification.
 pub struct StatusThresholds {
     pub draft_days: u64,
@@ -20,7 +24,10 @@ impl Default for StatusThresholds {
 }
 
 /// Determines lifecycle status with confidence.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "classify_status needs all classification signals"
+)]
 pub fn classify_status(
     rel_path: &str,
     name: &str,
@@ -31,7 +38,7 @@ pub fn classify_status(
     entity_count: usize,
     now_epoch_secs: u64,
     thresholds: &StatusThresholds,
-) -> (String, f32) {
+) -> (Status, f32) {
     let path_lc = rel_path.to_ascii_lowercase();
     let name_lc = name.to_ascii_lowercase();
     let ext_lc = extension.to_ascii_lowercase();
@@ -39,24 +46,24 @@ pub fn classify_status(
     let age_days = age_secs / 86_400;
 
     if has_draft_hint(&path_lc, &name_lc) {
-        return ("Draft".to_string(), 0.93);
+        return (Status::Draft, 0.93);
     }
 
     let is_authoring = matches!(ext_lc.as_str(), "md" | "txt" | "docx");
     if is_authoring && age_days <= thresholds.draft_days {
-        return ("Draft".to_string(), 0.76);
+        return (Status::Draft, 0.76);
     }
 
     if age_days <= thresholds.active_days && content_length >= thresholds.active_min_bytes {
-        return ("Active".to_string(), 0.81);
+        return (Status::Active, 0.81);
     }
 
     let weak_signal = topic_count < 2 && entity_count < 2;
     if age_days > thresholds.rot_days && content_length < thresholds.rot_max_bytes && weak_signal {
-        return ("Rot".to_string(), 0.79);
+        return (Status::Rot, 0.79);
     }
 
-    ("Reference".to_string(), 0.60)
+    (Status::Reference, 0.60)
 }
 
 fn has_draft_hint(path_lc: &str, name_lc: &str) -> bool {
@@ -68,7 +75,7 @@ fn has_draft_hint(path_lc: &str, name_lc: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{StatusThresholds, classify_status};
+    use super::{classify_status, Status, StatusThresholds};
 
     #[test]
     fn draft_from_name_keyword() {
@@ -83,7 +90,7 @@ mod tests {
             1_700_000_500,
             &StatusThresholds::default(),
         );
-        assert_eq!(status, "Draft");
+        assert_eq!(status, Status::Draft);
         assert!(confidence > 0.9);
     }
 
@@ -102,7 +109,7 @@ mod tests {
             now,
             &StatusThresholds::default(),
         );
-        assert_eq!(status, "Active");
+        assert_eq!(status, Status::Active);
     }
 
     #[test]
@@ -120,7 +127,7 @@ mod tests {
             now,
             &StatusThresholds::default(),
         );
-        assert_eq!(status, "Rot");
+        assert_eq!(status, Status::Rot);
     }
 
     #[test]
@@ -138,6 +145,6 @@ mod tests {
             now,
             &StatusThresholds::default(),
         );
-        assert_eq!(status, "Reference");
+        assert_eq!(status, Status::Reference);
     }
 }

@@ -59,6 +59,16 @@ textarea {
     font: inherit;
 }
 
+/* ---- Hidden attribute overrides ---- */
+#cardPanel[hidden],
+#searchDropdown[hidden],
+#searchExpand[hidden],
+#lassoExpand[hidden],
+#ingestRecent[hidden],
+#territoryExpandBtn[hidden] {
+    display: none !important;
+}
+
 #app {
     display: flex;
     height: 100vh;
@@ -69,6 +79,7 @@ textarea {
     overflow: hidden;
 }
 
+/* ---- Territory Panel ---- */
 #territoryPanel {
     width: 260px;
     flex-shrink: 0;
@@ -77,6 +88,57 @@ textarea {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    transition: width 200ms ease;
+}
+
+#territoryPanel.collapsed {
+    display: none;
+}
+
+.territory-expand-btn {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 6;
+    width: 20px;
+    height: 48px;
+    border: 1px solid var(--territory-border);
+    border-left: none;
+    border-radius: 0 8px 8px 0;
+    background: rgba(14, 16, 24, 0.95);
+    color: var(--text-subtle);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.territory-expand-btn:hover {
+    color: var(--text-main);
+    border-color: rgba(126, 184, 255, 0.35);
+}
+
+.territory-collapse-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.territory-collapse-btn:hover {
+    color: var(--text-main);
+    border-color: rgba(126, 184, 255, 0.35);
 }
 
 #territoryHeader {
@@ -228,6 +290,7 @@ textarea {
     border-color: rgba(216, 180, 254, 0.35);
 }
 
+/* ---- Space Main ---- */
 #spaceMain {
     flex: 1;
     position: relative;
@@ -244,6 +307,7 @@ textarea {
     cursor: crosshair;
 }
 
+/* ---- Ambient Status ---- */
 #ambientStatus {
     position: absolute;
     left: 50%;
@@ -295,73 +359,116 @@ textarea {
     50% { opacity: 1; }
 }
 
-#lassoBar {
+/* ---- Top Bar (search + lasso) ---- */
+#topBar {
     position: absolute;
+    top: 12px;
     left: 50%;
-    top: 16px;
     transform: translateX(-50%);
-    z-index: 4;
+    z-index: 5;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
+    gap: 4px;
+    padding: 4px 6px;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(8, 10, 15, 0.86);
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(8, 10, 15, 0.82);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
 }
 
-#lassoBar span {
+.topbar-icon {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-subtle);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: color 120ms, background 120ms;
+}
+
+.topbar-icon:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.topbar-icon.active {
+    color: #7eb8ff;
+    background: rgba(126, 184, 255, 0.12);
+}
+
+.topbar-expand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    animation: topbar-expand-in 150ms ease;
+}
+
+@keyframes topbar-expand-in {
+    from { opacity: 0; width: 0; }
+    to { opacity: 1; }
+}
+
+.topbar-expand input {
+    width: 220px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #f1f4ff;
+    font-size: 13px;
+    padding: 4px 8px;
+}
+
+.topbar-expand input::placeholder {
+    color: #71789a;
+}
+
+.topbar-expand span {
     font-size: 12px;
     color: #f9c2df;
+    white-space: nowrap;
 }
 
-#lassoBar button {
+.topbar-expand button {
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 999px;
-    padding: 5px 10px;
+    padding: 4px 10px;
     background: rgba(255, 255, 255, 0.04);
     color: #e9edff;
     font-size: 11px;
     cursor: pointer;
+    white-space: nowrap;
 }
 
-#lassoBar button:hover {
+.topbar-expand button:hover {
     border-color: rgba(244, 114, 182, 0.6);
 }
 
-#searchOverlay {
+/* ---- Search Dropdown (below top bar) ---- */
+#searchDropdown {
     position: absolute;
-    top: 16px;
+    top: 56px;
     left: 50%;
     transform: translateX(-50%);
-    width: min(720px, calc(100% - 28px));
-    border-radius: 14px;
-    border: 1px solid rgba(126, 184, 255, 0.35);
+    width: min(560px, calc(100% - 28px));
+    border-radius: 12px;
+    border: 1px solid rgba(126, 184, 255, 0.3);
     background: rgba(10, 11, 18, 0.95);
-    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(10px);
     z-index: 5;
     overflow: hidden;
 }
 
-#searchInput {
-    width: 100%;
-    border: 0;
-    outline: none;
-    padding: 12px 14px;
-    font-size: 14px;
-    color: #f1f4ff;
-    background: transparent;
-}
-
-#searchInput::placeholder {
-    color: #71789a;
-}
-
 #searchFilters {
     padding: 6px 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .filter-chip-group {
@@ -395,7 +502,6 @@ textarea {
 #searchResults {
     max-height: min(280px, 40vh);
     overflow: auto;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .search-item {
@@ -422,6 +528,7 @@ textarea {
     font-family: var(--font-mono);
 }
 
+/* ---- Card Panel ---- */
 #cardPanel {
     width: 372px;
     flex-shrink: 0;
@@ -601,7 +708,7 @@ textarea {
 }
 
 .warning-chip::before {
-    content: "⚠";
+    content: "\26A0";
     font-size: 9px;
 }
 
@@ -693,6 +800,7 @@ textarea {
     border-color: rgba(240, 182, 182, 0.45);
 }
 
+/* ---- Modal ---- */
 .modal-overlay {
     position: fixed;
     inset: 0;
@@ -709,7 +817,7 @@ textarea {
 }
 
 .modal {
-    width: min(520px, calc(100vw - 24px));
+    width: min(560px, calc(100vw - 24px));
     border-radius: 14px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.14);
@@ -798,6 +906,138 @@ textarea {
     background: rgba(126, 184, 255, 0.16);
 }
 
+/* ---- Ingest Modal: Recent Dirs ---- */
+.ingest-recent {
+    margin-bottom: 12px;
+}
+
+.ingest-recent-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ingest-recent-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    border: 1px solid rgba(216, 180, 254, 0.3);
+    background: rgba(216, 180, 254, 0.06);
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: #d8b4fe;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.ingest-recent-pill:hover {
+    border-color: rgba(216, 180, 254, 0.6);
+    background: rgba(216, 180, 254, 0.12);
+}
+
+/* ---- Ingest Modal: Directory Browser ---- */
+.ingest-browser {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    max-height: 240px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.ingest-breadcrumb {
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    min-height: 28px;
+    align-items: center;
+}
+
+.ingest-breadcrumb button {
+    border: none;
+    background: transparent;
+    color: #7eb8ff;
+    cursor: pointer;
+    padding: 1px 3px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+}
+
+.ingest-breadcrumb button:hover {
+    text-decoration: underline;
+}
+
+.ingest-breadcrumb span {
+    color: var(--text-muted);
+}
+
+.ingest-dir-list {
+    flex: 1;
+    overflow: auto;
+    max-height: 190px;
+}
+
+.ingest-dir-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text-main);
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background 0.12s;
+}
+
+.ingest-dir-item:hover {
+    background: rgba(126, 184, 255, 0.08);
+}
+
+.ingest-dir-item .dir-icon {
+    color: var(--text-muted);
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.ingest-dir-item .dir-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ingest-dir-item .dir-arrow {
+    color: var(--text-muted);
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.ingest-select-btn {
+    margin: 8px 10px;
+    border: 1px solid rgba(126, 184, 255, 0.4);
+    border-radius: 8px;
+    background: rgba(126, 184, 255, 0.1);
+    color: #c8d8ff;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+}
+
+.ingest-select-btn:hover {
+    border-color: rgba(126, 184, 255, 0.7);
+    background: rgba(126, 184, 255, 0.18);
+}
+
+/* ---- Responsive ---- */
 @media (max-width: 1040px) {
     #territoryPanel {
         width: 220px;
@@ -827,7 +1067,7 @@ textarea {
     }
 }
 
-/* Toast notifications */
+/* ---- Toast notifications ---- */
 #toastContainer {
     position: fixed;
     top: 16px;
@@ -877,7 +1117,7 @@ textarea {
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Warning banner */
+/* ---- Warning banner ---- */
 #warningBanner {
     position: fixed;
     top: 0;

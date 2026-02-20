@@ -1,3 +1,8 @@
+//! Application configuration loaded from environment variables.
+//!
+//! Configuration values can be set via environment variables or a `.env` file.
+//! All settings have sensible defaults for local development.
+
 use std::path::PathBuf;
 
 /// Application configuration loaded from environment.
@@ -66,14 +71,17 @@ impl Config {
     ///
     /// # Errors
     /// Returns an error if the data directory cannot be created.
-    #[allow(clippy::too_many_lines)]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Config loading maps 30+ env vars to struct fields"
+    )]
     pub fn from_env() -> eyre::Result<Self> {
         let nvidia_api_key = read_key("NVIDIA_API_KEY");
 
         // EMBEDDING_API_KEY falls back to NVIDIA_API_KEY for backwards compatibility.
         let embedding_api_key = read_key("EMBEDDING_API_KEY").or_else(|| nvidia_api_key.clone());
-        let embedding_model = read_key("EMBEDDING_MODEL")
-            .unwrap_or_else(|| "nvidia/nv-embedqa-e5-v5".to_string());
+        let embedding_model =
+            read_key("EMBEDDING_MODEL").unwrap_or_else(|| "nvidia/nv-embedqa-e5-v5".to_string());
         let embedding_base_url = read_key("EMBEDDING_BASE_URL")
             .unwrap_or_else(|| "https://integrate.api.nvidia.com/v1".to_string());
         let embedding_batch_size = read_key("EMBEDDING_BATCH_SIZE")
@@ -115,8 +123,7 @@ impl Config {
                 ]
             });
 
-        let enable_local = read_key("ENABLE_LOCAL")
-            .is_some_and(|v| parse_bool(&v));
+        let enable_local = read_key("ENABLE_LOCAL").is_some_and(|v| parse_bool(&v));
         let local_provider = read_key("LOCAL_PROVIDER").unwrap_or_else(|| "vllm".to_string());
 
         let cortex_max_bytes = read_key("CORTEX_MAX_BYTES")

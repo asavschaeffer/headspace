@@ -1,12 +1,91 @@
+//! SQLite-backed document storage and persistence.
+//!
+//! Provides the [`Store`] type for CRUD operations on [`Document`] records,
+//! including embeddings, metadata, and review status. Uses WAL mode for
+//! concurrent read/write access.
+
 use std::collections::HashSet;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub mod file_identity;
+
+/// Lifecycle status of a document in the review workflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewStatus {
+    /// Document approved and visible in search/canvas.
+    Approved,
+    /// Awaiting user review (default for new/changed documents).
+    #[default]
+    PendingReview,
+    /// Document rejected, excluded from all views.
+    Rejected,
+}
+
+impl fmt::Display for ReviewStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Approved => write!(f, "approved"),
+            Self::PendingReview => write!(f, "pending_review"),
+            Self::Rejected => write!(f, "rejected"),
+        }
+    }
+}
+
+impl ReviewStatus {
+    /// Parses from the database string representation.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "approved" => Self::Approved,
+            "rejected" => Self::Rejected,
+            _ => Self::PendingReview,
+        }
+    }
+}
+
+/// Content lifecycle classification based on age, size, and signals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "PascalCase")]
+pub enum Status {
+    /// Recently created or modified authoring file (< draft_days old).
+    Draft,
+    /// Recent large file with strong signals (< active_days old).
+    Active,
+    /// Old, small, weak-signal file past utility threshold (> rot_days old).
+    Rot,
+    /// Default classification for reference material.
+    #[default]
+    Reference,
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Draft => write!(f, "Draft"),
+            Self::Active => write!(f, "Active"),
+            Self::Rot => write!(f, "Rot"),
+            Self::Reference => write!(f, "Reference"),
+        }
+    }
+}
+
+impl Status {
+    /// Parses from the database string representation.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "Draft" => Self::Draft,
+            "Active" => Self::Active,
+            "Rot" => Self::Rot,
+            _ => Self::Reference,
+        }
+    }
+}
 
 /// A single ingested document with metadata and embedding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,8 +105,8 @@ pub struct Document {
     /// File extension.
     pub extension: String,
     /// Human review status in the approval workflow.
-    #[serde(default = "default_review_status")]
-    pub review_status: String,
+    #[serde(default)]
+    pub review_status: ReviewStatus,
     /// MIME type inferred from file bytes and extension.
     #[serde(default)]
     pub mime_type: String,
@@ -64,8 +143,8 @@ pub struct Document {
     #[serde(default)]
     pub user_note: String,
     /// Lifecycle status marker.
-    #[serde(default = "default_status")]
-    pub status: String,
+    #[serde(default)]
+    pub status: Status,
     /// Confidence for status classification.
     #[serde(default)]
     pub status_confidence: f32,
@@ -108,14 +187,6 @@ fn default_cluster() -> i32 {
     -1
 }
 
-fn default_status() -> String {
-    "Reference".to_string()
-}
-
-fn default_review_status() -> String {
-    "pending_review".to_string()
-}
-
 fn default_pipeline_kind() -> String {
     "unknown".to_string()
 }
@@ -134,7 +205,10 @@ fn default_embedding_source() -> String {
 
 impl Document {
     /// Creates a new document from file metadata and content.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Document::new requires all file metadata fields"
+    )]
     pub fn new(
         file_id: String,
         content_hash: String,
@@ -154,7 +228,7 @@ impl Document {
             abs_path,
             name,
             extension,
-            review_status: default_review_status(),
+            review_status: ReviewStatus::default(),
             mime_type: String::new(),
             pipeline_kind: default_pipeline_kind(),
             content_preview,
@@ -168,7 +242,7 @@ impl Document {
             ingested_at: chrono::Utc::now().to_rfc3339(),
             summary: String::new(),
             user_note: String::new(),
-            status: default_status(),
+            status: Status::default(),
             status_confidence: 0.0,
             topics: Vec::new(),
             topics_confidence: 0.0,
@@ -228,10 +302,10 @@ const DOCUMENT_SELECT: &str = "SELECT
 impl Store {
     /// Opens (or creates) the `SQLite` store and runs schema migrations.
     pub fn load(path: &Path) -> eyre::Result<Self> {
-        if let Some(parent) = path.parent()
-            && !parent.exists()
-        {
-            std::fs::create_dir_all(parent)?;
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)?;
+            }
         }
 
         let conn = open_connection(path)?;
@@ -262,6 +336,10 @@ impl Store {
     }
 
     /// Persists the indexed root path.
+    #[allow(
+        dead_code,
+        reason = "Useful for manual testing but not called from API"
+    )]
     pub fn set_root_path(&mut self, path: &Path) -> eyre::Result<()> {
         self.root_path = path.to_string_lossy().to_string();
         let conn = self.connect()?;
@@ -334,18 +412,64 @@ impl Store {
     }
 
     /// Removes documents whose file IDs are not in `valid_file_ids`.
+    #[allow(
+        dead_code,
+        reason = "Useful for manual testing but not called from API"
+    )]
     pub fn retain_existing(&mut self, valid_file_ids: &HashSet<String>) -> eyre::Result<usize> {
         let mut conn = self.connect()?;
         let tx = conn.transaction()?;
 
-        let ids = {
+        let ids: Vec<String> = {
             let mut stmt = tx.prepare("SELECT file_id FROM files")?;
-            stmt.query_map([], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<Result<Vec<_>, _>>()?
         };
 
         let mut removed = 0usize;
         for file_id in ids {
+            if !valid_file_ids.contains(&file_id) {
+                tx.execute("DELETE FROM files WHERE file_id = ?1", params![file_id])?;
+                removed += 1;
+            }
+        }
+
+        tx.commit()?;
+        Ok(removed)
+    }
+
+    /// Removes documents under `dir` whose file IDs are not in `valid_file_ids`.
+    ///
+    /// Only considers files whose `abs_path` starts with the normalized directory
+    /// prefix, so ingesting directory B won't delete files from directory A.
+    pub fn retain_existing_in_dir(
+        &mut self,
+        dir: &str,
+        valid_file_ids: &HashSet<String>,
+    ) -> eyre::Result<usize> {
+        let normalized = dir.replace('\\', "/");
+        let prefix = if normalized.ends_with('/') {
+            normalized
+        } else {
+            format!("{normalized}/")
+        };
+
+        let mut conn = self.connect()?;
+        let tx = conn.transaction()?;
+
+        let ids: Vec<(String, String)> = {
+            let mut stmt = tx.prepare(
+                "SELECT file_id, abs_path FROM files WHERE REPLACE(abs_path, '\\', '/') LIKE ?1",
+            )?;
+            let like_pattern = format!("{prefix}%");
+            let rows = stmt.query_map(params![like_pattern], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+
+        let mut removed = 0usize;
+        for (file_id, _abs_path) in ids {
             if !valid_file_ids.contains(&file_id) {
                 tx.execute("DELETE FROM files WHERE file_id = ?1", params![file_id])?;
                 removed += 1;
@@ -379,17 +503,18 @@ impl Store {
 
     /// Returns all non-rejected documents for the semantic canvas surface.
     pub fn canvas_documents(&self) -> eyre::Result<Vec<Document>> {
-        let sql =
-            format!("{DOCUMENT_SELECT} WHERE f.review_status != 'rejected' ORDER BY f.abs_path ASC");
+        let sql = format!(
+            "{DOCUMENT_SELECT} WHERE f.review_status != 'rejected' ORDER BY f.abs_path ASC"
+        );
         self.query_documents(&sql)
     }
 
     /// Sets a review status for a file identity.
-    pub fn set_review_status(&mut self, file_id: &str, status: &str) -> eyre::Result<()> {
+    pub fn set_review_status(&mut self, file_id: &str, status: ReviewStatus) -> eyre::Result<()> {
         let conn = self.connect()?;
         conn.execute(
             "UPDATE files SET review_status = ?1, last_seen = unixepoch() WHERE file_id = ?2",
-            params![status, file_id],
+            params![status.to_string(), file_id],
         )?;
         Ok(())
     }
@@ -652,9 +777,10 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         abs_path: row.get("abs_path")?,
         name: row.get("name")?,
         extension: row.get("extension")?,
-        review_status: row
-            .get::<_, Option<String>>("review_status")?
-            .unwrap_or_else(default_review_status),
+        review_status: ReviewStatus::from_str(
+            &row.get::<_, Option<String>>("review_status")?
+                .unwrap_or_default(),
+        ),
         mime_type: row
             .get::<_, Option<String>>("mime_type")?
             .unwrap_or_default(),
@@ -665,7 +791,9 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         content_canonical: row
             .get::<_, Option<String>>("content_canonical")?
             .unwrap_or_default(),
-        user_note: row.get::<_, Option<String>>("user_note")?.unwrap_or_default(),
+        user_note: row
+            .get::<_, Option<String>>("user_note")?
+            .unwrap_or_default(),
         content_length: usize::try_from(content_length_i64).unwrap_or(0),
         embedding,
         cluster_id: row.get::<_, Option<i32>>("cluster_id")?.unwrap_or(-1),
@@ -674,9 +802,7 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         modified_at: u64::try_from(modified_at_i64).unwrap_or(0),
         ingested_at: row.get("ingested_at")?,
         summary: row.get::<_, Option<String>>("summary")?.unwrap_or_default(),
-        status: row
-            .get::<_, Option<String>>("status")?
-            .unwrap_or_else(default_status),
+        status: Status::from_str(&row.get::<_, Option<String>>("status")?.unwrap_or_default()),
         status_confidence: row
             .get::<_, Option<f32>>("status_confidence")?
             .unwrap_or(0.0),
@@ -748,7 +874,7 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
             doc.rel_path,
             doc.name,
             doc.extension,
-            doc.review_status,
+            doc.review_status.to_string(),
             doc.mime_type,
             doc.pipeline_kind,
             doc.content_hash,
@@ -785,7 +911,7 @@ fn write_document(tx: &Transaction<'_>, doc: &Document) -> eyre::Result<()> {
         params![
             doc.file_id,
             doc.summary,
-            doc.status,
+            doc.status.to_string(),
             doc.status_confidence,
             serde_json::to_string(&doc.topics)?,
             doc.topics_confidence,

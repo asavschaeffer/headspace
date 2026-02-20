@@ -1,16 +1,33 @@
+//! Content extraction and metadata enrichment pipelines.
+//!
+//! Routes incoming files through appropriate extraction pipelines based on
+//! MIME type, then enriches documents with summaries, topics, and status
+//! classifications via LLM providers or heuristic fallbacks.
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
-use crate::storage::Document;
+use crate::storage::{Document, Status};
 
 pub mod provider;
 pub mod router;
 pub mod status;
 pub mod topics;
 
+/// Maximum characters to include in content previews.
+///
+/// Balances providing useful context in API responses against response size.
+/// 2000 chars is typically ~300-500 words, sufficient for document previews.
 const MAX_PREVIEW_LEN: usize = 2_000;
+
+/// Maximum characters in generated summaries.
+///
+/// 320 chars fits within 2-3 sentences on average, matching the summary prompt
+/// instruction for "exactly 2 concise sentences". Kept short for canvas tooltips.
 const MAX_SUMMARY_LEN: usize = 320;
+
+/// Current metadata schema version for migration compatibility.
 const METADATA_VERSION: i32 = 1;
 
 /// Pipeline family selected for a file.
@@ -49,7 +66,7 @@ pub struct IngestInput {
 
 impl IngestInput {
     /// Builds an input and detects MIME from bytes with extension fallback.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, reason = "IngestInput::new requires all file metadata fields")]
     pub fn new(
         abs_path: String,
         rel_path: String,
@@ -87,7 +104,7 @@ pub struct Extraction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeadspaceMetadata {
     pub summary: String,
-    pub status: String,
+    pub status: Status,
     pub status_confidence: f32,
     pub topics: Vec<String>,
     pub topics_confidence: f32,
@@ -435,15 +452,16 @@ async fn summarize_with_fallback(
     config: &Config,
 ) -> eyre::Result<(SummaryOutput, Option<String>)> {
     let provider_summarizer = ProviderSummarizer { config };
-    if let Ok(result) = provider_summarizer.summarize(text).await
-        && !result.summary.trim().is_empty()
-    {
-        tracing::debug!(
-            provider = %result.source,
-            confidence = result.confidence,
-            "summary generated from provider"
-        );
-        return Ok((result, None));
+    let result = provider_summarizer.summarize(text).await;
+    if let Ok(result) = result {
+        if !result.summary.trim().is_empty() {
+            tracing::debug!(
+                provider = %result.source,
+                confidence = result.confidence,
+                "summary generated from provider"
+            );
+            return Ok((result, None));
+        }
     }
 
     let fallback = HeuristicSummarizer.summarize(text).await?;

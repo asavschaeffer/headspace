@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -18,31 +18,44 @@
                 <div class="territory-actions">
                     <button id="finalizeBtn" title="Finalize clusters" hidden>Finalize</button>
                     <button id="ingestBtn" title="Ingest directory">+</button>
+                    <button id="territoryCollapseBtn" class="territory-collapse-btn" title="Collapse panel">&lsaquo;</button>
                 </div>
             </div>
             <div id="territoryTree"></div>
         </aside>
 
+        <button id="territoryExpandBtn" class="territory-expand-btn" hidden title="Expand territory panel">&rsaquo;</button>
+
         <main id="spaceMain">
             <canvas id="spaceCanvas"></canvas>
             <div id="ambientStatus"></div>
 
-            <div id="lassoBar" hidden>
-                <span id="lassoCount">0 selected</span>
-                <button id="lassoApprove">Approve all</button>
-                <button id="lassoReject">Reject all</button>
-                <button id="lassoClear">Clear</button>
+            <!-- Compact top bar -->
+            <div id="topBar">
+                <button id="searchToggle" class="topbar-icon" title="Search (Ctrl+K)">&#x2315;</button>
+                <button id="lassoToggle" class="topbar-icon" title="Lasso select (Shift+drag)">&#x2B1A;</button>
+
+                <div id="searchExpand" class="topbar-expand" hidden>
+                    <input id="searchInput" placeholder="Search..." autocomplete="off">
+                </div>
+
+                <div id="lassoExpand" class="topbar-expand" hidden>
+                    <span id="lassoCount">0 selected</span>
+                    <button id="lassoApprove">Approve</button>
+                    <button id="lassoReject">Reject</button>
+                    <button id="lassoClear">Clear</button>
+                </div>
             </div>
 
-            <div id="searchOverlay" hidden>
-                <input id="searchInput" placeholder="Search your space..." autocomplete="off">
+            <!-- Search dropdown (below topBar) -->
+            <div id="searchDropdown" hidden>
                 <div id="searchFilters"></div>
                 <div id="searchResults"></div>
             </div>
         </main>
 
         <aside id="cardPanel" hidden>
-            <button id="cardClose" title="Close">×</button>
+            <button id="cardClose" title="Close">&times;</button>
             <div class="card-content-zone" id="cardContentZone"></div>
             <div class="card-divider"></div>
             <div class="card-ai-zone" id="cardAiZone"></div>
@@ -59,12 +72,22 @@
         <div class="modal">
             <div class="modal-header">
                 <h3>Ingest Directory</h3>
-                <button class="close-btn" id="closeModal">×</button>
+                <button class="close-btn" id="closeModal">&times;</button>
             </div>
             <div class="modal-body">
-                <label for="ingestPath">Directory Path</label>
-                <input type="text" id="ingestPath" placeholder="C:\\Users\\you\\Documents\\project" autocomplete="off">
-                <p class="hint">Enter the full path to scan and project into space.</p>
+                <div id="ingestRecent" class="ingest-recent" hidden>
+                    <label>Recent directories</label>
+                    <div id="ingestRecentList" class="ingest-recent-list"></div>
+                </div>
+
+                <label>Browse</label>
+                <div id="ingestBrowser" class="ingest-browser">
+                    <div id="ingestBreadcrumb" class="ingest-breadcrumb"></div>
+                    <div id="ingestDirList" class="ingest-dir-list"></div>
+                </div>
+
+                <label for="ingestPath" style="margin-top:10px">Or paste a path</label>
+                <input type="text" id="ingestPath" placeholder="C:\Users\you\Documents\project" autocomplete="off">
             </div>
             <div class="modal-footer">
                 <button id="cancelIngest">Cancel</button>
@@ -81,4 +104,3 @@
     <script src="app.js"></script>
 </body>
 </html>
-

@@ -1,10 +1,20 @@
-#![allow(clippy::cast_possible_truncation)]
+//! Vector embedding generation for semantic similarity.
+//!
+//! Generates embeddings via NVIDIA NIM API (or compatible OpenAI-format endpoints).
+//! Falls back to zero vectors when no API key is configured.
+
+#![allow(clippy::cast_possible_truncation, reason = "Embedding API returns f64, stored as f32")]
 
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
+/// Maximum retry attempts for transient API failures (429, 5xx).
+/// 3 retries provides reasonable resilience without excessive latency.
 const MAX_RETRIES: u32 = 3;
+
+/// Base delay in milliseconds for exponential backoff on retry.
+/// Doubles each attempt: 500ms -> 1s -> 2s, with jitter up to +300ms.
 const RETRY_BASE_MS: u64 = 500;
 
 /// Waits with exponential backoff + jitter for a given attempt index (0-based).

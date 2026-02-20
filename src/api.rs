@@ -1,3 +1,8 @@
+//! HTTP API endpoints and WebSocket progress streaming.
+//!
+//! Provides REST endpoints for document management, search, ingestion,
+//! and the review workflow. Also serves the static frontend.
+
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::path::{Path as FsPath, PathBuf};
@@ -20,7 +25,7 @@ use crate::cortex::{self, IngestInput};
 use crate::embeddings;
 use crate::ingestion;
 use crate::search;
-use crate::storage::{Document, OverseenDir, Store};
+use crate::storage::{Document, OverseenDir, ReviewStatus, Status, Store};
 
 /// Shared application state.
 #[derive(Debug, Clone)]
@@ -74,6 +79,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/review/{id}/reject", post(reject_review))
         .route("/api/review/bulk", post(bulk_review))
         .route("/api/review/finish", post(finish_review))
+        .route("/api/fs/browse", get(browse_fs))
         .route("/api/overseen", get(list_overseen).post(add_overseen))
         .route("/api/overseen/{id}", delete(remove_overseen))
         .with_state(state)
@@ -248,7 +254,7 @@ async fn start_ingest_job(
 }
 
 /// Runs the diff-based ingestion pipeline and leaves files pending review.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, reason = "Ingestion pipeline stages are sequential and cohesive")]
 async fn run_ingest(
     path: &FsPath,
     config: &Config,
@@ -322,7 +328,7 @@ async fn run_ingest(
                         discovered.modified_at,
                     );
                     doc.id = existing.id;
-                    doc.review_status = "pending_review".to_string();
+                    doc.review_status = ReviewStatus::PendingReview;
                     enrich_queue.push(EnrichWork { discovered, doc });
                 }
                 None => {
@@ -338,7 +344,7 @@ async fn run_ingest(
                         usize::try_from(discovered.size_bytes).unwrap_or(0),
                         discovered.modified_at,
                     );
-                    doc.review_status = "pending_review".to_string();
+                    doc.review_status = ReviewStatus::PendingReview;
                     enrich_queue.push(EnrichWork { discovered, doc });
                 }
             }
@@ -431,9 +437,9 @@ async fn run_ingest(
         work.doc.cluster_id = -1;
         work.doc.x = 0.0;
         work.doc.y = 0.0;
-        work.doc.review_status = "pending_review".to_string();
+        work.doc.review_status = ReviewStatus::PendingReview;
 
-        let should_embed = !(work.doc.status == "Rot" && work.doc.status_confidence > 0.72);
+        let should_embed = !(work.doc.status == Status::Rot && work.doc.status_confidence > 0.72);
         if should_embed {
             embed_doc_indexes.push(enriched_docs.len());
             texts_to_embed.push(embedding_text_for_doc(&work.doc));
@@ -478,8 +484,8 @@ async fn run_ingest(
     let pending_count;
     {
         let mut store = store_lock.write().await;
-        store.set_root_path(path)?;
-        let deleted_count = store.retain_existing(&discovered_file_ids)?;
+        let dir_str = path.to_string_lossy().to_string();
+        let deleted_count = store.retain_existing_in_dir(&dir_str, &discovered_file_ids)?;
 
         // Write unchanged path updates and enriched docs in batch transactions
         // to minimize the number of write-lock acquisitions.
@@ -540,10 +546,10 @@ struct DocumentSummary {
     extension: String,
     content_length: usize,
     cluster_id: i32,
-    status: String,
+    status: Status,
     summary: String,
     topics: Vec<String>,
-    review_status: String,
+    review_status: ReviewStatus,
 }
 
 async fn list_documents(State(state): State<AppState>) -> Json<Vec<DocumentSummary>> {
@@ -596,11 +602,11 @@ struct CanvasNode {
     rel_path: String,
     abs_path: String,
     extension: String,
-    review_status: String,
+    review_status: ReviewStatus,
     cluster_id: i32,
     x: f64,
     y: f64,
-    status: String,
+    status: Status,
     status_confidence: f32,
     content_preview: String,
     summary: String,
@@ -624,7 +630,7 @@ async fn canvas_data(State(state): State<AppState>) -> Json<Vec<CanvasNode>> {
     let nodes = docs
         .into_iter()
         .map(|d| {
-            let cluster_id = if d.review_status == "approved" {
+            let cluster_id = if d.review_status == ReviewStatus::Approved {
                 d.cluster_id
             } else {
                 -1
@@ -690,7 +696,7 @@ struct SearchQuery {
     limit: usize,
     /// Filter by review_status (e.g. "approved", "pending_review")
     #[serde(default)]
-    status: Option<String>,
+    review_status: Option<String>,
     /// Filter by file extension (e.g. "rs", "md")
     #[serde(default)]
     extension: Option<String>,
@@ -741,8 +747,8 @@ async fn search_documents(
     let doc_refs: Vec<&Document> = docs
         .iter()
         .filter(|d| {
-            if let Some(ref s) = query.status {
-                if &d.review_status != s {
+            if let Some(ref s) = query.review_status {
+                if d.review_status != ReviewStatus::from_str(s) {
                     return false;
                 }
             }
@@ -820,10 +826,10 @@ struct ReviewQueueItem {
     extension: String,
     content_length: usize,
     cluster_id: i32,
-    status: String,
+    status: Status,
     summary: String,
     topics: Vec<String>,
-    review_status: String,
+    review_status: ReviewStatus,
     content_hash: String,
     dupe_count: usize,
     dir_path: String,
@@ -945,7 +951,7 @@ async fn approve_review(
 
     let mut store = state.store.write().await;
     store
-        .set_review_status(&file_id, "approved")
+        .set_review_status(&file_id, ReviewStatus::Approved)
         .map_err(internal_error)?;
     store.save().map_err(internal_error)?;
 
@@ -969,7 +975,7 @@ async fn reject_review(
 
     let mut store = state.store.write().await;
     store
-        .set_review_status(&file_id, "rejected")
+        .set_review_status(&file_id, ReviewStatus::Rejected)
         .map_err(internal_error)?;
     store.save().map_err(internal_error)?;
 
@@ -1034,7 +1040,7 @@ async fn bulk_approve(
     let mut store = state.store.write().await;
     for file_id in &file_ids {
         store
-            .set_review_status(file_id, "approved")
+            .set_review_status(file_id, ReviewStatus::Approved)
             .map_err(internal_error)?;
     }
     store.save().map_err(internal_error)?;
@@ -1065,7 +1071,7 @@ async fn bulk_reject(
     let mut store = state.store.write().await;
     for file_id in &file_ids {
         store
-            .set_review_status(file_id, "rejected")
+            .set_review_status(file_id, ReviewStatus::Rejected)
             .map_err(internal_error)?;
     }
     store.save().map_err(internal_error)?;
@@ -1183,6 +1189,89 @@ async fn remove_overseen(
     let mut store = state.store.write().await;
     store.remove_overseen_dir(&id).map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct BrowseQuery {
+    #[serde(default)]
+    path: Option<String>,
+}
+
+#[derive(Serialize)]
+struct BrowseEntry {
+    name: String,
+    path: String,
+    has_children: bool,
+}
+
+async fn browse_fs(Query(query): Query<BrowseQuery>) -> Json<Vec<BrowseEntry>> {
+    let entries = match query.path.as_deref() {
+        Some(p) if !p.is_empty() => list_child_dirs(FsPath::new(p)),
+        _ => list_roots(),
+    };
+    Json(entries)
+}
+
+fn list_roots() -> Vec<BrowseEntry> {
+    #[cfg(windows)]
+    {
+        let mut roots = Vec::new();
+        for letter in b'A'..=b'Z' {
+            let drive = format!("{}:\\", letter as char);
+            let path = FsPath::new(&drive);
+            if path.exists() {
+                roots.push(BrowseEntry {
+                    name: drive.clone(),
+                    path: drive,
+                    has_children: true,
+                });
+            }
+        }
+        roots
+    }
+
+    #[cfg(not(windows))]
+    {
+        vec![BrowseEntry {
+            name: "/".to_string(),
+            path: "/".to_string(),
+            has_children: true,
+        }]
+    }
+}
+
+fn list_child_dirs(path: &FsPath) -> Vec<BrowseEntry> {
+    let Ok(read_dir) = std::fs::read_dir(path) else {
+        return Vec::new();
+    };
+
+    let hidden_prefixes = [".git", ".hg", ".svn", "node_modules", "__pycache__", ".DS_Store"];
+
+    let mut entries: Vec<BrowseEntry> = read_dir
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let ft = entry.file_type().ok()?;
+            if !ft.is_dir() {
+                return None;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || hidden_prefixes.contains(&name.as_str()) {
+                return None;
+            }
+            let child_path = entry.path().to_string_lossy().to_string();
+            let has_children = std::fs::read_dir(entry.path())
+                .map(|mut rd| rd.any(|e| e.ok().map_or(false, |e| e.file_type().ok().map_or(false, |ft| ft.is_dir()))))
+                .unwrap_or(false);
+            Some(BrowseEntry {
+                name,
+                path: child_path,
+                has_children,
+            })
+        })
+        .collect();
+
+    entries.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    entries
 }
 
 fn embedding_text_for_doc(doc: &Document) -> String {

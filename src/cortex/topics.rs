@@ -75,7 +75,10 @@ fn extract_entities(text: &str) -> Vec<String> {
     entities
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Confidence score uses simple integer scaling"
+)]
 fn confidence_score(text: &str, topic_count: usize, entity_count: usize) -> f32 {
     let signal = text.chars().filter(|c| c.is_alphanumeric()).count();
     if signal < 20 {
@@ -141,11 +144,9 @@ mod tests {
     fn extracts_topics_from_code_like_text() {
         let text = "fn run_ingest(path: &Path) { let store = Store::load(path)?; }";
         let (topics, _, _) = extract_topics_and_entities(text, "rs");
-        assert!(
-            topics
-                .iter()
-                .any(|t| t == "run_ingest" || t == "store" || t == "path")
-        );
+        assert!(topics
+            .iter()
+            .any(|t| t == "run_ingest" || t == "store" || t == "path"));
     }
 
     #[test]
