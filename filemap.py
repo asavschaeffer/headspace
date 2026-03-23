@@ -1,14 +1,13 @@
 """
 filemap - see what you have before you organize it.
 
-Run it on any folder. It reads nothing inside your files — just names,
-sizes, dates, and types. Produces a simple report you can review.
+Run it on any folder. It looks at the folder's immediate contents —
+files and subfolders — and builds an index of what's there.
 
 Usage:
     python filemap.py                    # scans your Desktop
     python filemap.py ~/Documents        # scans Documents
-    python filemap.py ~/Documents -d 2   # only go 2 folders deep
-    python filemap.py ~/Desktop -o report.json   # custom output name
+    python filemap.py ~/Desktop -o my.db # custom database name
 """
 
 import os
@@ -17,6 +16,8 @@ import json
 import argparse
 from datetime import datetime
 from pathlib import Path
+
+import db
 
 # ── file categories ──────────────────────────────────────────────────
 # add to these as needed. anything not listed goes under "other".
@@ -111,48 +112,94 @@ def format_time(timestamp):
     try:
         return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M")
     except (OSError, ValueError):
-        return "unknown"
+        return None
 
 
-def scan_directory(target_dir, max_depth=None):
-    """walk a directory and collect metadata for every file."""
+def folder_stats(folder_path):
+    """quick stats for a subfolder: count items and total size."""
+    total_size = 0
+    child_count = 0
+    try:
+        for item in os.scandir(folder_path):
+            child_count += 1
+            try:
+                if item.is_file(follow_symlinks=False):
+                    total_size += item.stat().st_size
+            except (PermissionError, OSError):
+                pass
+    except (PermissionError, OSError):
+        pass
+    return child_count, total_size
+
+
+def scan_directory(target_dir):
+    """scan a folder's immediate children — files and subfolders."""
     target = Path(target_dir).resolve()
     entries = []
 
-    for root, dirs, files in os.walk(target):
-        # calculate current depth
-        depth = Path(root).relative_to(target).parts
-        if max_depth is not None and len(depth) >= max_depth:
-            dirs.clear()  # don't go deeper
-            continue
+    try:
+        children = sorted(os.scandir(target), key=lambda e: e.name.lower())
+    except PermissionError:
+        print(f"\n  no permission to read {target}\n")
+        return []
 
-        for fname in files:
-            fpath = Path(root) / fname
+    for item in children:
+        fpath = Path(item.path)
+
+        if item.is_file(follow_symlinks=False):
             try:
-                stat = fpath.stat()
+                stat = item.stat()
                 entries.append({
-                    "name": fname,
+                    "name": item.name,
                     "path": str(fpath),
-                    "relative_path": str(fpath.relative_to(target)),
-                    "category": categorize(fname),
-                    "extension": fpath.suffix.lower() or "(none)",
+                    "relative_path": item.name,
+                    "is_folder": 0,
+                    "category": categorize(item.name),
+                    "extension": fpath.suffix.lower() or None,
                     "size_bytes": stat.st_size,
-                    "size": human_size(stat.st_size),
                     "modified": format_time(stat.st_mtime),
                     "created": format_time(stat.st_ctime),
+                    "accessed": format_time(stat.st_atime),
                 })
             except (PermissionError, OSError):
                 entries.append({
-                    "name": fname,
+                    "name": item.name,
                     "path": str(fpath),
-                    "relative_path": str(fpath.relative_to(target)),
-                    "category": categorize(fname),
-                    "extension": fpath.suffix.lower() or "(none)",
+                    "relative_path": item.name,
+                    "is_folder": 0,
+                    "category": categorize(item.name),
+                    "extension": fpath.suffix.lower() or None,
                     "size_bytes": 0,
-                    "size": "?",
-                    "modified": "?",
-                    "created": "?",
-                    "error": "could not read file metadata",
+                    "extra": {"error": "could not read file metadata"},
+                })
+
+        elif item.is_dir(follow_symlinks=False):
+            try:
+                stat = item.stat()
+                child_count, total_size = folder_stats(fpath)
+                entries.append({
+                    "name": item.name,
+                    "path": str(fpath),
+                    "relative_path": item.name,
+                    "is_folder": 1,
+                    "category": "folder",
+                    "extension": None,
+                    "size_bytes": total_size,
+                    "modified": format_time(stat.st_mtime),
+                    "created": format_time(stat.st_ctime),
+                    "accessed": format_time(stat.st_atime),
+                    "extra": {"child_count": child_count},
+                })
+            except (PermissionError, OSError):
+                entries.append({
+                    "name": item.name,
+                    "path": str(fpath),
+                    "relative_path": item.name,
+                    "is_folder": 1,
+                    "category": "folder",
+                    "extension": None,
+                    "size_bytes": 0,
+                    "extra": {"error": "could not read folder metadata"},
                 })
 
     return entries
@@ -164,56 +211,51 @@ def build_summary(entries):
     for e in entries:
         cat = e["category"]
         if cat not in by_category:
-            by_category[cat] = {"count": 0, "total_bytes": 0, "files": []}
+            by_category[cat] = {"count": 0, "total_bytes": 0}
         by_category[cat]["count"] += 1
-        by_category[cat]["total_bytes"] += e["size_bytes"]
-        by_category[cat]["files"].append(e)
+        by_category[cat]["total_bytes"] += e.get("size_bytes", 0)
 
     return by_category
 
 
 def print_report(target_dir, entries, summary):
     """print a clear, friendly report to the console."""
+    files = [e for e in entries if not e.get("is_folder")]
+    folders = [e for e in entries if e.get("is_folder")]
+
     print()
     print(f"  filemap results for: {target_dir}")
     print(f"  {'─' * 50}")
-    print(f"  total files found: {len(entries)}")
+    print(f"  {len(files)} files, {len(folders)} folders")
     print()
 
     # sort categories by file count, descending
     sorted_cats = sorted(summary.items(), key=lambda x: x[1]["count"], reverse=True)
 
     for cat_name, cat_data in sorted_cats:
+        if cat_name == "folder":
+            continue  # show folders separately
         desc = CATEGORIES.get(cat_name, {}).get("description", "uncategorized files")
         total_size = human_size(cat_data["total_bytes"])
         print(f"  {cat_name:<16} {cat_data['count']:>5} files   {total_size:>10}   ({desc})")
 
     print()
-    print(f"  {'─' * 50}")
-    total_size = human_size(sum(e["size_bytes"] for e in entries))
-    print(f"  total size: {total_size}")
+
+    if folders:
+        print(f"  {'─' * 50}")
+        print(f"  folders:")
+        for f in sorted(folders, key=lambda x: x["size_bytes"], reverse=True):
+            extra = f.get("extra", {})
+            if isinstance(extra, str):
+                extra = json.loads(extra)
+            child_count = extra.get("child_count", "?")
+            size = human_size(f["size_bytes"])
+            print(f"    {f['name']:<36} {child_count:>4} items   {size:>10}")
+
     print()
-
-
-def save_index(entries, summary, target_dir, output_path):
-    """save the full index as JSON."""
-    index = {
-        "filemap_version": "0.1.0",
-        "scanned": target_dir,
-        "scanned_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "total_files": len(entries),
-        "summary": {
-            cat: {"count": data["count"], "total_size": human_size(data["total_bytes"])}
-            for cat, data in summary.items()
-        },
-        "files": entries,
-    }
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(index, f, indent=2, ensure_ascii=False)
-
-    print(f"  index saved to: {output_path}")
-    print(f"  (open this file to see every file with its category, size, and dates)")
+    print(f"  {'─' * 50}")
+    total_size = human_size(sum(e.get("size_bytes", 0) for e in entries))
+    print(f"  total size: {total_size}")
     print()
 
 
@@ -225,8 +267,7 @@ def main():
 examples:
   python filemap.py                    scan your Desktop
   python filemap.py ~/Documents        scan Documents
-  python filemap.py . -d 1            scan current folder, top level only
-  python filemap.py ~/Desktop -o my_index.json
+  python filemap.py ~/Desktop -o my.db custom database name
         """,
     )
     parser.add_argument(
@@ -236,15 +277,9 @@ examples:
         help="folder to scan (default: your Desktop)",
     )
     parser.add_argument(
-        "-d", "--depth",
-        type=int,
-        default=None,
-        help="how many folders deep to go (default: unlimited)",
-    )
-    parser.add_argument(
         "-o", "--output",
-        default=None,
-        help="where to save the index JSON (default: filemap_<foldername>.json)",
+        default="filemap.db",
+        help="database file to write to (default: filemap.db)",
     )
 
     args = parser.parse_args()
@@ -254,25 +289,31 @@ examples:
         print(f"\n  '{target}' is not a folder. check the path and try again.\n")
         sys.exit(1)
 
-    # default output name based on the folder
-    if args.output is None:
-        safe_name = target.name.lower().replace(" ", "_")
-        args.output = f"filemap_{safe_name}.json"
-
     print(f"\n  scanning: {target}")
-    if args.depth:
-        print(f"  depth limit: {args.depth} levels")
     print(f"  ...")
 
-    entries = scan_directory(target, max_depth=args.depth)
+    entries = scan_directory(target)
 
     if not entries:
-        print(f"\n  no files found in {target}\n")
+        print(f"\n  no files or folders found in {target}\n")
         sys.exit(0)
 
     summary = build_summary(entries)
     print_report(str(target), entries, summary)
-    save_index(entries, summary, str(target), args.output)
+
+    # write to database
+    conn = db.init_db(args.output, categories=CATEGORIES)
+    scan_id = db.insert_scan(conn, str(target))
+
+    for entry in entries:
+        db.upsert_entry(conn, scan_id, entry)
+
+    db.finalize_scan(conn, scan_id, len(entries))
+    conn.close()
+
+    print(f"  index saved to: {args.output}")
+    print(f"  (query it with: sqlite3 {args.output} \"SELECT name, category FROM entries\")")
+    print()
 
 
 if __name__ == "__main__":
