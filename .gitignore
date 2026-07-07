@@ -1,0 +1,11 @@
+# stores & scratch — anything that could stage a secret stays off git
+*.db.json
+.env
+.env.*
+node_modules/
+.check.js
+.c.js
+.conntest.mjs
+*.tmp
+
+# generated-seeds.json is curated sample output — intentionally tracked (do not ignore)
