@@ -1,0 +1,83 @@
+{
+  "mog — template character & ability creator": {
+    "manifest": 8,
+    "tokens": 60,
+    "model": "meta/llama-3.1-70b-instruct",
+    "chunks": [
+      {
+        "kind": "heading_section",
+        "text": "Refining MOG Concept"
+      },
+      {
+        "kind": "list",
+        "text": null
+      },
+      {
+        "kind": "list_item",
+        "text": "Consider integrating a procedural generation system to create unique character and ability combinations, increasing replay value and user engagement."
+      },
+      {
+        "kind": "list_item",
+        "text": "Develop a user-friendly interface that allows players to share and discover custom character templates, fostering a sense of community and encouraging user-generated content."
+      },
+      {
+        "kind": "list_item",
+        "text": "Explore the possibility of incorporating a narrative or campaign mode, where players can use their created characters to progress through a story or overcome challenges, adding depth to the game."
+      }
+    ]
+  },
+  "healthkit survivor.io — your real steps are your only moves (iOS)": {
+    "manifest": 8,
+    "tokens": 60,
+    "model": "meta/llama-3.1-70b-instruct",
+    "chunks": [
+      {
+        "kind": "heading_section",
+        "text": "Fitness Survival Game"
+      },
+      {
+        "kind": "list",
+        "text": null
+      },
+      {
+        "kind": "list_item",
+        "text": "To make the game more engaging, consider incorporating real-world weather and location-based challenges that reflect the player's surroundings, requiring them to adapt their in-game strategy."
+      },
+      {
+        "kind": "list_item",
+        "text": "Integrate social features, such as leaderboards or multiplayer modes, where players can compete or cooperate with friends to increase their step count and progress in the game."
+      },
+      {
+        "kind": "list_item",
+        "text": "Develop a reward system that unlocks in-game items or bonuses when players reach specific step milestones, providing a tangible connection between their physical activity and in-game progress."
+      }
+    ]
+  },
+  "hopper — the folder reorganizer": {
+    "manifest": 7,
+    "tokens": 45,
+    "model": "meta/llama-3.1-70b-instruct",
+    "chunks": [
+      {
+        "kind": "heading_section",
+        "text": "Hopper: Folder Reorganizer"
+      },
+      {
+        "kind": "list",
+        "text": null
+      },
+      {
+        "kind": "list_item",
+        "text": "What if Hopper not only reorganized folders but also automatically suggested new categorization systems based on the content and metadata of the files within?"
+      },
+      {
+        "kind": "list_item",
+        "text": "To make Hopper more intelligent, could you integrate it with the game grammar transformer to recognize patterns and relationships between files and folders?"
+      },
+      {
+        "kind": "list_item",
+        "text": "Would Hopper benefit from a user feedback loop, allowing users to correct or confirm its reorganization decisions, and thereby training the system to improve its accuracy over time?"
+      }
+    ]
+  }
+}
