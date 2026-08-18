@@ -29,6 +29,7 @@ type ChunkId = string;
 interface Chunk {
   id: ChunkId;
   currentRevisionId: RevisionId;
+  tombstoned: boolean;
 }
 ```
 
@@ -57,19 +58,21 @@ Editing creates a revision rather than destroying the prior state.
 
 ```ts
 type RevisionId = string;
-type ContentHash = string;
+type BlobHash = string;
 
 interface Revision {
   id: RevisionId;
   chunkId: ChunkId;
-  content: Content;
-  contentHash: ContentHash;
-  parentRevisionIds: RevisionId[];
-  provenance: Provenance;
+  blobHash: BlobHash;
+  mediaType: string;
+  parentRevisionIds: RevisionId[]; // more than one parent = merge
+  createdBy: ActorId;
+  createdAt: string;
+  operationId: OperationId;
 }
 ```
 
-A content hash identifies exact content, not the continuing chunk. The
+A blob hash identifies exact content, not the continuing chunk. The
 chunk's current revision is mutable state associated with its identity; it is
 not part of the identity itself.
 
@@ -83,10 +86,10 @@ A chunk is the continuing identity. A revision is a historical state of that
 identity. A content blob is the immutable payload that the revision points at.
 
 ```ts
-interface ContentBlob {
-  hash: ContentHash;
+interface Blob {
+  hash: BlobHash;
   mediaType: string;
-  bytes: Uint8Array;
+  text: string; // v1 payloads are text; binary media arrives behind the same seam later
 }
 ```
 
@@ -99,19 +102,10 @@ Those are different claims.
 ### Content and arrangement are independent
 
 Moving a chunk does not edit its content. Arrangement is represented by
-relations rather than embedded into a content revision.
+occurrences rather than embedded into a content revision.
 
-```ts
-interface Relation {
-  from: ChunkId;
-  to: ChunkId;
-  kind: RelationKind;
-  position?: number;
-}
-```
-
-Containment, ordering, reference, and derivation may be different relation
-kinds. Their exact vocabulary remains open.
+Containment and ordering are occurrence facts; explicit connection is a link;
+ancestry is a derivation. The three structural forms are distinguished below.
 
 Containment should be acyclic. References and associative relations may form
 cycles.
