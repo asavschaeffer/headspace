@@ -25,19 +25,23 @@ known occurrence or ancestor. It should not automatically share mutable chunk
 identity.
 
 ```ts
-interface ContentBlob {
-  hash: ContentHash;
+interface Blob {
+  hash: BlobHash;
   mediaType: string;
-  bytes: Uint8Array;
+  text: string;
 }
 
-interface ContentInterningEntry {
-  hash: ContentHash;
-  canonicalBlobId: BlobId;
-  firstSeenRevisionId: RevisionId;
-  occurrences: OccurrenceId[];
+interface InterningEntry {
+  hash: BlobHash;
+  revisionIds: RevisionId[]; // every non-redacted revision carrying this payload
 }
 ```
+
+Interning is a derived index fact ([Index](index.md)); first-seen attribution
+is computed from it on demand, never stored as a crown.
+
+The content address is SHA-256 over `mediaType + "\0" + text`, so the
+interning key is the media type plus the payload, not raw bytes alone.
 
 This gives the desired deep fate:
 

@@ -13,22 +13,24 @@ provenance, indexes, and view layout live around content.
 A content blob is the stored payload for a revision.
 
 ```ts
-interface ContentBlob {
-  hash: ContentHash;
+interface Blob {
+  hash: BlobHash;
   mediaType: string;
-  bytes: Uint8Array;
+  text: string; // v1 payloads are text; binary media arrives behind the same seam
 }
 ```
 
-For the first implementation, the safest default is exact immutable bytes plus
-an explicit media type. Examples:
+For the first implementation, the safest default is an exact immutable payload
+plus an explicit media type. Examples:
 
 - `text/markdown; charset=utf-8`
 - `text/plain; charset=utf-8`
 - `image/png`
 - `application/json`
 
-The hash is over the canonical stored payload for that media type.
+The hash is over the canonical stored payload for that media type. Concretely,
+the content address is SHA-256 over `mediaType + "\0" + text`, so the
+interning key is the media type plus the payload, not raw bytes alone.
 
 ### Blob equality is not identity equality
 

@@ -21,9 +21,37 @@ interface Binding {
 }
 ```
 
-`ExternalVersion` might be a content hash, file metadata, HTTP entity tag, or
-provider revision. It supports conflict detection; it does not become chunk
+`observedVersion` is the external content hash last seen or projected. It
+supports conflict detection — the driver compares it against the external
+object's current state to notice divergence; it does not become chunk
 identity.
+
+## Accepted principles
+
+### A binding targets a chunk
+
+A binding names a continuing identity, not a historical state. Revisions come
+and go beneath it; the binding records which chunk the external object
+corresponds to, and projection works from that chunk's current revision.
+
+### Cardinality is asymmetric
+
+One chunk may carry multiple bindings — the same material exported to several
+external targets. One external file binds to one doc chunk: the file's block
+chunks ride the doc's sidecar rather than binding individually (see
+[Drivers](drivers.md)).
+
+### Renamed files are rediscovered by content
+
+A dangling path is not yet broken correspondence. A renamed file is re-matched
+by content hash and offered as a `reconciliation` proposal to rebind; the
+rebind is an explicit acceptance, never a silent path update.
+
+### Binding history is sedimentary
+
+Binding changes — creation, rebind, removal — are recorded like everything
+else: kept in history, out of the way, inspectable when reconciliation or
+trust requires them.
 
 ## Responsibilities
 
@@ -31,12 +59,4 @@ identity.
 - Record the external version last observed or projected.
 - Support moves and renamed external objects without redefining the chunk.
 - Make conflicts and broken correspondence visible.
-
-## Open questions
-
-- Can one chunk have multiple bindings?
-- Can one external object bind to multiple chunks?
-- Does a binding target a chunk, a revision, or both?
-- How are renamed files rediscovered reliably?
-- Is binding history sedimentary in the same way as revision history?
 

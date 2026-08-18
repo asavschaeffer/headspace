@@ -131,6 +131,28 @@ Containment through occurrences is acyclic. Derivation ancestry is acyclic and
 sedimentary. Links may generally form cycles, while domain-specific roles and
 constraints are interpreted above the kernel.
 
+```ts
+interface Link {
+  id: LinkId;
+  fromChunkId: ChunkId;
+  fromSpan?: SpanAddress; // a span inside one revision; see decomposition.md
+  toChunkId?: ChunkId;
+  toRevisionId?: RevisionId;
+  toExternal?: ExternalRef; // an outside entity; see external.md
+  role: string; // "references", "replies-to", "candidate-referent", ...
+  operationId: OperationId;
+}
+
+interface Derivation {
+  id: DerivationId;
+  childChunkId: ChunkId;
+  sourceRevisionId: RevisionId;
+  sourceSpan?: SpanAddress;
+  via: "copy" | "fork" | "generate" | "extract";
+  operationId: OperationId;
+}
+```
+
 The three reuse verbs compose these forms:
 
 ```text
@@ -152,8 +174,10 @@ interface Occurrence {
   id: OccurrenceId;
   containerId: ChunkId;
   chunkId: ChunkId;
-  position: Position;
-  revision: "current" | RevisionId;
+  position: string; // fractional index key; sibling order is lexicographic
+  mode: "contain" | "transclude";
+  pin: "current" | RevisionId; // transclusions default to a pinned revision
+  watch: boolean; // watched transclusion: pinned render + update proposals
 }
 ```
 
@@ -165,16 +189,8 @@ changing every other occurrence of the same chunk.
 Edit, move, reroll, contextualize, fork, and accept are meaningful user
 intentions, but they are not necessarily kernel primitives.
 
-A current candidate primitive set is:
-
-```ts
-create(chunk)
-revise(chunkId, content, provenance)
-relate(from, to, kind, position?)
-unrelate(from, to, kind)
-```
-
-This is a working model, not an accepted final API. A generic
+The accepted operation vocabulary — a closed set of kinds, each applied as one
+atomic commit — is fixed in [Operations](operations.md). A generic
 `manipulate(chunk, operation)` is disfavored because it hides invariants and
 turns distinct state transitions into an unbounded switch.
 
@@ -187,7 +203,7 @@ turns distinct state transitions into an unbounded switch.
 | Contextualize | Read or traverse; often no kernel mutation |
 | Reroll | Generate a proposal, then optionally revise or branch |
 | Fork | Create a new chunk identity derived from a specific revision |
-| Delete | Remove a relation or record a tombstone; unresolved |
+| Delete | Sever the visible occurrence; tombstoning the identity is a distinct explicit action |
 
 Model output should be proposal-first. Generation should not silently
 overwrite human work.
@@ -204,9 +220,11 @@ overwrite human work.
 - Multi-step changes that must agree are applied atomically.
 - Derived data such as embeddings cannot determine identity.
 
-## Open questions
+## Boundaries resolved elsewhere
 
-- Is deletion a tombstone, loss of containment, or both?
+Deletion is both a tombstone and a loss of containment, and the two are
+distinct: ordinary deletion severs the visible occurrence, while tombstoning
+an identity is an explicit, separate action ([Deletion](deletion.md)).
 
 The minimum content representation is addressed in [Content](content.md): an
 immutable byte blob with an explicit media type. Containment acyclicity and

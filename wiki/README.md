@@ -34,10 +34,21 @@ Only stable, compressed conclusions should eventually move into
 - [Store](store.md): durable recording and transactions.
 - [Drivers](drivers.md): translation between external forms and chunks.
 - [Bindings](bindings.md): correspondence with external objects.
+- [Decomposition](decomposition.md): derived parts on demand, durable identity
+  on commitment.
 - [Index](index.md): discovery, similarity, and derived knowledge.
+- [Lenses](lenses.md): saved, read-only queries and projections over facts and
+  indexes.
 - [Resolver](resolver.md): possible referents for spans, names, concepts, and
   ambiguous mentions.
+- [External knowledge](external.md): approved outside layers, local snapshots,
+  and explicit ingestion.
 - [Operations](operations.md): select, reduce, generate, and user intentions.
+- [Proposals](proposals.md): suggested change recorded inert until accepted.
+- [Conflicts and merge](conflicts.md): divergent truths and their explicit,
+  lossless resolution.
+- [Collaboration](collaboration.md): actors, roles, and cross-boundary flows.
 - [Views](views.md): semantic position, visual placement, and spatial memory.
+- [Plan](plan.md): dependency-ordered milestones and the proof each one owes.
 - [Question ledger](questions.md): ordered design backlog and decision status.
 - [Information shapes](information-shapes.md): architectural fixtures for chats, articles, and future formats.

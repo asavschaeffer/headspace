@@ -15,7 +15,7 @@ part exposed on demand by a decomposer.
 ```ts
 type ViewTarget =
   | { kind: "chunk"; chunkId: ChunkId }
-  | { kind: "derived"; address: DerivedAddress };
+  | { kind: "derived"; address: SpanAddress };
 ```
 
 Promotion is required only when an operation needs independent durable identity.

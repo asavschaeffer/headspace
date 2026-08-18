@@ -22,28 +22,35 @@ but every surviving word does not become socially owned by default.
 interface Revision {
   id: RevisionId;
   chunkId: ChunkId;
-  contentHash: ContentHash;
-  createdBy: ActorId;
-  createdAt: Timestamp;
-  operationId: OperationId;
+  blobHash: BlobHash;
+  mediaType: string;
   parentRevisionIds: RevisionId[];
+  createdBy: ActorId;
+  createdAt: string;
+  operationId: OperationId;
 }
 
 interface Operation {
   id: OperationId;
   actorId: ActorId;
   kind:
-    | "create"
-    | "revise"
-    | "copy"
-    | "reference"
-    | "transclude"
-    | "generate";
+    | "create" | "revise"
+    | "place" | "move" | "sever"
+    | "relate" | "unrelate"
+    | "copy" | "reference" | "transclude"
+    | "promote"
+    | "propose" | "accept" | "reject"
+    | "tombstone" | "redact"
+    | "import" | "reconcile";
   inputRevisionIds: RevisionId[];
   outputRevisionIds: RevisionId[];
   patch?: Patch;
 }
 ```
+
+Generation is not an operation kind of its own: model output reaches truth
+through `propose` and `accept`, so who suggested and who admitted are recorded
+as separate facts.
 
 Example:
 

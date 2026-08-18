@@ -24,6 +24,9 @@ Ordinary user deletion should usually sever an occurrence or tombstone a local
 object. Published or shared material usually needs unpublish or tombstone.
 Privacy/legal emergencies may need redaction or hard delete.
 
+**Product default:** deleting a star severs the occurrence the user is looking
+at; tombstoning the identity everywhere is an explicit, distinct action.
+
 ### The right to destroy one's own speech exists
 
 A user should have a path to remove what they said so that the system no

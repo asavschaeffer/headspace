@@ -17,50 +17,22 @@ route through the discussion, not a second specification.
 
 ## Current
 
-### Deletion semantics
+### Placement durability
 
-> When a user deletes a star, which thing are they asking Substrate to remove?
+> Which parts of visual placement are durable user state, and which are
+> reproducible layout output?
 
-A visible star may be a chunk, occurrence, derived part, transclusion, link, or
-view placement. The kernel already distinguishes severing an appearance from
-tombstoning an identity, but the product needs safe defaults that match what the
-user believes they selected.
+Spatial memory is a product promise: search, clustering, and corpus growth
+must not arbitrarily destroy where things were. Whether a placement is saved
+state, an anchored derivation, or a pure projection decides what the view
+layer may persist and what it must always be able to recompute
+([Views](views.md)).
 
 ## Queued
 
-### Kernel
+### Views
 
-1. What does deletion do to identity, containment, history, and blobs?
-
-### Persistence and external truth
-
-1. During the first product phase, which facts are authoritative in the
-   filesystem and which are authoritative in the Substrate store?
-2. What is the atomic unit of change, and is an event log required alongside
-   current state?
-3. How are concurrent internal and external edits detected and reconciled?
-4. Which sedimentary history may be compacted or garbage-collected?
-5. What cardinalities and historical behavior do bindings permit?
-
-### Interpretation and operations
-
-1. Is decomposition a driver policy or a separate replaceable seam?
-2. How are chunk identities preserved across repeated imports?
-3. How does a driver declare and expose lossy projection?
-4. Are select, reduce, and generate universal operations or one important
-   pipeline over more fundamental reads and writes?
-5. Should `generate` become a broader transformation concept that includes
-   human editing?
-6. What is the lifecycle of a proposal?
-
-### Index and views
-
-1. When is a soft relation merely an index result, and when is it promoted to
-   a durable relation?
-2. How are stale derived representations handled after revision?
-3. Which parts of visual placement are durable user state and which are
-   reproducible layout output?
-4. What anchors a stable home layout while search, filtering, and clustering
+1. What anchors a stable home layout while search, filtering, and clustering
    change what is emphasized?
 
 ## Accepted and distilled
@@ -91,3 +63,41 @@ user believes they selected.
 - Granularity is progressive and demand-driven. Views may render derived
   sections, sentences, words, or subword tokens as stars without promoting them
   into durable chunk identities.
+- Deleting a star severs the occurrence the user is looking at; tombstoning
+  the identity everywhere is an explicit, distinct action ([Deletion](deletion.md)).
+- The store is authoritative for identity, structure, history, and provenance;
+  a bound file is authoritative for bytes edited outside Substrate
+  ([Store](store.md)).
+- The atomic unit of change is one operation, one commit, one log append, in
+  an append-only log with periodic snapshots ([Store](store.md)).
+- Concurrent edits are detected by a single-writer lock and the plural-parent
+  commit DAG; divergence resolves through merge proposals ([Store](store.md),
+  [Conflicts](conflicts.md)).
+- History is sedimentary and kept by default; compaction and blob garbage
+  collection are explicit administrative operations ([Store](store.md)).
+- A binding targets a chunk; one chunk may carry many bindings, one file binds
+  one doc chunk, renamed files are rediscovered by content hash, and binding
+  history is sedimentary ([Bindings](bindings.md)).
+- Decomposition is a registered, versioned method behind its own seam, not
+  driver-private policy; a driver chooses which method applies to its format
+  ([Decomposition](decomposition.md), [Drivers](drivers.md)).
+- Chunk identity survives repeated imports through driver sidecar memory,
+  reconstructed by content-hash matching when the sidecar is lost
+  ([Drivers](drivers.md)).
+- Lossy projection is declared explicitly; opaque blocks pass through
+  byte-stable rather than being silently dropped ([Drivers](drivers.md)).
+- Select, reduce, and generate are a pipeline over the transaction vocabulary,
+  not kernel primitives; generation terminates in `propose`
+  ([Operations](operations.md)).
+- Human edits in one's own workspace apply directly as `revise`; generation
+  does not widen to absorb human editing ([Operations](operations.md)).
+- A proposal is an inert record moving open to accepted, rejected, or
+  superseded, with basis freshness validated at accept
+  ([Operations](operations.md), [Proposals](proposals.md)).
+- Every operation is one atomic transaction and one commit
+  ([Operations](operations.md), [Store](store.md)).
+- A soft relation remains an index result until explicitly promoted into a
+  durable link ([Index](index.md)).
+- Staleness has one definition: a derived entry whose revision is no longer
+  the chunk's current revision; stale entries are recomputed, never trusted
+  ([Index](index.md)).
