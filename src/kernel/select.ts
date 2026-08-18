@@ -65,7 +65,8 @@ export interface ReducedContext {
   dropped: number;
 }
 
-// Keep whole items in role-priority order until the budget is spent.
+// Keep whole items in role-priority order until the budget is spent. The focus
+// is never dropped: if it alone exceeds the budget it is truncated to fit.
 export function reduce(items: ContextItem[], budget = 6000): ReducedContext {
   const kept: ContextItem[] = [];
   let chars = 0;
@@ -76,6 +77,12 @@ export function reduce(items: ContextItem[], budget = 6000): ReducedContext {
       continue;
     }
     if (chars + item.text.length > budget) {
+      if (item.role === 'focus' && chars < budget) {
+        const clipped = item.text.slice(0, budget - chars);
+        kept.push({ ...item, text: clipped });
+        chars += clipped.length;
+        continue;
+      }
       dropped++;
       continue;
     }

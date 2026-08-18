@@ -68,7 +68,8 @@ export async function syncWorkspace(
     const res = await reconcileMarkdownFile(ctx, { workspaceRoot: ws.root, relPath, text });
     if (res.action === 'noop') report.unchanged++;
     else if (res.action === 'fast-forward') report.fastForwarded.push(relPath);
-    else if (res.proposalId) report.proposals.push(res.proposalId);
+    // A fast-forward can still raise a sever proposal for vanished blocks.
+    if (res.action !== 'noop' && res.proposalId) report.proposals.push(res.proposalId);
   }
 
   report.sourceUpdates = scanWatchedSources(ctx);
