@@ -12,18 +12,38 @@ export function App() {
   const sub = useSubstrate();
   const [focus, setFocus] = useState<string | null>(null);
 
-  if (sub.error)
+  // A failed fetch before anything loaded is a dead server; after that, errors
+  // surface as a banner — a healthy workspace is never unmounted over a blip.
+  if (sub.error && !sub.ws)
     return (
       <div className="hint">
         substrate server unreachable — start with: npm run dev
         <div className="meta">{sub.error}</div>
+        <p>
+          <button onClick={() => void sub.reload()}>retry</button>
+        </p>
       </div>
     );
   if (!sub.ws || !sub.ctx) return <div className="hint">loading nebula…</div>;
 
-  return focus && sub.ws.state.chunks.has(focus) ? (
-    <Star sub={sub} docId={focus} onFocusDoc={setFocus} onBack={() => setFocus(null)} />
-  ) : (
-    <Nebula sub={sub} onFocus={setFocus} />
+  const banner = sub.error ?? sub.status;
+  return (
+    <>
+      {banner && (
+        <div className="banner">
+          {banner}
+          {sub.error ? (
+            <button onClick={() => void sub.reload()}>retry</button>
+          ) : (
+            <button onClick={sub.dismissStatus}>dismiss</button>
+          )}
+        </div>
+      )}
+      {focus && sub.ws.state.chunks.has(focus) ? (
+        <Star sub={sub} docId={focus} onFocusDoc={setFocus} onBack={() => setFocus(null)} />
+      ) : (
+        <Nebula sub={sub} onFocus={setFocus} />
+      )}
+    </>
   );
 }

@@ -107,6 +107,20 @@ button:disabled { opacity: 0.25; cursor: default; }
 .proposal .before { color: var(--muted); background: rgba(255, 255, 255, 0.02); text-decoration: line-through; }
 .proposal .after { color: var(--ink); background: rgba(255, 216, 107, 0.06); }
 
+.banner {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 1rem;
+  background: rgba(40, 30, 10, 0.85);
+  border-bottom: 1px solid rgba(255, 216, 107, 0.35);
+  color: var(--gold);
+  font-size: 13px;
+}
 .notice {
   border: 1px solid var(--line);
   background: var(--panel);
