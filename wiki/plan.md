@@ -98,31 +98,42 @@ a designed seam waiting for it; none blocks the milestones above.
 
 ## Status
 
-No milestone is complete. What exists is a working prototype that proves the
-product loop — navigate the nebula, focus a star, select, reduce — and the
-seam layout, not the kernel:
+Milestones M1 through M7 are complete with their proofs passing; M8 is
+partial.
 
-- The star and nebula surfaces render and navigate a chunk tree.
-- `select` and `reduce` exist as pure functions over an in-memory store;
-  `generate` is not wired, and nothing is proposal-shaped yet.
-- A one-way filesystem ingest reflects a folder into a snapshot of chunks
-  bound to source paths — import only, with no sidecar, no projection, and no
-  reconciliation.
-- Search is naive substring match, not the term index.
-- The prototype's chunk carries mutable text and a version counter rather
-  than immutable revisions; there are no occurrences, links, derivations,
-  operations, or proposals, and no `.substrate/` store — state is a JSON
-  snapshot loaded into a `Map`.
+- M1: the kernel vocabulary lives in `src/kernel/` with transactions applied
+  atomically through `applyCommit`; the invariant suite (`tests/kernel.test.ts`)
+  pins immutability, acyclicity, atomic promotion, and proposal freshness.
+- M2: `.substrate/` (append-only `log.jsonl`, content-addressed `blobs/`,
+  atomic `snapshot.json`, single-writer lock) sits behind the `WorkspaceStore`
+  port in `src/host/store-fs.ts`; reload equivalence and torn-tail recovery
+  are proven in `tests/store-fs.test.ts`. Snapshot cadence: every 50 commits
+  and on close.
+- M3: the full transaction vocabulary is implemented; `generate` is
+  proposal-first end to end, with the model actor as revision creator and the
+  accepting actor on the operation, behind a replaceable `Completer` seam
+  (a stub completer stands where the model driver plugs in).
+- M4: the markdown driver imports, projects, and reconciles with sidecars
+  under `.substrate/sidecars/`; canonical files round-trip byte-stable;
+  external-only edits fast-forward as `driver:fs` revisions; two-sided
+  divergence raises reconciliation proposals.
+- M5: extract, copy, and span-anchor promotion run from a text selection in
+  the star.
+- M6: term, interning, and echo indexes are derived and rebuildable; nebula
+  search runs on the term index; redaction and tombstones reflow through
+  query results.
+- M7: the term-search lens and the provenance lens render in the nebula.
+- M8: `ExternalRef` and the candidate shapes compile; the external cache
+  store does not exist yet, and no layer fetches.
 
-The prototype's value is that every stub sits where a milestone will replace
-it: its store is the `StorePort` socket, its ingest script is the markdown
-driver's socket, its search function is the term index's socket. The immediate
-front is M1 — replacing the prototype chunk with the kernel vocabulary — and
-everything after follows the order above.
+The browser and the dev server run the same kernel: the client applies
+commits locally and posts them; the server replays each commit (validation)
+and appends it to the log. Three-way merge (`src/kernel/merge.ts`) raises
+two-parent merge proposals per [Conflicts](conflicts.md).
 
 ## Open questions
 
-- Whether M4 and M5 can swap order: promotion is more visible in the product,
-  but reconciliation risk is retired earlier if the driver lands first.
-- What snapshot cadence M2 should use (every N commits, on idle, on close) —
-  the reload-equivalence proof holds under any of them.
+- The M8 external cache store, and which layer ships first behind it.
+- Whether the `WorkspaceStore` port should split into the finer-grained
+  `StorePort` methods sketched in [Store](store.md) before the SQLite backend
+  lands.
