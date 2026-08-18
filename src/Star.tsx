@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fork, reorder, updateText, type Chunk } from './kernel/chunk';
 import { generate, reduce, select } from './kernel/ops';
 import type { Store } from './kernel/store';
@@ -24,6 +24,14 @@ export function Star({
   const [instruction, setInstruction] = useState('');
   const [proposal, setProposal] = useState<Chunk | null>(null);
   const [context, setContext] = useState<{ count: number; text: string } | null>(null);
+  const proposalRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    proposalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [proposal]);
+
+  // rows is only the fallback where CSS field-sizing is unsupported
+  const rows = (text: string) =>
+    Math.min(text.split('\n').reduce((n, line) => n + 1 + Math.floor(line.length / 75), 0), 14);
 
   const dispatch = () => {
     const selection = select(store, docId);
@@ -53,7 +61,7 @@ export function Star({
   };
 
   return (
-    <div className="star">
+    <div className="doc">
       <header>
         <button onClick={onBack}>← nebula</button>
         <h2>{doc.id}</h2>
@@ -64,11 +72,7 @@ export function Star({
 
       {blocks.map((b, i) => (
         <div className="block" key={b.id}>
-          <textarea
-            value={b.text}
-            rows={Math.min(1 + b.text.split('\n').length, 10)}
-            onChange={(e) => commit(updateText(b, e.target.value, 'human'))}
-          />
+          <textarea value={b.text} rows={rows(b.text)} onChange={(e) => commit(updateText(b, e.target.value, 'human'))} />
           <div className="block-side">
             <span className="meta">
               v{b.version} · {b.provenance.author}
@@ -103,13 +107,13 @@ export function Star({
       )}
 
       {proposal && (
-        <div className="proposal">
+        <div className="proposal" ref={proposalRef}>
           <span className="meta">
             proposal · v{proposal.version} · {proposal.provenance.author}
           </span>
           <textarea
             value={proposal.text}
-            rows={8}
+            rows={rows(proposal.text)}
             onChange={(e) => setProposal(updateText(proposal, e.target.value, 'human'))}
           />
           <div className="actions">

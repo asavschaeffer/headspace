@@ -46,12 +46,27 @@ export function Nebula({ store, onFocus }: { store: Store; onFocus: (id: string)
         <input placeholder="search the workspace…" value={query} onChange={(e) => setQuery(e.target.value)} />
       </header>
       <svg viewBox={`0 0 ${W} ${H}`}>
+        {/* Every light in the sky is a document. The nebula itself is made
+            from the stars: each doc emits a halo, and turbulence smears the
+            overlap into cloud — denser writing, denser nebula. */}
+        <defs>
+          <filter id="nebula" x="-80%" y="-80%" width="260%" height="260%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" seed="7" />
+            <feDisplacementMap in="SourceGraphic" scale="120" />
+            <feGaussianBlur stdDeviation="14" />
+          </filter>
+        </defs>
         {clusters.map(({ key, gx, gy, stars }) => (
           <g key={key}>
+            <g className="cloud" filter="url(#nebula)">
+              {stars.map(({ doc, x, y }) => (
+                <circle key={doc.id} cx={x} cy={y} r={26 + Math.min(doc.children.length, 40) * 1.2} />
+              ))}
+            </g>
             <text className="cluster-label" x={gx} y={gy - 18 * Math.sqrt(stars.length) - 16}>
               {key}
             </text>
-            {stars.map(({ doc, x, y }) => {
+            {stars.map(({ doc, x, y }, j) => {
               const lit = hits.has(doc.id);
               return (
                 <g
@@ -59,7 +74,12 @@ export function Nebula({ store, onFocus }: { store: Store; onFocus: (id: string)
                   className={`star ${lit ? 'lit' : ''} ${searching && !lit ? 'dim' : ''}`}
                   onClick={() => onFocus(doc.id)}
                 >
-                  <circle cx={x} cy={y} r={4 + Math.min(doc.children.length, 10) * 0.7} />
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={4 + Math.min(doc.children.length, 10) * 0.7}
+                    style={{ animationDelay: `-${(j * 1.7) % 5}s` }}
+                  />
                   <text x={x} y={y + 18}>
                     {doc.id.split('/').pop()}
                   </text>
