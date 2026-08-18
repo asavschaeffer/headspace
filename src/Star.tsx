@@ -1,91 +1,137 @@
-import { useEffect, useRef, useState } from 'react';
-import { fork, reorder, updateText, type Chunk } from './kernel/chunk';
-import { generate, reduce, select } from './kernel/ops';
-import type { Store } from './kernel/store';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { SubstrateHook } from './App';
+import { currentText, labelOf, leafBlocks, proposalsForDoc, revisionCount, type LeafBlock } from './client/helpers';
+import { buildIndexes, duplicatesOf, echoesOf, searchChunks } from './index/indexes';
+import { generateProposal } from './kernel/select';
+import { occurrencesOfChunk, revisionText, type SubstrateState } from './kernel/state';
+import {
+  acceptProposal,
+  moveOccurrence,
+  promoteCopy,
+  promoteExtract,
+  promoteSpanAnchor,
+  rejectProposal,
+  revise,
+  severOccurrence,
+  transclude,
+  type TxCtx,
+} from './kernel/tx';
+import { METHOD_RAW } from './kernel/decompose';
+import type { ChunkId, Proposal, ProposedChange, SpanAddress } from './kernel/types';
 
-// The focused work surface: compose, dispatch, integrate.
-// STUB: reveal-adjacent chunks, attach/connect material, multi-target
-// context selection UI — select() currently takes the whole neighborhood.
+type Span = SpanAddress & { chunkId: ChunkId };
+
+// The focused work surface: compose, promote, dispatch, integrate.
 export function Star({
-  store,
+  sub,
   docId,
-  commit,
   onFocusDoc,
   onBack,
 }: {
-  store: Store;
-  docId: string;
-  commit: (...cs: Chunk[]) => void;
-  onFocusDoc: (id: string) => void;
+  sub: SubstrateHook;
+  docId: ChunkId;
+  onFocusDoc: (id: ChunkId) => void;
   onBack: () => void;
 }) {
-  const doc = store.get(docId)!;
-  const blocks = doc.children.flatMap((id) => store.get(id) ?? []);
+  const { state, bindings } = sub.ws!;
+  const ctx = sub.ctx!;
   const [instruction, setInstruction] = useState('');
-  const [proposal, setProposal] = useState<Chunk | null>(null);
-  const [context, setContext] = useState<{ count: number; text: string } | null>(null);
-  const proposalRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    proposalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [proposal]);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [span, setSpan] = useState<Span | null>(null);
+  const [fatesFor, setFatesFor] = useState<ChunkId | null>(null);
 
-  // rows is only the fallback where CSS field-sizing is unsupported
-  const rows = (text: string) =>
-    Math.min(text.split('\n').reduce((n, line) => n + 1 + Math.floor(line.length / 75), 0), 14);
+  const blocks = useMemo(() => leafBlocks(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const proposals = useMemo(() => proposalsForDoc(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const indexes = useMemo(() => buildIndexes(state), [sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const binding = bindings.find((b) => b.docChunkId === docId);
 
-  const dispatch = () => {
-    const selection = select(store, docId);
-    const reduced = reduce(selection);
-    setContext({ count: selection.length, text: reduced });
-    setProposal(generate(reduced, instruction || 'continue this'));
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 4000);
   };
 
-  const accept = () => {
-    if (!proposal) return;
-    commit({ ...proposal, parent: doc.id }, { ...doc, children: [...doc.children, proposal.id] });
-    setProposal(null);
+  const guard = async (label: string, fn: () => Promise<unknown> | unknown) => {
+    try {
+      await fn();
+    } catch (e) {
+      flash(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
-  const branch = () => {
-    if (!proposal) return;
-    const tag = `~branch-${Date.now().toString(36)}`;
-    const forkedBlocks = blocks.map((b) => ({ ...fork(b, b.id + tag, 'human'), parent: doc.id + tag }));
-    const prop = { ...proposal, parent: doc.id + tag };
-    const forkedDoc = {
-      ...fork(doc, doc.id + tag, 'human'),
-      children: [...forkedBlocks.map((b) => b.id), prop.id],
-    };
-    commit(...forkedBlocks, prop, forkedDoc);
-    setProposal(null);
-    onFocusDoc(forkedDoc.id);
-  };
+  const dispatch = () =>
+    guard('dispatch', async () => {
+      const hits = instruction.trim() ? searchChunks(state, indexes, instruction).slice(0, 5) : [];
+      await generateProposal(ctx, { focusChunkId: docId, instruction: instruction.trim() || 'continue this', searchHits: hits });
+      setInstruction('');
+    });
+
+  const onAccept = (p: Proposal) =>
+    guard('accept', async () => {
+      const r = await acceptProposal(ctx, { proposalId: p.id });
+      if (!r.applied) flash(`proposal superseded — ${r.reason}`);
+    });
+
+  const projectToFile = () =>
+    guard('project', async () => {
+      if (!binding) return;
+      const r = await fetch('/api/project', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ relPath: binding.relPath }),
+      });
+      if (!r.ok) throw new Error(`server refused: ${r.status}`);
+      flash(`projected to ${binding.relPath}`);
+    });
 
   return (
     <div className="doc">
       <header>
         <button onClick={onBack}>← nebula</button>
-        <h2>{doc.id}</h2>
+        <h2>{labelOf(state, bindings, docId)}</h2>
         <span className="meta">
-          v{doc.version} · {doc.provenance.author}
+          v{revisionCount(state, docId)} · {blocks.length} blocks
         </span>
+        {binding && <button onClick={projectToFile}>project → file</button>}
       </header>
 
+      {notice && <div className="notice">{notice}</div>}
+
       {blocks.map((b, i) => (
-        <div className="block" key={b.id}>
-          <textarea value={b.text} rows={rows(b.text)} onChange={(e) => commit(updateText(b, e.target.value, 'human'))} />
-          <div className="block-side">
-            <span className="meta">
-              v{b.version} · {b.provenance.author}
-            </span>
-            <button disabled={i === 0} onClick={() => commit(reorder(doc, i, i - 1))}>
-              ↑
-            </button>
-            <button disabled={i === blocks.length - 1} onClick={() => commit(reorder(doc, i, i + 1))}>
-              ↓
-            </button>
-          </div>
-        </div>
+        <BlockView
+          key={b.occurrence.id}
+          block={b}
+          state={state}
+          ctx={ctx}
+          prevSibling={blocks[i - 1]}
+          nextSibling={blocks[i + 1]}
+          span={span?.chunkId === b.chunkId ? span : null}
+          onSpan={setSpan}
+          fatesOpen={fatesFor === b.chunkId}
+          onToggleFates={() => setFatesFor(fatesFor === b.chunkId ? null : b.chunkId)}
+          onError={flash}
+        />
       ))}
+
+      {fatesFor && <FatesPanel state={state} indexes={indexes} chunkId={fatesFor} bindings={bindings} onFocusDoc={onFocusDoc} />}
+
+      {span && (
+        <div className="toolbar">
+          <span className="meta">
+            span [{span.start},{span.end})
+          </span>
+          <button onClick={() => guard('extract', () => promoteExtract(ctx, { span })).then(() => setSpan(null))}>
+            promote: extract
+          </button>
+          <button
+            onClick={() => guard('copy', () => promoteCopy(ctx, { span, containerId: docId, at: 'end' })).then(() => setSpan(null))}
+          >
+            promote: copy to end
+          </button>
+          <button onClick={() => guard('anchor', () => promoteSpanAnchor(ctx, { span })).then(() => setSpan(null))}>
+            promote: anchor
+          </button>
+        </div>
+      )}
 
       <div className="dispatch">
         <input
@@ -97,30 +143,302 @@ export function Star({
         <button onClick={dispatch}>dispatch</button>
       </div>
 
-      {context && (
-        <details className="context">
-          <summary>
-            context: {context.count} chunks selected → {context.text.length} chars reduced
-          </summary>
-          <pre>{context.text}</pre>
-        </details>
-      )}
+      <AttachBox state={state} ctx={ctx} indexes={indexes} docId={docId} bindings={bindings} onError={flash} />
 
-      {proposal && (
-        <div className="proposal" ref={proposalRef}>
-          <span className="meta">
-            proposal · v{proposal.version} · {proposal.provenance.author}
-          </span>
-          <textarea
-            value={proposal.text}
-            rows={rows(proposal.text)}
-            onChange={(e) => setProposal(updateText(proposal, e.target.value, 'human'))}
-          />
-          <div className="actions">
-            <button onClick={accept}>accept</button>
-            <button onClick={branch}>branch</button>
-            <button onClick={() => setProposal(null)}>discard</button>
+      {proposals.length > 0 && (
+        <div className="proposals">
+          <div className="meta">{proposals.length} open proposal(s)</div>
+          {proposals.map((p) => (
+            <ProposalCard key={p.id} p={p} state={state} onAccept={() => onAccept(p)} onReject={() => guard('reject', () => rejectProposal(ctx, { proposalId: p.id }))} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BlockView({
+  block,
+  state,
+  ctx,
+  prevSibling,
+  nextSibling,
+  span,
+  onSpan,
+  fatesOpen,
+  onToggleFates,
+  onError,
+}: {
+  block: LeafBlock;
+  state: SubstrateState;
+  ctx: TxCtx;
+  prevSibling?: LeafBlock;
+  nextSibling?: LeafBlock;
+  span: Span | null;
+  onSpan: (s: Span | null) => void;
+  fatesOpen: boolean;
+  onToggleFates: () => void;
+  onError: (msg: string) => void;
+}) {
+  const [buffer, setBuffer] = useState(block.text);
+  const revId = block.revision.id;
+  useEffect(() => setBuffer(block.text), [revId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  const rows = (text: string) => Math.min(text.split('\n').reduce((n, line) => n + 1 + Math.floor(line.length / 75), 0), 14);
+
+  const commitEdit = async () => {
+    if (block.transcluded || buffer === block.text) return;
+    try {
+      await revise(ctx, { chunkId: block.chunkId, text: buffer });
+    } catch (e) {
+      onError(`edit: ${e instanceof Error ? e.message : String(e)}`);
+      setBuffer(block.text);
+    }
+  };
+
+  const captureSpan = () => {
+    const el = ref.current;
+    if (!el || block.transcluded || buffer !== block.text) return onSpan(null);
+    const { selectionStart, selectionEnd } = el;
+    if (selectionStart != null && selectionEnd != null && selectionEnd > selectionStart) {
+      onSpan({ chunkId: block.chunkId, revisionId: revId, method: METHOD_RAW, start: selectionStart, end: selectionEnd });
+    } else if (span) {
+      onSpan(null);
+    }
+  };
+
+  const sameContainer = (other?: LeafBlock) => other && other.occurrence.containerId === block.occurrence.containerId;
+  // Swapping with a neighbor: push the previous sibling after me (up), or push
+  // myself after the next sibling (down). Arrangement only — never a revision.
+  const moveUp = () => moveOccurrence(ctx, { occurrenceId: prevSibling!.occurrence.id, at: { after: block.occurrence.id } });
+  const moveDown = () => moveOccurrence(ctx, { occurrenceId: block.occurrence.id, at: { after: nextSibling!.occurrence.id } });
+
+  return (
+    <div className={`block ${block.transcluded ? 'transcluded' : ''}`} style={{ marginLeft: block.depth * 18 }}>
+      <textarea
+        ref={ref}
+        value={buffer}
+        rows={rows(buffer)}
+        readOnly={block.transcluded}
+        onChange={(e) => setBuffer(e.target.value)}
+        onBlur={commitEdit}
+        onSelect={captureSpan}
+      />
+      <div className="block-side">
+        <span className="meta">
+          v{revisionCount(state, block.chunkId)} · {block.revision.createdBy}
+          {block.transcluded && (block.occurrence.watch ? ' · watched' : ' · pinned')}
+        </span>
+        <button title="deep fates" onClick={onToggleFates} className={fatesOpen ? 'active' : ''}>
+          ☄
+        </button>
+        {block.transcluded && (
+          <button
+            title="sever this transclusion"
+            onClick={() => severOccurrence(ctx, { occurrenceId: block.occurrence.id })}
+          >
+            ✂
+          </button>
+        )}
+        <button disabled={!sameContainer(prevSibling)} onClick={() => moveUp()} title="move up">
+          ↑
+        </button>
+        <button disabled={!sameContainer(nextSibling)} onClick={() => moveDown()} title="move down">
+          ↓
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function summarizeChange(state: SubstrateState, ch: ProposedChange): { title: string; before?: string; after?: string } {
+  switch (ch.op) {
+    case 'create':
+      return { title: 'add new block', after: ch.text };
+    case 'revise':
+      return { title: 'revise block', before: currentText(state, ch.chunkId), after: ch.text };
+    case 'repin': {
+      const occ = state.occurrences.get(ch.occurrenceId);
+      const before = occ && occ.pin !== 'current' ? revisionText(state, occ.pin) : undefined;
+      return { title: 'update watched quote', before, after: revisionText(state, ch.revisionId) };
+    }
+    case 'sever': {
+      const occ = state.occurrences.get(ch.occurrenceId);
+      const text = occ ? currentText(state, occ.chunkId) : '(already gone)';
+      return { title: 'remove block appearance', before: text };
+    }
+    case 'place':
+      return { title: 'place block' };
+    case 'relate':
+      return { title: `relate (${ch.role})` };
+  }
+}
+
+function ProposalCard({
+  p,
+  state,
+  onAccept,
+  onReject,
+}: {
+  p: Proposal;
+  state: SubstrateState;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="proposal">
+      <span className="meta">
+        {p.kind} · {p.createdBy}
+        {p.note ? ` · ${p.note}` : ''}
+      </span>
+      {p.payload.map((ch, i) => {
+        const s = summarizeChange(state, ch);
+        if (!s.before && !s.after) return null;
+        return (
+          <div key={i} className="change">
+            <div className="meta">{s.title}</div>
+            {s.before !== undefined && <pre className="before">{s.before}</pre>}
+            {s.after !== undefined && <pre className="after">{s.after}</pre>}
           </div>
+        );
+      })}
+      <div className="actions">
+        <button onClick={onAccept}>accept</button>
+        <button onClick={onReject}>reject</button>
+      </div>
+    </div>
+  );
+}
+
+function FatesPanel({
+  state,
+  indexes,
+  chunkId,
+  bindings,
+  onFocusDoc,
+}: {
+  state: SubstrateState;
+  indexes: ReturnType<typeof buildIndexes>;
+  chunkId: ChunkId;
+  bindings: { docChunkId: string; relPath: string }[];
+  onFocusDoc: (id: ChunkId) => void;
+}) {
+  const label = (id: ChunkId) => labelOf(state, bindings, id);
+  const cameFrom = [...state.derivations.values()].filter((d) => d.childChunkId === chunkId);
+  const wentTo = [...state.derivations.values()].filter((d) => state.revisions.get(d.sourceRevisionId)?.chunkId === chunkId);
+  const appearances = occurrencesOfChunk(state, chunkId);
+  const chunk = state.chunks.get(chunkId);
+  const dupes = chunk ? duplicatesOf(state, indexes, state.revisions.get(chunk.currentRevisionId)!.blobHash).filter((c) => c !== chunkId) : [];
+  const echoes = echoesOf(state, indexes, chunkId);
+
+  return (
+    <div className="fates">
+      <div className="meta">deep fates — {label(chunkId)}</div>
+      {cameFrom.length > 0 && (
+        <div>
+          came from:{' '}
+          {cameFrom.map((d) => {
+            const src = state.revisions.get(d.sourceRevisionId)!.chunkId;
+            return (
+              <button key={d.id} className="linkish" onClick={() => onFocusDoc(src)}>
+                {label(src)} ({d.via})
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {wentTo.length > 0 && (
+        <div>
+          became:{' '}
+          {wentTo.map((d) => (
+            <button key={d.id} className="linkish" onClick={() => onFocusDoc(d.childChunkId)}>
+              {label(d.childChunkId)} ({d.via})
+            </button>
+          ))}
+        </div>
+      )}
+      {appearances.length > 1 && (
+        <div>
+          appears in:{' '}
+          {appearances.map((o) => (
+            <button key={o.id} className="linkish" onClick={() => onFocusDoc(o.containerId)}>
+              {label(o.containerId)}
+              {o.mode === 'transclude' ? ' (transcluded)' : ''}
+            </button>
+          ))}
+        </div>
+      )}
+      {dupes.length > 0 && (
+        <div>
+          identical content in:{' '}
+          {dupes.map((c) => (
+            <button key={c} className="linkish" onClick={() => onFocusDoc(c)}>
+              {label(c)}
+            </button>
+          ))}
+        </div>
+      )}
+      {echoes.length > 0 && (
+        <div>
+          echoes:
+          {echoes.slice(0, 5).map((e, i) => (
+            <div key={i} className="echo">
+              “{e.text.length > 80 ? `${e.text.slice(0, 80)}…` : e.text}” also in{' '}
+              {e.others.map((c) => (
+                <button key={c} className="linkish" onClick={() => onFocusDoc(c)}>
+                  {label(c)}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {cameFrom.length === 0 && wentTo.length === 0 && appearances.length <= 1 && dupes.length === 0 && echoes.length === 0 && (
+        <div className="meta">no recorded fates yet — this material stands alone</div>
+      )}
+    </div>
+  );
+}
+
+function AttachBox({
+  state,
+  ctx,
+  indexes,
+  docId,
+  bindings,
+  onError,
+}: {
+  state: SubstrateState;
+  ctx: TxCtx;
+  indexes: ReturnType<typeof buildIndexes>;
+  docId: ChunkId;
+  bindings: { docChunkId: string; relPath: string }[];
+  onError: (msg: string) => void;
+}) {
+  const [q, setQ] = useState('');
+  const results = useMemo(() => (q.trim() ? searchChunks(state, indexes, q).filter((c) => c !== docId).slice(0, 6) : []), [q, state, indexes, docId]);
+  return (
+    <div className="attach">
+      <input placeholder="attach: search a chunk to transclude (watched)…" value={q} onChange={(e) => setQ(e.target.value)} />
+      {results.length > 0 && (
+        <div className="attach-results">
+          {results.map((c) => (
+            <button
+              key={c}
+              className="linkish"
+              onClick={() => {
+                try {
+                  transclude(ctx, { containerId: docId, sourceChunkId: c });
+                  setQ('');
+                } catch (e) {
+                  onError(`transclude: ${e instanceof Error ? e.message : String(e)}`);
+                }
+              }}
+            >
+              {labelOf(state, bindings, c)}
+            </button>
+          ))}
         </div>
       )}
     </div>

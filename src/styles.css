@@ -95,3 +95,58 @@ button:disabled { opacity: 0.25; cursor: default; }
 .proposal .meta { color: #b3985e; }
 .proposal textarea { border-radius: 8px; }
 .actions { display: flex; gap: 0.6rem; }
+
+.proposals { display: grid; gap: 0.8rem; margin-top: 1.6rem; }
+.proposal .change pre {
+  white-space: pre-wrap;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  margin-top: 0.3rem;
+}
+.proposal .before { color: var(--muted); background: rgba(255, 255, 255, 0.02); text-decoration: line-through; }
+.proposal .after { color: var(--ink); background: rgba(255, 216, 107, 0.06); }
+
+.notice {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 0.5rem 0.9rem;
+  margin-bottom: 1rem;
+  color: var(--gold);
+  font-size: 13px;
+}
+.toolbar {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0.8rem 0;
+  padding: 0.5rem 0.8rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+.block.transcluded textarea { color: var(--muted); border-left: 2px solid rgba(255, 216, 107, 0.4); border-radius: 2px 8px 8px 2px; }
+.fates {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  margin: 0.8rem 0;
+  font-size: 13px;
+  display: grid;
+  gap: 0.4rem;
+}
+.fates .echo { margin-top: 0.2rem; color: var(--muted); }
+.linkish {
+  background: transparent;
+  border-color: transparent;
+  padding: 0 0.3rem;
+  color: #8ea2e0;
+  text-decoration: underline dotted;
+}
+.attach { margin-top: 1rem; display: grid; gap: 0.4rem; }
+.attach input { width: 100%; }
+.attach-results { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+button.active { border-color: var(--gold); color: var(--gold); }
+.star.agentic circle { fill: var(--gold); }
+.star .badge { fill: var(--gold); font-size: 10px; opacity: 1; }

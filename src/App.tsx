@@ -1,36 +1,29 @@
-import { useEffect, useState } from 'react';
-import type { Chunk } from './kernel/chunk';
-import { loadStore, type Store } from './kernel/store';
+import { useState } from 'react';
+import { useSubstrate } from './client/useSubstrate';
 import { Nebula } from './Nebula';
 import { Star } from './Star';
 
+export type SubstrateHook = ReturnType<typeof useSubstrate>;
+
 // The proved loop: navigate (Nebula) → focus (Star) → compose → dispatch →
-// integrate → return (back to the Nebula, layout unchanged).
+// integrate (proposals) → return. Truth lives in the kernel state; both
+// surfaces are views over it.
 export function App() {
-  const [store, setStore] = useState<Store | null>(null);
+  const sub = useSubstrate();
   const [focus, setFocus] = useState<string | null>(null);
-  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    fetch('/snapshot.json')
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((snap) => setStore(loadStore(snap)))
-      .catch(() => setError(true));
-  }, []);
+  if (sub.error)
+    return (
+      <div className="hint">
+        substrate server unreachable — start with: npm run dev
+        <div className="meta">{sub.error}</div>
+      </div>
+    );
+  if (!sub.ws || !sub.ctx) return <div className="hint">loading nebula…</div>;
 
-  if (error) return <div className="hint">No snapshot found — run: npm run ingest -- &lt;folder&gt;</div>;
-  if (!store) return <div className="hint">loading nebula…</div>;
-
-  const commit = (...cs: Chunk[]) =>
-    setStore((prev) => {
-      const next = new Map(prev);
-      for (const c of cs) next.set(c.id, c);
-      return next;
-    });
-
-  return focus ? (
-    <Star store={store} docId={focus} commit={commit} onFocusDoc={setFocus} onBack={() => setFocus(null)} />
+  return focus && sub.ws.state.chunks.has(focus) ? (
+    <Star sub={sub} docId={focus} onFocusDoc={setFocus} onBack={() => setFocus(null)} />
   ) : (
-    <Nebula store={store} onFocus={setFocus} />
+    <Nebula sub={sub} onFocus={setFocus} />
   );
 }
