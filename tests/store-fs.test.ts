@@ -2,7 +2,7 @@
 // Each block owns a fresh tmp workspace; a deleted lock file simulates a crash
 // (close() always snapshots, so crashing is the only way to exercise replay).
 import assert from 'node:assert';
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openWorkspace } from '../src/host/store-fs';
@@ -142,6 +142,36 @@ try {
     assert.equal(ws2.state.chunks.size, 50);
     ws2.close();
   }
+
+  // ── a failed append is a non-event, and the store stops writing ────────────
+  // A directory where log.jsonl belongs makes every append throw. The point is
+  // what memory does about it: nothing. State must stay exactly where the log
+  // is, because a snapshot records a LINE OFFSET into that log — state one
+  // commit ahead would tell the next open to skip a line that is not there.
+  {
+    const root = freshRoot();
+    const ws = await openWorkspace(root);
+    mkdirSync(sub(root, 'log.jsonl')); // nothing can be appended to a directory
+    const ctx = ws.ctxFor('human:asa');
+
+    await assert.rejects(() => createChunk(ctx, { text: 'never durable' }));
+    assert.equal(ws.state.commitCount, 0, 'a failed append must not count as a commit');
+    assert.equal(ws.state.chunks.size, 0, 'a failed append must not mint a chunk');
+    assert.equal(ws.state.head, null, 'a failed append must not advance head');
+
+    // Past the first failure the log may hold a partial line. Appending beyond
+    // it would bury the tear mid-log, where recovery cannot tell it from
+    // corruption — so the store refuses, and refuses to snapshot over it.
+    await assert.rejects(() => createChunk(ctx, { text: 'after the failure' }), /not writable/);
+    assert.throws(() => ws.saveSnapshot(), /refusing to snapshot an unwritable workspace/);
+
+    // It still releases the lock: a store that cannot write must not also hold
+    // the workspace hostage.
+    ws.close();
+    assert.ok(!existsSync(sub(root, 'lock')), 'close releases the lock even after a write failure');
+    assert.ok(!existsSync(sub(root, 'snapshot.json')), 'no snapshot claims commits the log never took');
+  }
+
 } finally {
   for (const d of roots) rmSync(d, { recursive: true, force: true });
 }

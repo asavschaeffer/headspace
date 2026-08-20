@@ -40,7 +40,8 @@ export interface WorkspaceStore {
   root: string; // the workspace root; store files live under <root>/.substrate
   state: SubstrateState;
   ctxFor(actorId: ActorId): TxCtx;
-  appendCommit(commit: Commit): void; // persist a commit already folded into state (the TxCtx.onCommit hook)
+  appendCommit(commit: Commit): void; // make a validated commit durable, before it is folded (the TxCtx.onCommit hook)
+  snapshotIfDue(): void; // cadence check; call only once the commit is folded (the TxCtx.afterCommit hook)
   saveSnapshot(): void;
   close(): void; // snapshot, then release the lock; idempotent
 }
@@ -198,8 +199,12 @@ export async function openWorkspace(rootDir: string, opts: { force?: boolean } =
 
   let sinceSnapshot = 0;
   let closed = false;
+  let writeFailed: Error | null = null;
 
   const saveSnapshot = (): void => {
+    // coveredCommits is a LINE OFFSET into the log. Recording it while the log
+    // is suspect would tell the next open to skip lines that may not be there.
+    if (writeFailed) throw new Error(`refusing to snapshot an unwritable workspace: ${writeFailed.message}`);
     const file: SnapshotFile = { coveredCommits: state.commitCount, state: serializeState(state) };
     const tmp = `${snapPath}.tmp`;
     writeFileSync(tmp, JSON.stringify(file));
@@ -209,20 +214,49 @@ export async function openWorkspace(rootDir: string, opts: { force?: boolean } =
 
   const appendCommit = (commit: Commit): void => {
     if (closed) throw new Error('workspace store is closed');
-    appendFileSync(logPath, `${JSON.stringify(commit)}\n`);
-    for (const b of commit.facts.blobs ?? []) putBlob(b);
-    if (++sinceSnapshot >= SNAPSHOT_EVERY) saveSnapshot();
+    if (writeFailed) throw new Error(`workspace store is not writable: ${writeFailed.message}`);
+    try {
+      appendFileSync(logPath, `${JSON.stringify(commit)}\n`);
+    } catch (e) {
+      // A failed append may have written a partial line. At the tail that is a
+      // recoverable crash artifact, but appending PAST it would bury the torn
+      // line mid-log, where recovery cannot tell it from corruption. So the
+      // store stops writing here, and the caller never folds this commit.
+      writeFailed = e as Error;
+      throw e;
+    }
+    // Durable now, and the log carries these blobs, so a failure to mirror them
+    // into blobs/ is healed on the next open. It must not fail a transaction
+    // that already reached the log.
+    for (const b of commit.facts.blobs ?? []) {
+      try {
+        putBlob(b);
+      } catch {
+        /* healed by openWorkspace from the log tail */
+      }
+    }
+    sinceSnapshot++;
+  };
+
+  // A snapshot records coveredCommits, a line offset into the log, so it may
+  // only be taken when the folded state and the log agree — that is, after the
+  // fold, never from inside the append.
+  const snapshotIfDue = (): void => {
+    if (sinceSnapshot >= SNAPSHOT_EVERY) saveSnapshot();
   };
 
   return {
     root: rootDir,
     state,
-    ctxFor: (actorId) => ({ state, actorId, onCommit: appendCommit }),
+    ctxFor: (actorId) => ({ state, actorId, onCommit: appendCommit, afterCommit: snapshotIfDue }),
     appendCommit,
+    snapshotIfDue,
     saveSnapshot,
     close: () => {
       if (closed) return;
-      saveSnapshot();
+      // An unwritable store still releases its lock: refusing to close would
+      // leave the workspace held by a process that can no longer write it.
+      if (!writeFailed) saveSnapshot();
       closed = true;
       rmSync(lockPath, { force: true });
     },

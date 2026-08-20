@@ -125,8 +125,14 @@ export function useSubstrate() {
     return {
       state: ws.state,
       actorId: HUMAN_ACTOR,
+      // Enqueue while the commit is still only validated: if this threw, the
+      // kernel would not fold it, and the screen would never show a change the
+      // server was never told about.
       onCommit: (commit) => {
         queue.current.push(commit);
+      },
+      // Folded now, so the render reads the state the commit produced.
+      afterCommit: () => {
         void pump();
         setVersion((v) => v + 1);
       },

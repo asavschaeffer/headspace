@@ -9,7 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { blobHashOf } from '../kernel/hash';
 import { serializeState } from '../kernel/serialize';
-import { applyCommit } from '../kernel/state';
+import { foldCommit, validateCommit } from '../kernel/state';
 import type { Commit } from '../kernel/types';
 import { writeProjection } from './markdown';
 import { openWorkspace, type WorkspaceStore } from './store-fs';
@@ -118,11 +118,16 @@ export function substrateServer(opts: SubstrateServerOptions = {}): Plugin {
                   }
                 }
                 try {
-                  applyCommit(w.state, c); // replay = validation; same kernel, same invariants
+                  validateCommit(w.state, c); // replay = validation; same kernel, same invariants
                 } catch (e) {
                   return json(res, 409, { error: String(e), head: w.state.head });
                 }
+                // Durable before it is visible: if the append throws, the 500
+                // below reports a commit the server neither kept nor applied,
+                // and the client's queue still holds it.
                 w.appendCommit(c);
+                foldCommit(w.state, c);
+                w.snapshotIfDue();
               }
               return json(res, 200, { ok: true, head: w.state.head });
             }

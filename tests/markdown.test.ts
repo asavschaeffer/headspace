@@ -21,6 +21,24 @@ assert.equal(similarity('abc', 'abc'), 1);
 assert.equal(similarity('abc', 'xyz'), 0);
 assert.ok(similarity('para one edited\nline two', 'para one\nline two') >= 0.5);
 
+// Cost guards (host/similarity.ts). Distance is at least the length
+// difference, so a pair that far apart provably cannot reach the driver's 0.5
+// threshold: zero here is a floor, not a measurement.
+assert.equal(similarity('a'.repeat(10), 'a'.repeat(100)), 0);
+// Above the exact cap the score comes from a bounded sample, so one comparison
+// stays bounded however large the blocks are. Unguarded, this pair is a
+// 200k x 200k DP — minutes of blocked event loop inside a reconcile that the
+// dev server runs with every other request queued behind it.
+{
+  const huge = 'lorem ipsum dolor sit amet '.repeat(8000);
+  const editedTail = `${huge.slice(0, huge.length - 40)}tail rewritten outside of substrate xx`;
+  const started = performance.now();
+  const score = similarity(huge, editedTail);
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 1000, `similarity must stay bounded; took ${Math.round(elapsed)}ms`);
+  assert.ok(score >= 0.5, 'a large block with a small edit still matches its own history');
+}
+
 const root = mkdtempSync(join(tmpdir(), 'substrate-md-'));
 try {
   const state = emptyState();
@@ -196,6 +214,53 @@ try {
     (await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: targetRel, text: detachedText })).action,
     'fast-forward',
     'accepted detach proposal converges the manifest',
+  );
+
+  // One external pass carrying all three leaf changes at once: an edit, an
+  // insertion between existing blocks, and a deletion. Identity survives the
+  // edit, the insertion lands in file order, and the deletion is never enacted
+  // by the driver — it is proposed and waits for a human.
+  const mixRel = 'notes/mixed.md';
+  const P1 = '# Mixed';
+  const P2 = 'alpha paragraph';
+  const P3 = 'beta paragraph';
+  const P4 = 'gamma paragraph';
+  const mixed = await importMarkdownFile(dctx, { workspaceRoot: root, relPath: mixRel, text: mk([P1, P2, P3, P4]) });
+  const [c1, c2, c3, c4] = mixed.blockChunkIds;
+  const revsBefore = mixed.blockChunkIds.map((id) => currentRevision(state, id).id);
+
+  const P2edited = 'alpha paragraph edited outside';
+  const Padded = 'delta paragraph added outside';
+  const mixedText = mk([P1, P2edited, Padded, P3]);
+  const mixResult = await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: mixRel, text: mixedText });
+  assert.equal(mixResult.action, 'fast-forward');
+
+  assert.equal(currentRevision(state, c1).id, revsBefore[0], 'untouched block keeps its revision');
+  assert.equal(currentRevision(state, c3).id, revsBefore[2], 'untouched block keeps its revision');
+  assert.notEqual(currentRevision(state, c2).id, revsBefore[1], 'edited block advances');
+  assert.ok(state.chunks.has(c2), 'edited block keeps its identity');
+  assert.equal(revisionText(state, currentRevision(state, c2).id), P2edited);
+  assert.equal(state.revisions.get(currentRevision(state, c2).id)!.createdBy, 'driver:fs');
+
+  const mixOccs = childOccurrences(state, mixed.docChunkId);
+  const mixTexts = mixOccs.map((occ) => revisionText(state, currentRevision(state, occ.chunkId).id));
+  assert.deepEqual(mixTexts, [P1, P2edited, Padded, P3, P4], 'insertion lands in file order; deletion still stands');
+  assert.ok(!mixed.blockChunkIds.includes(mixOccs[2].chunkId), 'the inserted block is a new chunk');
+
+  assert.ok(mixResult.proposalId, 'the deletion is proposed, not enacted');
+  const mixProposal = state.proposals.get(mixResult.proposalId!)!;
+  assert.deepEqual(mixProposal.payload.map((change) => change.op), ['sever']);
+  assert.equal(
+    mixProposal.payload[0].op === 'sever' && state.occurrences.get(mixProposal.payload[0].occurrenceId)!.chunkId,
+    c4,
+  );
+  assert.ok((await acceptProposal(hctx, { proposalId: mixResult.proposalId! })).applied);
+  assert.equal(projectMarkdown(state, mixed.docChunkId), mixedText, 'the document now reads exactly as the file');
+  assert.ok(state.chunks.has(c4) && !state.chunks.get(c4)!.tombstoned, 'severing an occurrence never deletes the chunk');
+  assert.equal(
+    (await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: mixRel, text: mixedText })).action,
+    'noop',
+    'the round trip settles',
   );
 
   // path traversal rejected before anything is written

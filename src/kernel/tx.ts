@@ -1,6 +1,6 @@
 // Transactions: every mutation is one operation, one commit, one log append.
-// Builders validate against current state, construct explicit facts, apply them
-// atomically through applyCommit, and hand the commit to the persistence hook.
+// Builders validate against current state, construct explicit facts, prove the
+// commit legal, hand it to the persistence hook, and only then advance memory.
 
 import { keyBetween, keysBetween } from './fractional';
 import { makeBlob } from './hash';
@@ -15,11 +15,12 @@ import {
   newRevisionId,
 } from './ids';
 import {
-  applyCommit,
   childOccurrences,
   currentRevision,
+  foldCommit,
   occurrencesOfChunk,
   revisionText,
+  validateCommit,
   type SubstrateState,
 } from './state';
 import type {
@@ -48,7 +49,13 @@ export interface TxCtx {
   state: SubstrateState;
   actorId: ActorId;
   now?: () => string;
+  // Durability hook: the commit is validated but NOT yet folded. Throwing here
+  // aborts the transaction with state untouched, which is the whole point of
+  // the ordering — persist first, advance memory second.
   onCommit?: (commit: Commit) => void;
+  // The commit is truth now. For work that depends on the folded state and
+  // must not fail it: snapshot cadence, view invalidation, dispatch.
+  afterCommit?: (commit: Commit) => void;
   // Permission seam: checked before any commit. Absent policy = local allow-all.
   policy?: (kind: OperationKind, targetChunkIds: ChunkId[]) => boolean;
 }
@@ -83,8 +90,14 @@ function finish(
     operation,
     facts,
   };
-  applyCommit(ctx.state, commit);
+  // Durability ordering. Validation proves the commit legal without touching
+  // state; the hook makes it durable; the fold cannot fail after that. So a
+  // persistence error leaves memory exactly where the log is, never ahead of
+  // it — the divergence that would otherwise poison the next snapshot.
+  validateCommit(ctx.state, commit);
   ctx.onCommit?.(commit);
+  foldCommit(ctx.state, commit);
+  ctx.afterCommit?.(commit);
   return commit;
 }
 

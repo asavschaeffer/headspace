@@ -18,6 +18,7 @@ import {
   promoteCopy,
   promoteExtract,
   propose,
+  reference,
   redactRevision,
   rejectProposal,
   revise,
@@ -288,6 +289,77 @@ assert.equal(blocks[2].text, '```\ncode 🌊 fence\n\nstill code\n```', 'fences 
   // Alphabet-only, non-empty, never ending in the minimum digit — keeps every
   // key insertable-after forever.
   for (const k of keys) assert.match(k, /^[0-9A-Za-z]*[1-9A-Za-z]$/, `malformed key "${k}"`);
+}
+
+// ── links and derivations may not dangle (kernel.md) ─────────────────────────
+// These assert facts ABOUT other objects. An unchecked one survives every
+// replay and shows up in the fates panel as evidence pointing nowhere.
+{
+  const live = a.chunkId;
+  const liveRev = currentRevision(ctx.state, live).id;
+  const link = (over: Partial<import('../src/kernel/types').Link>) =>
+    mkCommit({
+      links: [{ id: 'lnk_test', fromChunkId: live, role: 'references', operationId: 'op_test', ...over }],
+    });
+  guard(() => applyCommit(ctx.state, link({ fromChunkId: 'ch_missing' })), /starts at unknown chunk/);
+  guard(() => applyCommit(ctx.state, link({ toChunkId: 'ch_missing' })), /points at unknown chunk/);
+  guard(() => applyCommit(ctx.state, link({ toRevisionId: 'rev_missing' })), /points at unknown revision/);
+  guard(
+    () => applyCommit(ctx.state, link({ fromSpan: { revisionId: 'rev_missing', method: 'raw@1', start: 0, end: 1 } })),
+    /anchored in unknown revision/,
+  );
+  guard(() => applyCommit(ctx.state, mkCommit({ removeLinks: ['lnk_missing'] })), /unknown link/);
+
+  const derivation = (over: Partial<import('../src/kernel/types').Derivation>) =>
+    mkCommit({
+      derivations: [
+        { id: 'drv_test', childChunkId: live, sourceRevisionId: liveRev, via: 'copy', operationId: 'op_test', ...over },
+      ],
+    });
+  guard(() => applyCommit(ctx.state, derivation({ childChunkId: 'ch_missing' })), /unknown child chunk/);
+  guard(() => applyCommit(ctx.state, derivation({ sourceRevisionId: 'rev_missing' })), /unknown source revision/);
+  guard(
+    () => applyCommit(ctx.state, derivation({ sourceSpan: { revisionId: 'rev_missing', method: 'raw@1', start: 0, end: 1 } })),
+    /addresses unknown revision/,
+  );
+
+  // The transaction layer inherits the guarantee: a reference to nothing is
+  // refused where it is authored, not discovered later by a reader.
+  guard(() => reference(ctx, { fromChunkId: live, toChunkId: 'ch_missing' }), /points at unknown chunk/);
+  // A well-formed link still applies, and its id is claimed once.
+  applyCommit(ctx.state, link({ toChunkId: b.chunkId }));
+  assert.equal(ctx.state.links.get('lnk_test')!.toChunkId, b.chunkId);
+  guard(() => applyCommit(ctx.state, link({ toChunkId: b.chunkId })), /already exists/);
+}
+
+// ── durability ordering: persist before the fold (store.md) ──────────────────
+// The hook that makes a commit durable runs while state is still untouched, so
+// a failed append is a non-event rather than memory running ahead of the log.
+{
+  const local: TxCtx = { state: emptyState(), actorId: 'human:asa', now };
+  const seeded = await createChunk(local, { text: 'durable' });
+  const head = local.state.head;
+  const count = local.state.commitCount;
+  const blobs = local.state.blobs.size;
+  const revisions = local.state.revisions.size;
+
+  local.onCommit = () => {
+    throw new Error('ENOSPC: no space left on device');
+  };
+  await assert.rejects(() => revise(local, { chunkId: seeded.chunkId, text: 'never durable' }), /ENOSPC/);
+  assert.equal(local.state.head, head, 'a failed append must not advance head');
+  assert.equal(local.state.commitCount, count, 'a failed append must not count as a commit');
+  assert.equal(local.state.revisions.size, revisions, 'a failed append must not mint a revision');
+  assert.equal(local.state.blobs.size, blobs, 'a failed append must not intern a blob');
+  assert.equal(revisionText(local.state, currentRevision(local.state, seeded.chunkId).id), 'durable');
+
+  // Order is observable: onCommit sees the pre-fold count, afterCommit the post.
+  const order: string[] = [];
+  local.onCommit = () => order.push(`onCommit@${local.state.commitCount}`);
+  local.afterCommit = () => order.push(`afterCommit@${local.state.commitCount}`);
+  await revise(local, { chunkId: seeded.chunkId, text: 'second' });
+  assert.deepEqual(order, [`onCommit@${count}`, `afterCommit@${count + 1}`]);
+  assert.equal(revisionText(local.state, currentRevision(local.state, seeded.chunkId).id), 'second');
 }
 
 console.log('kernel invariants OK —', ctx.state.commitCount, 'commits,', ctx.state.chunks.size, 'chunks');

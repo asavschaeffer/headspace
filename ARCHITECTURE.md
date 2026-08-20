@@ -59,13 +59,23 @@ sequenceDiagram
   participant UI as browser (kernel)
   participant API as dev server (same kernel)
   participant Log as .substrate/log.jsonl
-  UI->>UI: tx builder → applyCommit (local truth advances)
+  UI->>UI: tx builder → validateCommit → queue → foldCommit (local truth advances)
   UI->>API: POST /api/commits {commit}
-  API->>API: applyCommit (replay = validation)
+  API->>API: validateCommit (replay = validation)
   API->>Log: append one JSON line
+  API->>API: foldCommit (visible only once durable)
   API-->>UI: 200 head | 409 diverged
   Note over UI: on 409 the client drops its queue and refetches /api/state
 ```
+
+Every commit runs the same three beats: **validate, persist, fold**. Validation
+proves the commit legal without touching state; persistence is the `onCommit`
+hook, which may throw; the fold cannot fail after that. So a failed append is a
+non-event rather than memory running one commit ahead of the log — the
+divergence that would otherwise be recorded by the next snapshot, whose
+`coveredCommits` is a line offset into that log. Work that needs the folded
+state, and must not fail it, runs in `afterCommit` (snapshot cadence on the
+host, re-render and post on the client).
 
 External edits flow the other way: `/api/sync` sweeps the content folders,
 imports new files, fast-forwards files only the filesystem changed, raises
@@ -89,7 +99,10 @@ canonical payload store for integrity and future compaction. Reload = snapshot
 
 ## 5. Guarantees the tests pin
 
-- Revisions are immutable; a refused commit leaves state untouched.
+- Revisions are immutable; a refused commit leaves state untouched, and so does
+  a commit whose persistence hook throws.
+- Links and derivations may not dangle: their endpoints are checked where they
+  are authored, not discovered later by a reader.
 - Containment (including transclusion) admits no cycle.
 - Arrangement changes never create revisions.
 - Extraction preserves rendered text exactly; promotion happens only on

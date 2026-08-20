@@ -227,10 +227,22 @@ function BlockView({
   };
 
   const sameContainer = (other?: LeafBlock) => other && other.occurrence.containerId === block.occurrence.containerId;
+  // Every mutation from this surface reports through onError. An arrangement
+  // op can still refuse (a sibling severed under us between render and click),
+  // and React does not route event-handler throws to an error boundary — the
+  // click would look ignored, with the reason only in the console.
+  const guarded = (label: string, fn: () => unknown) => () => {
+    try {
+      fn();
+    } catch (e) {
+      onError(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   // Swapping with a neighbor: push the previous sibling after me (up), or push
   // myself after the next sibling (down). Arrangement only — never a revision.
-  const moveUp = () => moveOccurrence(ctx, { occurrenceId: prevSibling!.occurrence.id, at: { after: block.occurrence.id } });
-  const moveDown = () => moveOccurrence(ctx, { occurrenceId: block.occurrence.id, at: { after: nextSibling!.occurrence.id } });
+  const moveUp = guarded('move up', () => moveOccurrence(ctx, { occurrenceId: prevSibling!.occurrence.id, at: { after: block.occurrence.id } }));
+  const moveDown = guarded('move down', () => moveOccurrence(ctx, { occurrenceId: block.occurrence.id, at: { after: nextSibling!.occurrence.id } }));
+  const sever = guarded('sever', () => severOccurrence(ctx, { occurrenceId: block.occurrence.id }));
 
   return (
     <div className={`block ${block.transcluded ? 'transcluded' : ''}`} style={{ marginLeft: block.depth * 18 }}>
@@ -252,17 +264,14 @@ function BlockView({
           ☄
         </button>
         {block.transcluded && (
-          <button
-            title="sever this transclusion"
-            onClick={() => severOccurrence(ctx, { occurrenceId: block.occurrence.id })}
-          >
+          <button title="sever this transclusion" onClick={sever}>
             ✂
           </button>
         )}
-        <button disabled={!sameContainer(prevSibling)} onClick={() => moveUp()} title="move up">
+        <button disabled={!sameContainer(prevSibling)} onClick={moveUp} title="move up">
           ↑
         </button>
-        <button disabled={!sameContainer(nextSibling)} onClick={() => moveDown()} title="move down">
+        <button disabled={!sameContainer(nextSibling)} onClick={moveDown} title="move down">
           ↓
         </button>
       </div>

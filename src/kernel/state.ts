@@ -76,9 +76,11 @@ export function wouldCreateCycle(
   return false;
 }
 
-// Validate then fold one commit into state. Mutates in place; callers that need
-// react-style change detection bump their own version counter per commit.
-export function applyCommit(state: SubstrateState, commit: Commit): void {
+// Validation is separable from folding so a caller can prove a commit is legal,
+// make it durable, and only then advance memory — an append that throws must
+// never leave state ahead of the log (store.md: one operation, one commit, one
+// log append). Throws InvariantError; mutates nothing.
+export function validateCommit(state: SubstrateState, commit: Commit): void {
   const f = commit.facts;
   const newChunks = new Set((f.chunks ?? []).map((c) => c.id));
 
@@ -133,6 +135,33 @@ export function applyCommit(state: SubstrateState, commit: Commit): void {
   for (const id of f.removeOccurrences ?? []) {
     if (!state.occurrences.has(id)) fail(`removeOccurrences: unknown occurrence ${id}`);
   }
+  // Links and derivations assert facts ABOUT other objects. A dangling one
+  // survives replay forever and indexes as evidence pointing nowhere, so the
+  // endpoints are checked here — the same bar occurrences already meet.
+  const knownChunk = (id: ChunkId) => state.chunks.has(id) || newChunks.has(id);
+  const knownRevision = (id: RevisionId) => state.revisions.has(id) || newRevisions.has(id);
+  for (const l of f.links ?? []) {
+    if (state.links.has(l.id)) fail(`link ${l.id} already exists`);
+    if (!knownChunk(l.fromChunkId)) fail(`link ${l.id} starts at unknown chunk ${l.fromChunkId}`);
+    if (l.toChunkId !== undefined && !knownChunk(l.toChunkId)) fail(`link ${l.id} points at unknown chunk ${l.toChunkId}`);
+    if (l.toRevisionId !== undefined && !knownRevision(l.toRevisionId)) {
+      fail(`link ${l.id} points at unknown revision ${l.toRevisionId}`);
+    }
+    if (l.fromSpan && !knownRevision(l.fromSpan.revisionId)) {
+      fail(`link ${l.id} is anchored in unknown revision ${l.fromSpan.revisionId}`);
+    }
+  }
+  for (const id of f.removeLinks ?? []) {
+    if (!state.links.has(id)) fail(`removeLinks: unknown link ${id}`);
+  }
+  for (const d of f.derivations ?? []) {
+    if (state.derivations.has(d.id)) fail(`derivation ${d.id} already exists`);
+    if (!knownChunk(d.childChunkId)) fail(`derivation ${d.id} names unknown child chunk ${d.childChunkId}`);
+    if (!knownRevision(d.sourceRevisionId)) fail(`derivation ${d.id} names unknown source revision ${d.sourceRevisionId}`);
+    if (d.sourceSpan && !knownRevision(d.sourceSpan.revisionId)) {
+      fail(`derivation ${d.id} addresses unknown revision ${d.sourceSpan.revisionId}`);
+    }
+  }
   for (const u of f.proposalUpdates ?? []) {
     if (!state.proposals.has(u.id)) fail(`proposalUpdate: unknown proposal ${u.id}`);
   }
@@ -142,8 +171,14 @@ export function applyCommit(state: SubstrateState, commit: Commit): void {
   for (const id of f.redactRevisions ?? []) {
     if (!state.revisions.has(id) && !newRevisions.has(id)) fail(`redact: unknown revision ${id}`);
   }
+}
 
-  // All validated — fold.
+// Fold a validated commit into state. Total after validateCommit: every lookup
+// here was proven present above, so this cannot fail partway and tear state.
+// Mutates in place; callers that need react-style change detection bump their
+// own version counter per commit.
+export function foldCommit(state: SubstrateState, commit: Commit): void {
+  const f = commit.facts;
   for (const b of f.blobs ?? []) state.blobs.set(b.hash, b);
   for (const c of f.chunks ?? []) state.chunks.set(c.id, { ...c });
   for (const r of f.revisions ?? []) state.revisions.set(r.id, r);
@@ -170,6 +205,12 @@ export function applyCommit(state: SubstrateState, commit: Commit): void {
   state.operations.set(commit.operation.id, commit.operation);
   state.head = commit.id;
   state.commitCount++;
+}
+
+// Validate and fold in one step, for callers with nothing to persist between.
+export function applyCommit(state: SubstrateState, commit: Commit): void {
+  validateCommit(state, commit);
+  foldCommit(state, commit);
 }
 
 export function materialize(commits: Iterable<Commit>): SubstrateState {
