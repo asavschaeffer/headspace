@@ -2,8 +2,8 @@ import assert from 'node:assert';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { childOccurrences, emptyState } from '../src/kernel/state';
-import { acceptProposal, revise, type TxCtx } from '../src/kernel/tx';
+import { childOccurrences, currentRevision, emptyState, renderChunk, revisionText } from '../src/kernel/state';
+import { acceptProposal, promoteExtract, revise, transclude, type TxCtx } from '../src/kernel/tx';
 import {
   importMarkdownFile,
   projectMarkdown,
@@ -117,6 +117,86 @@ try {
   const onDisk = readFileSync(join(root, rel), 'utf8');
   assert.equal(onDisk, projectMarkdown(state, docChunkId));
   assert.equal((await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: rel, text: onDisk })).action, 'noop');
+
+  // Extracted structure projects through the occurrence-aware renderer. An
+  // external edit cannot revise the composite's JSON blob directly: it becomes
+  // an explicit flatten proposal that severs the now-replaced child structure.
+  const extractRel = 'notes/extracted.md';
+  const extractText = mk(['# Extracted', 'Second paragraph with a phrase to extract inside it.']);
+  const extractedDoc = await importMarkdownFile(dctx, { workspaceRoot: root, relPath: extractRel, text: extractText });
+  const compositeChunkId = extractedDoc.blockChunkIds[1];
+  const flatRev = currentRevision(state, compositeChunkId);
+  const flatText = revisionText(state, flatRev.id);
+  const phrase = 'a phrase to extract';
+  const phraseStart = flatText.indexOf(phrase);
+  await promoteExtract(hctx, {
+    span: { revisionId: flatRev.id, method: 'raw@1', start: phraseStart, end: phraseStart + phrase.length },
+  });
+  assert.equal(projectMarkdown(state, extractedDoc.docChunkId), extractText, 'composite projection preserves rendered Markdown');
+  await writeProjection(dctx, { workspaceRoot: root, relPath: extractRel });
+  assert.equal(readFileSync(join(root, extractRel), 'utf8'), extractText, 'projection never writes composite join JSON');
+  const extractSc = JSON.parse(readFileSync(sidecarPath(root, extractRel), 'utf8')) as MarkdownSidecar;
+  const compositeEntry = extractSc.blocks.find((b) => b.chunkId === compositeChunkId)!;
+  assert.equal(compositeEntry.policy, 'flatten-composite');
+  assert.deepEqual(compositeEntry.occurrencePath, [compositeEntry.occurrenceId]);
+  assert.equal(compositeEntry.projectedText, flatText);
+
+  const flattenedText = extractText.replace('phrase to extract', 'phrase edited outside');
+  const compositeHeadBefore = currentRevision(state, compositeChunkId).id;
+  const flattenResult = await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: extractRel, text: flattenedText });
+  assert.equal(flattenResult.action, 'proposal');
+  assert.equal(currentRevision(state, compositeChunkId).id, compositeHeadBefore, 'composite is untouched before proposal acceptance');
+  const flattenProposal = state.proposals.get(flattenResult.proposalId!)!;
+  assert.equal(flattenProposal.payload[0].op, 'revise');
+  assert.equal(flattenProposal.payload[0].op === 'revise' && flattenProposal.payload[0].mediaType, 'text/markdown');
+  assert.ok(flattenProposal.payload.slice(1).every((change) => change.op === 'sever'));
+  assert.ok((await acceptProposal(hctx, { proposalId: flattenResult.proposalId! })).applied);
+  assert.equal(projectMarkdown(state, extractedDoc.docChunkId), flattenedText);
+  assert.equal(
+    (await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: extractRel, text: flattenedText })).action,
+    'fast-forward',
+    'accepted structural proposal converges the manifest',
+  );
+
+  // Projected transclusions are readable but never writable authority over the
+  // source. An external edit proposes a derived local copy in the target and
+  // severs only the target occurrence.
+  const sourceRel = 'notes/source.md';
+  const targetRel = 'notes/target.md';
+  const sourceText = mk(['# Source', 'A quotable sentence that lives in the source.']);
+  const targetText = mk(['# Target', 'Local target paragraph.']);
+  const sourceDoc = await importMarkdownFile(dctx, { workspaceRoot: root, relPath: sourceRel, text: sourceText });
+  const targetDoc = await importMarkdownFile(dctx, { workspaceRoot: root, relPath: targetRel, text: targetText });
+  const sourceChunkId = sourceDoc.blockChunkIds[1];
+  const sourceRevisionId = currentRevision(state, sourceChunkId).id;
+  const transclusion = transclude(hctx, { containerId: targetDoc.docChunkId, sourceChunkId });
+  const targetProjection = await writeProjection(dctx, { workspaceRoot: root, relPath: targetRel });
+  const targetSc = JSON.parse(readFileSync(sidecarPath(root, targetRel), 'utf8')) as MarkdownSidecar;
+  const transcludedEntry = targetSc.blocks.find((b) => b.occurrenceId === transclusion.occurrenceId)!;
+  assert.equal(transcludedEntry.mode, 'transclude');
+  assert.equal(transcludedEntry.pin, sourceRevisionId);
+  assert.equal(transcludedEntry.sourceRevisionId, sourceRevisionId);
+  assert.equal(transcludedEntry.policy, 'detach-transclusion');
+
+  const detachedText = targetProjection.text.replace(
+    'A quotable sentence that lives in the source.',
+    'A quotable sentence rewritten only in the target.',
+  );
+  const detachResult = await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: targetRel, text: detachedText });
+  assert.equal(detachResult.action, 'proposal');
+  assert.equal(currentRevision(state, sourceChunkId).id, sourceRevisionId, 'reconcile never revises a transclusion source');
+  const detachProposal = state.proposals.get(detachResult.proposalId!)!;
+  assert.deepEqual(detachProposal.payload.map((change) => change.op), ['create', 'place', 'sever']);
+  const detachedCreate = detachProposal.payload[0];
+  assert.equal(detachedCreate.op === 'create' && detachedCreate.derivedFrom?.sourceRevisionId, sourceRevisionId);
+  assert.ok((await acceptProposal(hctx, { proposalId: detachResult.proposalId! })).applied);
+  assert.equal(currentRevision(state, sourceChunkId).id, sourceRevisionId, 'accepting detach leaves source history untouched');
+  assert.equal(renderChunk(state, targetDoc.docChunkId), detachedText.trimEnd());
+  assert.equal(
+    (await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: targetRel, text: detachedText })).action,
+    'fast-forward',
+    'accepted detach proposal converges the manifest',
+  );
 
   // path traversal rejected before anything is written
   await assert.rejects(importMarkdownFile(dctx, { workspaceRoot: root, relPath: '../escape.md', text: 'x\n' }));
