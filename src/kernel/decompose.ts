@@ -42,7 +42,8 @@ export function mdBlockSpans(text: string): Span[] {
     offset += rawLine.length + 1;
     const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
     const trimmed = line.trim();
-    const lineContentStart = lineStart + (line.length - line.trimStart().length);
+    // Spans open at the line start (leading indentation is content — list
+    // continuations, indented code) and close after the last non-whitespace.
     const lineContentEnd = lineStart + line.replace(/\s+$/, '').length;
     const fenceMatch = /^(`{3,}|~{3,})/.exec(trimmed);
 
@@ -56,7 +57,7 @@ export function mdBlockSpans(text: string): Span[] {
     }
     if (fenceMatch) {
       flush();
-      start = lineContentStart;
+      start = lineStart;
       end = lineContentEnd;
       inFence = true;
       fenceChar = fenceMatch[1][0];
@@ -68,10 +69,10 @@ export function mdBlockSpans(text: string): Span[] {
     }
     if (/^#{1,6}\s/.test(trimmed)) {
       flush();
-      spans.push({ start: lineContentStart, end: lineContentEnd });
+      spans.push({ start: lineStart, end: lineContentEnd });
       continue;
     }
-    if (start < 0) start = lineContentStart;
+    if (start < 0) start = lineStart;
     end = lineContentEnd;
   }
   flush();

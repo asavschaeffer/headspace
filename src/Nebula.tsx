@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { SubstrateHook } from './App';
-import { docList, labelOf, proposalsForDoc } from './client/helpers';
+import { ancestorContainers, docList, labelOf, proposalsForDoc } from './client/helpers';
 import { buildIndexes, provenanceKind, searchChunks } from './index/indexes';
-import { childOccurrences, occurrencesOfChunk } from './kernel/state';
+import { childOccurrences } from './kernel/state';
 import type { ChunkId } from './kernel/types';
 
 const W = 1000;
@@ -59,7 +59,8 @@ export function Nebula({ sub, onFocus }: { sub: SubstrateHook; onFocus: (id: Chu
     const lit = new Set<ChunkId>();
     for (const id of searchChunks(state, indexes, query)) {
       lit.add(id);
-      for (const occ of occurrencesOfChunk(state, id)) lit.add(occ.containerId); // illuminate the containing star
+      // Illuminate every containing star, however deeply the match is nested.
+      for (const container of ancestorContainers(state, id)) lit.add(container);
     }
     return lit;
   }, [query, indexes, searching, state]);

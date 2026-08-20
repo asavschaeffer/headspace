@@ -4,6 +4,7 @@ import {
   childOccurrences,
   currentRevision,
   isComposite,
+  occurrencesOfChunk,
   occurrenceRevision,
   renderChunk,
   type SubstrateState,
@@ -28,8 +29,20 @@ export function leafBlocks(state: SubstrateState, containerId: ChunkId, depth = 
   for (const occ of childOccurrences(state, containerId)) {
     const rev = occurrenceRevision(state, occ);
     const transcluded = occ.mode === 'transclude';
-    if (rev.mediaType === 'application/x-substrate-composite') {
-      out.push(...leafBlocks(state, occ.chunkId, depth + 1, seen).map((b) => ({ ...b, transcluded: b.transcluded || transcluded })));
+    if (rev.mediaType === 'application/x-substrate-composite' && !transcluded) {
+      out.push(...leafBlocks(state, occ.chunkId, depth + 1, seen));
+    } else if (rev.mediaType === 'application/x-substrate-composite') {
+      // A transcluded composite renders as ONE read-only block: descending
+      // would expose the source's internal occurrences to sever/move —
+      // authority the transclusion does not grant (wiki/deep-fates.md).
+      out.push({
+        occurrence: occ,
+        chunkId: occ.chunkId,
+        revision: rev,
+        text: renderChunk(state, occ.chunkId),
+        depth,
+        transcluded: true,
+      });
     } else {
       out.push({
         occurrence: occ,
@@ -42,6 +55,41 @@ export function leafBlocks(state: SubstrateState, containerId: ChunkId, depth = 
     }
   }
   seen.delete(containerId);
+  return out;
+}
+
+// Where should the UI land when following a link to this chunk? Leaf chunks
+// open through their nearest container, so the star never opens empty.
+export function focusTarget(state: SubstrateState, chunkId: ChunkId): ChunkId {
+  let current = chunkId;
+  const seen = new Set<ChunkId>();
+  while (!seen.has(current)) {
+    seen.add(current);
+    const chunk = state.chunks.get(current);
+    if (!chunk) return chunkId;
+    if (isComposite(state, current)) return current;
+    const home = occurrencesOfChunk(state, current)[0];
+    if (!home) return current;
+    current = home.containerId;
+  }
+  return current;
+}
+
+// All containers reachable upward from a chunk (for illumination: a match
+// deep inside nested composites still lights its document).
+export function ancestorContainers(state: SubstrateState, chunkId: ChunkId): ChunkId[] {
+  const out: ChunkId[] = [];
+  const seen = new Set<ChunkId>([chunkId]);
+  const frontier = [chunkId];
+  while (frontier.length) {
+    const cur = frontier.pop()!;
+    for (const occ of occurrencesOfChunk(state, cur)) {
+      if (seen.has(occ.containerId)) continue;
+      seen.add(occ.containerId);
+      out.push(occ.containerId);
+      frontier.push(occ.containerId);
+    }
+  }
   return out;
 }
 

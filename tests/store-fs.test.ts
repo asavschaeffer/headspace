@@ -2,7 +2,7 @@
 // Each block owns a fresh tmp workspace; a deleted lock file simulates a crash
 // (close() always snapshots, so crashing is the only way to exercise replay).
 import assert from 'node:assert';
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openWorkspace } from '../src/host/store-fs';
@@ -74,15 +74,20 @@ try {
     ws2.close();
   }
 
-  // ── lock: conflict throws, force takes over, close releases ────────────────
+  // ── lock: live conflict throws, stale lock recovered, force takes over ─────
   {
     const root = freshRoot();
     const ws = await openWorkspace(root);
-    await assert.rejects(() => openWorkspace(root), /locked by pid/);
+    await assert.rejects(() => openWorkspace(root), /locked by running pid/);
     const forced = await openWorkspace(root, { force: true });
     forced.close();
     const again = await openWorkspace(root); // lock released; no force needed
     again.close();
+    // A lock left by a dead process is a crash artifact, not a writer.
+    writeFileSync(sub(root, 'lock'), '999999999');
+    const recovered = await openWorkspace(root);
+    recovered.close();
+    void ws;
   }
 
   // ── torn final line tolerated; terminated garbage throws ───────────────────

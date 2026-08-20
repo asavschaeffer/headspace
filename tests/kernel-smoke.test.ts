@@ -68,12 +68,76 @@ const upd = await acceptProposal(ctx, { proposalId: raised[0] });
 assert.ok(upd.applied);
 assert.equal(renderChunk(ctx.state, doc2.chunkId), 'the lake is frozen');
 
-// stale generation proposal → superseded
+// stale generation proposal → superseded: the target advanced past the basis,
+// so the context the generator saw no longer exists (wiki/operations.md)
 const gen2 = await generateProposal(ctx, { focusChunkId: b1.chunkId, instruction: 'noop' });
 await revise(ctx, { chunkId: b1.chunkId, text: 'the lake is gone' });
-// gen2 targets b1 with a create+place payload — freshness only gates revise/repin, so it should still apply
 const acc2 = await acceptProposal(ctx, { proposalId: gen2.proposalId });
-assert.ok(acc2.applied, 'create/place payloads are not staled by target revision');
+assert.ok(!acc2.applied, 'generation proposals go stale when their target advances');
+assert.equal(ctx.state.proposals.get(gen2.proposalId)!.status, 'superseded');
+
+// forged blob: same hash, different content — rejected, history not rewritten
+{
+  const victim = ctx.state.revisions.get(ctx.state.chunks.get(b1.chunkId)!.currentRevisionId)!;
+  const originalText = ctx.state.blobs.get(victim.blobHash)!.text;
+  let rejected = false;
+  try {
+    const { applyCommit } = await import('../src/kernel/state');
+    applyCommit(ctx.state, {
+      id: 'cmt_forged',
+      parentIds: ctx.state.head ? [ctx.state.head] : [],
+      at: new Date().toISOString(),
+      actorId: 'human:mallory',
+      operation: {
+        id: 'op_forged',
+        kind: 'create',
+        actorId: 'human:mallory',
+        at: new Date().toISOString(),
+        inputRevisionIds: [],
+        outputRevisionIds: [],
+      },
+      facts: { blobs: [{ hash: victim.blobHash, mediaType: victim.mediaType, text: 'tampered' }] },
+    });
+  } catch {
+    rejected = true;
+  }
+  assert.ok(rejected, 'forged blob commit must be rejected');
+  assert.equal(ctx.state.blobs.get(victim.blobHash)!.text, originalText, 'immutable payload unchanged');
+}
+
+// atomicity: a commit with valid facts plus one invalid tombstone leaves nothing behind
+{
+  const { applyCommit } = await import('../src/kernel/state');
+  const chunksBefore = ctx.state.chunks.size;
+  const headBefore = ctx.state.head;
+  let rejected = false;
+  try {
+    applyCommit(ctx.state, {
+      id: 'cmt_partial',
+      parentIds: headBefore ? [headBefore] : [],
+      at: new Date().toISOString(),
+      actorId: 'human:asa',
+      operation: {
+        id: 'op_partial',
+        kind: 'tombstone',
+        actorId: 'human:asa',
+        at: new Date().toISOString(),
+        inputRevisionIds: [],
+        outputRevisionIds: [],
+      },
+      facts: {
+        blobs: [{ hash: 'deadbeef', mediaType: 'text/plain', text: 'orphan' }],
+        tombstone: ['ch_nonexistent'],
+      },
+    });
+  } catch {
+    rejected = true;
+  }
+  assert.ok(rejected, 'invalid tombstone must be rejected');
+  assert.equal(ctx.state.chunks.size, chunksBefore, 'no partial facts folded');
+  assert.equal(ctx.state.head, headBefore, 'head untouched');
+  assert.ok(!ctx.state.blobs.has('deadbeef'), 'no partial blob folded');
+}
 
 // log replay equivalence
 const rebuilt = materialize(log);

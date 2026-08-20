@@ -132,15 +132,38 @@ export async function openWorkspace(rootDir: string, opts: { force?: boolean } =
   const lockPath = join(dir, 'lock');
   mkdirSync(join(dir, 'blobs'), { recursive: true });
 
-  try {
-    writeFileSync(lockPath, String(process.pid), { flag: opts.force ? 'w' : 'wx' });
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
-      const holder = readFileSync(lockPath, 'utf8').trim();
-      throw new Error(`workspace ${rootDir} locked by pid ${holder}; open with { force: true } to take over`);
+  // Single-writer: exclusive-create wins. A lock whose holder pid is no longer
+  // alive is a crash artifact and is taken over; a live holder is respected —
+  // force exists for deliberate takeover only, never as a default.
+  const acquireLock = (): void => {
+    try {
+      writeFileSync(lockPath, String(process.pid), { flag: opts.force ? 'w' : 'wx' });
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      const holder = Number.parseInt(readFileSync(lockPath, 'utf8').trim(), 10);
+      let alive = false;
+      if (Number.isFinite(holder) && holder > 0) {
+        if (holder === process.pid) {
+          alive = true; // our own earlier open still holds it — still a second writer
+        } else {
+          try {
+            process.kill(holder, 0);
+            alive = true;
+          } catch {
+            alive = false;
+          }
+        }
+      }
+      if (alive) {
+        throw new Error(
+          `workspace ${rootDir} is locked by running pid ${holder} — close that process (or pass { force: true } to take over)`,
+        );
+      }
+      rmSync(lockPath, { force: true }); // stale lock from a dead process
+      writeFileSync(lockPath, String(process.pid), { flag: 'wx' });
     }
-    throw e;
-  }
+  };
+  acquireLock();
 
   const putBlob = (b: Blob): void => {
     const fanout = join(dir, 'blobs', b.hash.slice(0, 2));

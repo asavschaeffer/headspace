@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SubstrateHook } from './App';
-import { currentText, labelOf, leafBlocks, proposalsForDoc, revisionCount, type LeafBlock } from './client/helpers';
+import { currentText, focusTarget, labelOf, leafBlocks, proposalsForDoc, revisionCount, type LeafBlock } from './client/helpers';
 import { buildIndexes, duplicatesOf, echoesOf, searchChunks } from './index/indexes';
 import { generateProposal } from './kernel/select';
-import { occurrencesOfChunk, revisionText, type SubstrateState } from './kernel/state';
+import { isComposite, occurrencesOfChunk, revisionText, type SubstrateState } from './kernel/state';
 import {
   acceptProposal,
   moveOccurrence,
@@ -39,6 +39,14 @@ export function Star({
   const [notice, setNotice] = useState<string | null>(null);
   const [span, setSpan] = useState<Span | null>(null);
   const [fatesFor, setFatesFor] = useState<ChunkId | null>(null);
+  const noticeTimer = useRef<number | null>(null);
+
+  // Selection and fates belong to the doc they were made in.
+  useEffect(() => {
+    setSpan(null);
+    setFatesFor(null);
+    setInstruction('');
+  }, [docId]);
 
   const blocks = useMemo(() => leafBlocks(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const proposals = useMemo(() => proposalsForDoc(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -47,8 +55,14 @@ export function Star({
 
   const flash = (msg: string) => {
     setNotice(msg);
-    setTimeout(() => setNotice(null), 4000);
+    if (noticeTimer.current != null) clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => {
+      noticeTimer.current = null;
+      setNotice(null);
+    }, 4000);
   };
+
+  const focusVia = (id: ChunkId) => onFocusDoc(focusTarget(state, id));
 
   const guard = async (label: string, fn: () => Promise<unknown> | unknown) => {
     try {
@@ -96,6 +110,10 @@ export function Star({
 
       {notice && <div className="notice">{notice}</div>}
 
+      {blocks.length === 0 && !isComposite(state, docId) && (
+        <LeafDocView key={docId} state={state} ctx={ctx} docId={docId} onError={flash} />
+      )}
+
       {blocks.map((b, i) => (
         <BlockView
           key={b.occurrence.id}
@@ -112,7 +130,7 @@ export function Star({
         />
       ))}
 
-      {fatesFor && <FatesPanel state={state} indexes={indexes} chunkId={fatesFor} bindings={bindings} onFocusDoc={onFocusDoc} />}
+      {fatesFor && <FatesPanel state={state} indexes={indexes} chunkId={fatesFor} bindings={bindings} onFocusDoc={focusVia} />}
 
       {span && (
         <div className="toolbar">
@@ -248,6 +266,42 @@ function BlockView({
           ↓
         </button>
       </div>
+    </div>
+  );
+}
+
+// A chunk with no children opened as the focus: one editable surface for the
+// chunk's own content (a floating promoted copy, a generated block, …).
+function LeafDocView({
+  state,
+  ctx,
+  docId,
+  onError,
+}: {
+  state: SubstrateState;
+  ctx: TxCtx;
+  docId: ChunkId;
+  onError: (msg: string) => void;
+}) {
+  const text = currentText(state, docId);
+  const [buffer, setBuffer] = useState(text);
+  useEffect(() => setBuffer(text), [text]);
+  return (
+    <div className="block">
+      <textarea
+        value={buffer}
+        rows={Math.min(buffer.split('\n').length + 2, 20)}
+        onChange={(e) => setBuffer(e.target.value)}
+        onBlur={async () => {
+          if (buffer === text) return;
+          try {
+            await revise(ctx, { chunkId: docId, text: buffer });
+          } catch (e) {
+            onError(`edit: ${e instanceof Error ? e.message : String(e)}`);
+            setBuffer(text);
+          }
+        }}
+      />
     </div>
   );
 }

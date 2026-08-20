@@ -5,13 +5,17 @@ import { resolve } from 'node:path';
 import { openWorkspace } from '../src/host/store-fs';
 import { syncWorkspace } from '../src/host/sync';
 
-const root = resolve(process.argv[2] ?? '.');
-const contentDirs = process.argv.slice(3);
+const args = process.argv.slice(2).filter((a) => a !== '--force');
+const force = process.argv.includes('--force');
+const root = resolve(args[0] ?? '.');
+const contentDirs = args.slice(1);
 const opts = contentDirs.length
   ? { contentDirs }
   : { contentDirs: ['wiki'], contentFiles: ['headspace-brief.md'] };
 
-const ws = await openWorkspace(root, { force: true });
+// A live lock (e.g. the dev server) is respected; stale locks from dead
+// processes are taken over automatically. --force is a deliberate override.
+const ws = await openWorkspace(root, { force });
 const report = await syncWorkspace(ws, opts);
 ws.close();
 console.log(

@@ -145,6 +145,8 @@ export async function generateProposal(
     payload,
     note: opts.instruction,
     createdBy: opts.modelActorId ?? 'agent:stub',
+    // The operation records everything the generator saw, not just the anchor.
+    inputRevisionIds: context.items.map((i) => i.revisionId),
   });
   return { proposalId, context };
 }

@@ -11,9 +11,9 @@ import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { METHOD_BLOCKS, decomposeText } from '../kernel/decompose';
 import { blobHashOf, sha256Hex } from '../kernel/hash';
 import { childOccurrences, currentRevision, occurrenceRevision, revisionText, type SubstrateState } from '../kernel/state';
-import { createChunk, moveOccurrence, propose, revise, type TxCtx } from '../kernel/tx';
-import { MEDIA_COMPOSITE, MEDIA_MARKDOWN } from '../kernel/types';
-import type { BlobHash, ChunkId, OccurrenceId, ProposalId, ProposedChange } from '../kernel/types';
+import { createChunk, createComposite, moveOccurrence, propose, revise, supersedeProposal, type TxCtx } from '../kernel/tx';
+import { MEDIA_MARKDOWN } from '../kernel/types';
+import type { BlobHash, ChunkId, OccurrenceId, Proposal, ProposalId, ProposedChange } from '../kernel/types';
 import { similarity } from './similarity';
 
 const SIM_THRESHOLD = 0.5;
@@ -61,21 +61,39 @@ const blockTextsOf = (text: string): string[] => decomposeText(text, METHOD_BLOC
 // Canonical file form: blocks joined by one blank line, trailing newline.
 const canonical = (blocks: string[]): string => (blocks.length ? `${blocks.join('\n\n')}\n` : '');
 
+// Line endings are canonicalized to LF at the driver boundary, so blobs and
+// sidecar hashes are platform-independent; the projection writes LF.
+const normalizeEol = (text: string): string => text.replace(/\r\n/g, '\n');
+
+// One open reconciliation proposal per document, tagged with the file hash it
+// answers, so repeated syncs re-find it instead of stacking duplicates.
+const fileMarker = (fileHash: string): string => `[file:${fileHash.slice(0, 12)}]`;
+
+function openReconciliation(ctx: TxCtx, docChunkId: ChunkId): Proposal | undefined {
+  for (const p of ctx.state.proposals.values()) {
+    if (p.status === 'open' && p.kind === 'reconciliation' && p.targetChunkIds.includes(docChunkId)) return p;
+  }
+  return undefined;
+}
+
 export async function importMarkdownFile(
   ctx: TxCtx,
   opts: { workspaceRoot: string; relPath: string; text: string },
 ): Promise<{ docChunkId: ChunkId; blockChunkIds: ChunkId[] }> {
-  const { workspaceRoot, relPath, text } = opts;
+  const { workspaceRoot, relPath } = opts;
   assertSafeRel(workspaceRoot, relPath); // fail before minting any identity
+  const text = normalizeEol(opts.text);
   const blockTexts = blockTextsOf(text);
-  const doc = await createChunk(ctx, { text: JSON.stringify({ join: '\n\n' }), mediaType: MEDIA_COMPOSITE });
-  const blockChunkIds: ChunkId[] = [];
-  const blocks: MarkdownSidecar['blocks'] = [];
-  for (const t of blockTexts) {
-    const b = await createChunk(ctx, { text: t, mediaType: MEDIA_MARKDOWN, containerId: doc.chunkId });
-    blockChunkIds.push(b.chunkId);
-    blocks.push({ chunkId: b.chunkId, blobHash: ctx.state.revisions.get(b.revisionId)!.blobHash });
-  }
+  // One atomic commit: the doc, every block, every placement (wiki/store.md).
+  const doc = await createComposite(ctx, {
+    join: '\n\n',
+    blocks: blockTexts.map((t) => ({ text: t, mediaType: MEDIA_MARKDOWN })),
+    opKind: 'import',
+  });
+  const blocks: MarkdownSidecar['blocks'] = doc.blockChunkIds.map((chunkId) => ({
+    chunkId,
+    blobHash: currentRevision(ctx.state, chunkId).blobHash,
+  }));
   writeSidecar(workspaceRoot, relPath, {
     docChunkId: doc.chunkId,
     relPath,
@@ -83,7 +101,7 @@ export async function importMarkdownFile(
     lastImportedFileHash: await sha256Hex(text),
     lastProjectedFileHash: await sha256Hex(canonical(blockTexts)),
   });
-  return { docChunkId: doc.chunkId, blockChunkIds };
+  return { docChunkId: doc.chunkId, blockChunkIds: doc.blockChunkIds };
 }
 
 export function projectMarkdown(state: SubstrateState, docChunkId: ChunkId): string {
@@ -111,11 +129,21 @@ export async function writeProjection(
 }
 
 export async function reconcileMarkdownFile(ctx: TxCtx, opts: { workspaceRoot: string; relPath: string; text: string }): Promise<ReconcileResult> {
-  const { workspaceRoot, relPath, text } = opts;
+  const { workspaceRoot, relPath } = opts;
+  const text = normalizeEol(opts.text);
   const sc = readSidecar(workspaceRoot, relPath);
   const state = ctx.state;
   const fileHash = await sha256Hex(text);
   if (fileHash === sc.lastImportedFileHash || fileHash === sc.lastProjectedFileHash) return { action: 'noop' };
+
+  // Re-find (or retire) the standing reconciliation proposal for this doc
+  // before any new one is raised, so repeated syncs never stack duplicates.
+  const marker = fileMarker(fileHash);
+  const standing = openReconciliation(ctx, sc.docChunkId);
+  if (standing && standing.note?.startsWith(marker)) return { action: 'proposal', proposalId: standing.id };
+  if (standing) {
+    supersedeProposal(ctx, { proposalId: standing.id, reason: `${relPath} changed again before the earlier reconciliation was resolved` });
+  }
 
   const fileTexts = blockTextsOf(text);
   const fileHashes = await Promise.all(fileTexts.map((t) => blobHashOf(MEDIA_MARKDOWN, t)));
@@ -208,7 +236,7 @@ export async function reconcileMarkdownFile(ctx: TxCtx, opts: { workspaceRoot: s
         basisRevisionIds: [docHead.id],
         targetChunkIds: [sc.docChunkId],
         payload: severs,
-        note: `${severs.length} block(s) vanished from ${relPath}; accept to sever their occurrences`,
+        note: `${marker} ${severs.length} block(s) vanished from ${relPath}; accept to sever their occurrences`,
       }).proposalId;
     }
     writeSidecar(workspaceRoot, relPath, {
@@ -227,6 +255,7 @@ export async function reconcileMarkdownFile(ctx: TxCtx, opts: { workspaceRoot: s
   const basis = new Set<string>([docHead.id]);
   let tempN = 0;
   let lastExistingOcc: OccurrenceId | undefined;
+  let inNewRun = false; // only the first place of a run anchors; the rest chain
   for (let i = 0; i < fileTexts.length; i++) {
     const j = matchOf[i];
     if (j >= 0) {
@@ -237,10 +266,17 @@ export async function reconcileMarkdownFile(ctx: TxCtx, opts: { workspaceRoot: s
       }
       const occ = occByChunk.get(chunkId);
       if (occ) lastExistingOcc = occ.id;
+      inNewRun = false;
     } else {
       const tempId = `new-${tempN++}`;
       payload.push({ op: 'create', tempId, text: fileTexts[i], mediaType: MEDIA_MARKDOWN });
-      payload.push({ op: 'place', containerId: sc.docChunkId, chunkId: { tempId }, after: lastExistingOcc });
+      const place: ProposedChange = { op: 'place', containerId: sc.docChunkId, chunkId: { tempId } };
+      if (!inNewRun) {
+        if (lastExistingOcc) place.after = lastExistingOcc;
+        else place.at = 'start';
+      }
+      payload.push(place);
+      inNewRun = true;
     }
   }
   for (const k of vanished) {
@@ -260,7 +296,7 @@ export async function reconcileMarkdownFile(ctx: TxCtx, opts: { workspaceRoot: s
     targetChunkIds: [sc.docChunkId],
     payload,
     note:
-      `${relPath} diverged on both sides: file has ${nRevise} edited, ${tempN} new, ${vanished.length} vanished block(s); ` +
+      `${marker} ${relPath} diverged on both sides: file has ${nRevise} edited, ${tempN} new, ${vanished.length} vanished block(s); ` +
       `store has ${internalChanged} block(s) revised since last sync`,
   });
   return { action: 'proposal', proposalId };

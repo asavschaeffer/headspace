@@ -82,6 +82,12 @@ export function applyCommit(state: SubstrateState, commit: Commit): void {
   const f = commit.facts;
   const newChunks = new Set((f.chunks ?? []).map((c) => c.id));
 
+  for (const b of f.blobs ?? []) {
+    const existing = state.blobs.get(b.hash);
+    if (existing && (existing.text !== b.text || existing.mediaType !== b.mediaType)) {
+      fail(`blob ${b.hash} already exists with different content; blobs are immutable`);
+    }
+  }
   for (const r of f.revisions ?? []) {
     if (state.revisions.has(r.id)) fail(`revision ${r.id} already exists; revisions are immutable`);
     if (!state.chunks.has(r.chunkId) && !newChunks.has(r.chunkId)) fail(`revision ${r.id} for unknown chunk ${r.chunkId}`);
@@ -114,13 +120,27 @@ export function applyCommit(state: SubstrateState, commit: Commit): void {
     }
   }
   for (const u of f.occurrenceUpdates ?? []) {
-    if (!state.occurrences.has(u.id)) fail(`occurrenceUpdate: unknown occurrence ${u.id}`);
+    const occ = state.occurrences.get(u.id);
+    if (!occ) fail(`occurrenceUpdate: unknown occurrence ${u.id}`);
+    if (u.pin !== undefined && u.pin !== 'current') {
+      const pinRev = state.revisions.get(u.pin) ?? newRevisions.get(u.pin);
+      if (!pinRev) fail(`occurrenceUpdate: unknown pin revision ${u.pin}`);
+      if (pinRev!.chunkId !== occ!.chunkId) {
+        fail(`occurrenceUpdate: pin revision ${u.pin} belongs to ${pinRev!.chunkId}, not ${occ!.chunkId}`);
+      }
+    }
   }
   for (const id of f.removeOccurrences ?? []) {
     if (!state.occurrences.has(id)) fail(`removeOccurrences: unknown occurrence ${id}`);
   }
   for (const u of f.proposalUpdates ?? []) {
     if (!state.proposals.has(u.id)) fail(`proposalUpdate: unknown proposal ${u.id}`);
+  }
+  for (const id of f.tombstone ?? []) {
+    if (!state.chunks.has(id) && !newChunks.has(id)) fail(`tombstone: unknown chunk ${id}`);
+  }
+  for (const id of f.redactRevisions ?? []) {
+    if (!state.revisions.has(id) && !newRevisions.has(id)) fail(`redact: unknown revision ${id}`);
   }
 
   // All validated — fold.
@@ -145,14 +165,8 @@ export function applyCommit(state: SubstrateState, commit: Commit): void {
     p.status = u.status;
     if (u.resolution) p.resolution = u.resolution;
   }
-  for (const id of f.tombstone ?? []) {
-    const c = state.chunks.get(id) ?? fail(`tombstone: unknown chunk ${id}`);
-    (c as Chunk).tombstoned = true;
-  }
-  for (const id of f.redactRevisions ?? []) {
-    const r = state.revisions.get(id) ?? fail(`redact: unknown revision ${id}`);
-    state.revisions.set(id, { ...(r as Revision), redacted: true });
-  }
+  for (const id of f.tombstone ?? []) state.chunks.get(id)!.tombstoned = true;
+  for (const id of f.redactRevisions ?? []) state.revisions.set(id, { ...state.revisions.get(id)!, redacted: true });
   state.operations.set(commit.operation.id, commit.operation);
   state.head = commit.id;
   state.commitCount++;

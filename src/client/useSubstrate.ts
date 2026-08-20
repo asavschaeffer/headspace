@@ -37,6 +37,15 @@ export function useSubstrate() {
   const retryTimer = useRef<number | null>(null);
 
   const load = async (endpoint = '/api/state', method = 'GET') => {
+    // Replacing the state while commits wait in the retry queue would fork the
+    // screen from what later reaches the server: drain first, or refuse.
+    if (queue.current.length > 0) {
+      await pump();
+      if (queue.current.length > 0) {
+        setStatus(`cannot reload: ${queue.current.length} local change(s) not yet accepted by the server`);
+        return null;
+      }
+    }
     try {
       const r = await fetch(endpoint, { method });
       if (!r.ok) throw new Error(`${endpoint}: ${r.status}`);

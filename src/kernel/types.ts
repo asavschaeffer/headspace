@@ -137,7 +137,11 @@ export type ProposedChange =
       op: 'place';
       containerId: ChunkId;
       chunkId: ChunkId | { tempId: string };
-      after?: OccurrenceId; // place after this sibling; omitted = end of container
+      // Anchoring: after a sibling, at the container start, or unanchored —
+      // which follows the previous place into the same container within the
+      // same accept (so a run of new blocks keeps its order), else the end.
+      after?: OccurrenceId;
+      at?: 'start';
       mode?: OccurrenceMode;
       watch?: boolean;
     }

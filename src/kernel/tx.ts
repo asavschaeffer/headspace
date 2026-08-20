@@ -177,6 +177,90 @@ export async function revise(
   return { revisionId: revision.id, commit };
 }
 
+// One atomic commit for a whole composite: the container, every child, and
+// their placements. This is what drivers use so an import can never be seen
+// (or persisted) half-done.
+export async function createComposite(
+  ctx: TxCtx,
+  opts: {
+    join: string;
+    blocks: { text: string; mediaType?: string }[];
+    containerId?: ChunkId;
+    at?: PlaceAt;
+    opKind?: 'create' | 'import';
+  },
+): Promise<{ chunkId: ChunkId; revisionId: RevisionId; blockChunkIds: ChunkId[]; commit: Commit }> {
+  const opId = newOperationId();
+  const when = t(ctx);
+  const facts: Facts = { blobs: [], chunks: [], revisions: [], occurrences: [] };
+
+  const compositeBlob = await makeBlob(MEDIA_COMPOSITE, JSON.stringify({ join: opts.join }));
+  const chunkId = newChunkId();
+  const revision: Revision = {
+    id: newRevisionId(),
+    chunkId,
+    blobHash: compositeBlob.hash,
+    mediaType: MEDIA_COMPOSITE,
+    parentRevisionIds: [],
+    createdBy: ctx.actorId,
+    createdAt: when,
+    operationId: opId,
+  };
+  facts.blobs!.push(compositeBlob);
+  facts.chunks!.push({ id: chunkId, currentRevisionId: revision.id, tombstoned: false });
+  facts.revisions!.push(revision);
+
+  const blockChunkIds: ChunkId[] = [];
+  const positions = keysBetween(null, null, opts.blocks.length);
+  for (const [i, block] of opts.blocks.entries()) {
+    const mediaType = block.mediaType ?? MEDIA_TEXT;
+    const blob = await makeBlob(mediaType, block.text);
+    const blockChunkId = newChunkId();
+    facts.blobs!.push(blob);
+    facts.chunks!.push({ id: blockChunkId, currentRevisionId: '', tombstoned: false });
+    const blockRev: Revision = {
+      id: newRevisionId(),
+      chunkId: blockChunkId,
+      blobHash: blob.hash,
+      mediaType,
+      parentRevisionIds: [],
+      createdBy: ctx.actorId,
+      createdAt: when,
+      operationId: opId,
+    };
+    facts.chunks![facts.chunks!.length - 1].currentRevisionId = blockRev.id;
+    facts.revisions!.push(blockRev);
+    facts.occurrences!.push({
+      id: newOccurrenceId(),
+      containerId: chunkId,
+      chunkId: blockChunkId,
+      position: positions[i],
+      mode: 'contain',
+      pin: 'current',
+      watch: false,
+    });
+    blockChunkIds.push(blockChunkId);
+  }
+  if (opts.containerId) {
+    facts.occurrences!.push({
+      id: newOccurrenceId(),
+      containerId: opts.containerId,
+      chunkId,
+      position: positionIn(ctx.state, opts.containerId, opts.at),
+      mode: 'contain',
+      pin: 'current',
+      watch: false,
+    });
+  }
+  const commit = finish(
+    ctx,
+    { id: opId, kind: opts.opKind ?? 'import', at: when, outputs: facts.revisions!.map((r) => r.id), params: { blocks: opts.blocks.length } },
+    facts,
+    opts.containerId ? [opts.containerId] : [],
+  );
+  return { chunkId, revisionId: revision.id, blockChunkIds, commit };
+}
+
 // ── arrangement ──────────────────────────────────────────────────────────────
 
 export function placeOccurrence(
@@ -349,8 +433,15 @@ export async function promoteExtract(
   const parentRev = spanStale(ctx.state, opts.span);
   if (parentRev.mediaType === MEDIA_COMPOSITE) throw new Error('promote: cannot extract from a composite; extract from its child');
   const text = revisionText(ctx.state, parentRev.id);
-  const { start, end } = opts.span;
+  let { start, end } = opts.span;
   if (!(start >= 0 && end <= text.length && start < end)) throw new Error(`promote: span [${start},${end}) out of range`);
+  // Never split a surrogate pair: snap outward so every segment is valid text.
+  const isLowSurrogate = (i: number) => {
+    const c = text.charCodeAt(i);
+    return c >= 0xdc00 && c <= 0xdfff;
+  };
+  if (start > 0 && isLowSurrogate(start)) start--;
+  if (end < text.length && isLowSurrogate(end)) end++;
   const segments = [
     { start: 0, end: start },
     { start, end },
@@ -360,7 +451,10 @@ export async function promoteExtract(
   const facts: Facts = { blobs: [], chunks: [], revisions: [], occurrences: [], derivations: [], setCurrent: [] };
   const partChunkIds: ChunkId[] = [];
   let extractedChunkId: ChunkId = '';
-  const positions = keysBetween(null, null, segments.length);
+  // Anything already placed under this chunk keeps its keys; the extracted
+  // parts land before it, so keys never collide and the parts render first.
+  const existingChildren = childOccurrences(ctx.state, parentRev.chunkId);
+  const positions = keysBetween(null, existingChildren.length ? existingChildren[0].position : null, segments.length);
   for (const [i, seg] of segments.entries()) {
     const blob = await makeBlob(parentRev.mediaType, text.slice(seg.start, seg.end));
     const chunkId = newChunkId();
@@ -538,6 +632,7 @@ export function propose(
     payload: ProposedChange[];
     note?: string;
     createdBy?: ActorId; // e.g. the model actor, while the operation actor is the dispatcher
+    inputRevisionIds?: RevisionId[]; // everything the proposer saw (may exceed the basis)
   },
 ): { proposalId: ProposalId; commit: Commit } {
   const opId = newOperationId();
@@ -555,7 +650,13 @@ export function propose(
   };
   const commit = finish(
     ctx,
-    { id: opId, kind: 'propose', at: when, inputs: opts.basisRevisionIds, params: { kind: opts.kind } },
+    {
+      id: opId,
+      kind: 'propose',
+      at: when,
+      inputs: opts.inputRevisionIds ?? opts.basisRevisionIds,
+      params: { kind: opts.kind },
+    },
     { proposals: [proposal] },
     opts.targetChunkIds,
   );
@@ -568,7 +669,14 @@ export function staleReason(state: SubstrateState, p: Proposal): string | null {
     if (ch.op === 'revise') {
       const chunk = state.chunks.get(ch.chunkId);
       if (!chunk) return `target chunk ${ch.chunkId} no longer exists`;
-      if (ch.mergeParentRevisionIds) continue; // merges pin their own parents
+      if (ch.mergeParentRevisionIds) {
+        // A merge is fresh only while the head is still one of its parents;
+        // past that, accepting would silently discard a newer revision.
+        if (!ch.mergeParentRevisionIds.includes(chunk.currentRevisionId)) {
+          return `chunk ${ch.chunkId} advanced past the merge parents`;
+        }
+        continue;
+      }
       if (!p.basisRevisionIds.includes(chunk.currentRevisionId)) {
         return `chunk ${ch.chunkId} has moved on since the proposal's basis`;
       }
@@ -585,6 +693,21 @@ export function staleReason(state: SubstrateState, p: Proposal): string | null {
       if (typeof ch.chunkId === 'string' && !state.chunks.has(ch.chunkId)) return `chunk ${ch.chunkId} no longer exists`;
       if (!state.chunks.has(ch.containerId)) return `container ${ch.containerId} no longer exists`;
     }
+  }
+  // Additive proposals (generation-shaped: only create/place/relate) anchor
+  // their freshness to the target chunks: if every target has moved past the
+  // basis, the proposal was computed against context that no longer exists.
+  if (
+    p.payload.length > 0 &&
+    p.targetChunkIds.length > 0 &&
+    p.basisRevisionIds.length > 0 &&
+    p.payload.every((ch) => ch.op === 'create' || ch.op === 'place' || ch.op === 'relate')
+  ) {
+    const anchored = p.targetChunkIds.some((t) => {
+      const chunk = state.chunks.get(t);
+      return chunk !== undefined && p.basisRevisionIds.includes(chunk.currentRevisionId);
+    });
+    if (!anchored) return `no target chunk is still at the proposal's basis`;
   }
   return null;
 }
@@ -623,21 +746,31 @@ export async function acceptProposal(
   };
   const temp = new Map<string, ChunkId>();
   const createdChunkIds: ChunkId[] = [];
-  // Sequential appends within one accept need locally advancing positions.
-  const lastPos = new Map<ChunkId, string | null>();
-  const nextPosition = (containerId: ChunkId, after?: OccurrenceId): string => {
+  // Positions within one accept chain: an anchored place (after / start) sets
+  // the cursor, and unanchored places follow the cursor inside its bound, so
+  // a run of inserted blocks keeps its payload order wherever it lands.
+  const cursor = new Map<ChunkId, { last: string | null; bound: string | null }>();
+  const nextPosition = (containerId: ChunkId, after?: OccurrenceId, at?: 'start'): string => {
+    let c: { last: string | null; bound: string | null };
     if (after) {
       const sibs = childOccurrences(ctx.state, containerId);
       const i = sibs.findIndex((o) => o.id === after);
       if (i < 0) throw new Error(`accept: anchor occurrence ${after} not found`);
-      return keyBetween(sibs[i].position, sibs[i + 1]?.position ?? null);
-    }
-    if (!lastPos.has(containerId)) {
+      c = { last: sibs[i].position, bound: sibs[i + 1]?.position ?? null };
+    } else if (at === 'start') {
       const sibs = childOccurrences(ctx.state, containerId);
-      lastPos.set(containerId, sibs.length ? sibs[sibs.length - 1].position : null);
+      c = { last: null, bound: sibs.length ? sibs[0].position : null };
+    } else {
+      c = cursor.get(containerId) ?? {
+        last: (() => {
+          const sibs = childOccurrences(ctx.state, containerId);
+          return sibs.length ? sibs[sibs.length - 1].position : null;
+        })(),
+        bound: null,
+      };
     }
-    const pos = keyBetween(lastPos.get(containerId)!, null);
-    lastPos.set(containerId, pos);
+    const pos = keyBetween(c.last, c.bound);
+    cursor.set(containerId, { last: pos, bound: c.bound });
     return pos;
   };
 
@@ -695,7 +828,7 @@ export async function acceptProposal(
         id: newOccurrenceId(),
         containerId: ch.containerId,
         chunkId,
-        position: nextPosition(ch.containerId, ch.after),
+        position: nextPosition(ch.containerId, ch.after, ch.at),
         mode: ch.mode ?? 'contain',
         pin: 'current',
         watch: ch.watch ?? false,
@@ -734,6 +867,20 @@ export async function acceptProposal(
   return { applied: true, commit, createdChunkIds };
 }
 
+// A proposal overtaken by events: recorded, sedimentary, never silently gone.
+export function supersedeProposal(ctx: TxCtx, opts: { proposalId: ProposalId; reason: string }): Commit {
+  const p = ctx.state.proposals.get(opts.proposalId);
+  if (!p) throw new Error(`supersede: unknown proposal ${opts.proposalId}`);
+  if (p.status !== 'open') throw new Error(`supersede: proposal ${opts.proposalId} is ${p.status}`);
+  const when = t(ctx);
+  return finish(
+    ctx,
+    { id: newOperationId(), kind: 'reject', at: when, params: { result: 'superseded', reason: opts.reason } },
+    { proposalUpdates: [{ id: p.id, status: 'superseded', resolution: { by: ctx.actorId, at: when } }] },
+    p.targetChunkIds,
+  );
+}
+
 export function rejectProposal(ctx: TxCtx, opts: { proposalId: ProposalId }): Commit {
   const p = ctx.state.proposals.get(opts.proposalId);
   if (!p) throw new Error(`reject: unknown proposal ${opts.proposalId}`);
@@ -767,13 +914,7 @@ export function scanWatchedSources(ctx: TxCtx): ProposalId[] {
     if (existing) {
       const repin = existing.payload.find((c) => c.op === 'repin');
       if (repin && repin.op === 'repin' && repin.revisionId === head.id) continue; // still accurate
-      const when = t(ctx);
-      finish(
-        ctx,
-        { id: newOperationId(), kind: 'reject', at: when, params: { result: 'superseded', reason: 'newer source revision' } },
-        { proposalUpdates: [{ id: existing.id, status: 'superseded', resolution: { by: ctx.actorId, at: when } }] },
-        existing.targetChunkIds,
-      );
+      supersedeProposal(ctx, { proposalId: existing.id, reason: 'newer source revision' });
     }
     const { proposalId } = propose(ctx, {
       kind: 'source-update',
