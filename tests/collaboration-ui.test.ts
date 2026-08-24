@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { SubstrateHook } from '../src/App';
+import type { WorkspaceSession } from '../src/App';
 import { Star } from '../src/Star';
 import { OFFLINE_COLLABORATOR, stubCompleter } from '../src/collaboration/stub';
 import { childOccurrences, currentRevision, emptyState } from '../src/kernel/state';
@@ -21,7 +21,7 @@ const generated = await generateProposal(ctx, {
   complete: stubCompleter,
   modelActorId: OFFLINE_COLLABORATOR.actorId,
 });
-const sub = {
+const session = {
   ws: {
     state,
     bindings: [],
@@ -57,15 +57,14 @@ const sub = {
   busy: false,
   ingestNow: async () => null,
   complete: async () => { throw new Error('not invoked during server rendering'); },
-  syncNow: async () => null,
   reload: async () => null,
   dismissStatus: () => undefined,
-} as unknown as SubstrateHook;
+} as unknown as WorkspaceSession;
 
 const render = () =>
   renderToStaticMarkup(
     createElement(Star, {
-      sub,
+      session,
       docId: doc.chunkId,
       onFocusDoc: () => undefined,
       onBack: () => undefined,

@@ -31,7 +31,7 @@ import { decomposeRevision, METHOD_BLOCKS, METHOD_SENTENCES, METHOD_WORDS } from
 import { keyBetween } from '../src/kernel/fractional';
 import { newCommitId, newOperationId } from '../src/kernel/ids';
 import type { Commit, Facts } from '../src/kernel/types';
-import { MEDIA_COMPOSITE, MEDIA_MARKDOWN } from '../src/kernel/types';
+import { isCompositeMediaType, MEDIA_COMPOSITE, MEDIA_MARKDOWN } from '../src/kernel/types';
 
 // Deterministic clock injected through TxCtx.now: every timestamp is assertable
 // and strictly increasing (ms ticks roll over cleanly in Date.UTC).
@@ -100,7 +100,9 @@ const exDrv = [...ctx.state.derivations.values()].find((d) => d.childChunkId ===
 assert.ok(exDrv && exDrv.via === 'extract');
 assert.deepEqual(exDrv!.sourceSpan, { revisionId: flat.id, method: 'raw@1', start, end }, 'derivation carries the exact source span');
 assert.equal(revisionText(ctx.state, flat.id), full, 'prior flat revision still resolves; history is sedimentary');
+assert.equal(MEDIA_COMPOSITE, 'application/x-headspace-composite');
 assert.equal(currentRevision(ctx.state, para.chunkId).mediaType, MEDIA_COMPOSITE);
+assert.equal(isCompositeMediaType(currentRevision(ctx.state, para.chunkId).mediaType), true);
 assert.ok(currentRevision(ctx.state, para.chunkId).parentRevisionIds.includes(flat.id), 'composite descends from the flat revision');
 
 // ── promotion, copy shape: only the asked-for promotion happens ──────────────

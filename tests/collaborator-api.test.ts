@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { CollaboratorAdapter } from '../src/host/collaborators';
-import { substrateServer } from '../src/host/api';
+import { headspaceHostPlugin } from '../src/host/api';
 
 const root = mkdtempSync(join(tmpdir(), 'headspace-collaborator-api-'));
 let releaseProvider!: () => void;
@@ -47,7 +47,7 @@ const server = createServer((req, res) => {
   next();
 });
 
-const plugin = substrateServer({ root, collaborators: [delayed] });
+const plugin = headspaceHostPlugin({ root, collaborators: [delayed] });
 if (typeof plugin.configureServer !== 'function') throw new Error('configureServer hook missing');
 (plugin.configureServer as unknown as (server: {
   httpServer: unknown;

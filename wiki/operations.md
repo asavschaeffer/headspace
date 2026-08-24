@@ -75,15 +75,15 @@ detected relation              -> proposal
 merge / reconciliation         -> proposal
 ```
 
-Generation does not silently overwrite human work; neither does a driver, a
+Generation does not silently overwrite human work; neither does an adapter, a
 collaborator, or an index. A proposal is inert: its payload describes
 operations, and nothing about the target changes until an accept applies them.
 
-One scoped exception: when a bound file changed externally and Substrate holds
-no internal edits since the last sync, the driver applies matched changes
-directly as `revise` by `driver:fs` — an external-only edit is the author's
-own edit arriving through the filesystem ([Drivers](drivers.md)). Divergence
-on both sides is always a reconciliation proposal.
+One scoped exception: when a bound file changed externally and the workspace
+graph holds no internal edits since the last sync, the adapter applies matched
+changes directly as `revise` by `adapter:filesystem` — an external-only edit is
+the author's own edit arriving through the filesystem ([Adapters](adapters.md)).
+Divergence on both sides is always a reconciliation proposal.
 
 ### Authorization happens at commit time
 
@@ -191,7 +191,7 @@ delete        -> sever, tombstone, or redact (see Deletion)
 
 ## Reuse operations
 
-Substrate has three core reuse verbs:
+Headspace has three core reuse verbs:
 
 - copy: create a new identity from a source revision;
 - reference: point to another identity or revision;

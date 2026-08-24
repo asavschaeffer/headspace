@@ -3,9 +3,9 @@
 ## Purpose
 
 A proposal is a suggested change that has been recorded but not applied. It is
-how Substrate holds work that originated outside the local author's own hands —
+how Headspace records work that originated outside the local author's own hands —
 model output, upstream source changes, collaborator suggestions, detected
-relations, driver reconciliations, merges — without letting any of it silently
+relations, adapter reconciliations, merges — without letting any of it silently
 become truth.
 
 This page owns the semantics and taxonomy of proposals. The formal lifecycle
@@ -31,14 +31,14 @@ reconciliation      a bound external file and the store both changed
 
 Human edits in one's own workspace apply directly as `revise`. Everything
 else — model output, upstream watched-source updates, collaborator
-suggestions, detected relations, merges, driver reconciliations when both
+suggestions, detected relations, merges, adapter reconciliations when both
 sides changed — is always a proposal. This is the general form of the settled
 rule that generation is proposal-first: no actor's output overwrites an
 author's work without the author's explicit acceptance.
 
 An external-only file edit is the exception: with no internal edits since the
-last sync it applies directly as `revise` by `driver:fs`, because it is the
-author's own editing arriving through the driver ([Drivers](drivers.md)).
+last sync it applies directly as `revise` by `adapter:filesystem`, because it is
+the author's own editing arriving through the adapter ([Adapters](adapters.md)).
 
 ### A proposal is an inert record
 

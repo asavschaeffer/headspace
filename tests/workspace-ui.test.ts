@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { SubstrateHook } from '../src/App';
+import type { WorkspaceSession } from '../src/App';
 import { Nebula, SourceStatusPanel } from '../src/Nebula';
 import { Star } from '../src/Star';
 import { workspaceChildren, WORKSPACE_ROOT } from '../src/client/workspaceTree';
@@ -31,7 +31,7 @@ try {
     phase: 'adapt',
     message: 'The adapter retained a recoverable conversion warning',
   });
-  const sub = {
+  const session = {
     ws: {
       state: ws.state,
       bindings: payload.bindings,
@@ -46,14 +46,13 @@ try {
     status: null,
     busy: false,
     ingestNow: async () => null,
-    syncNow: async () => null,
     reload: async () => null,
     dismissStatus: () => undefined,
-  } as unknown as SubstrateHook;
+  } as unknown as WorkspaceSession;
 
   const rootMarkup = renderToStaticMarkup(
     createElement(Nebula, {
-      sub,
+      session,
       containerId: WORKSPACE_ROOT,
       onOpenContainer: () => undefined,
       onFocus: () => undefined,
@@ -65,7 +64,7 @@ try {
   const sourcesDirectory = payload.sources.find((source) => source.observation.relPath === 'sources')!;
   const directoryMarkup = renderToStaticMarkup(
     createElement(Nebula, {
-      sub,
+      session,
       containerId: sourcesDirectory.source.id,
       onOpenContainer: () => undefined,
       onFocus: () => undefined,
@@ -96,7 +95,7 @@ try {
     createElement(SourceStatusPanel, {
       source: {
         ...issue,
-        adapterLabel: 'headspace.pdf-to-markdown.http@1.0.0 via tenant-a@converter-2026.08',
+        adapterLabel: 'headspace.pdf-to-markdown.http@1.0.0 via provider-a@converter-2026.08',
       },
       busy: false,
       onRetry: () => undefined,
@@ -105,7 +104,7 @@ try {
   );
   assert.match(
     providerMarkup,
-    /headspace\.pdf-to-markdown\.http@1\.0\.0 via tenant-a@converter-2026\.08/,
+    /headspace\.pdf-to-markdown\.http@1\.0\.0 via provider-a@converter-2026\.08/,
   );
 
   const failedRefresh = workspaceChildren(payload.sources, sourcesDirectory.source.id).find(
@@ -125,7 +124,7 @@ try {
   const textBinding = payload.bindings.find((binding) => binding.relPath === 'sources/note.txt')!;
   const starMarkup = renderToStaticMarkup(
     createElement(Star, {
-      sub,
+      session,
       docId: textBinding.docChunkId,
       onFocusDoc: () => undefined,
       onBack: () => undefined,

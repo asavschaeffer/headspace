@@ -1,45 +1,50 @@
-# Drivers
+# Adapters
 
 ## Purpose
 
-A driver translates an external representation into kernel objects or
-projects kernel objects back into an external representation.
+An adapter is one replaceable implementation behind a capability seam.
+Adapters can connect sources, projections, collaborators, indexes, or stores
+without teaching the kernel about any particular implementation.
+
+This page focuses on source and projection adapters: implementations that
+translate an external representation into kernel objects or project kernel
+objects back into an external representation.
 
 Examples include Markdown files, directories, LLM conversation exports,
 web pages, and future application-specific formats.
 
-A driver interprets; the kernel records. The kernel stores what a driver
+For source adapters, the adapter interprets and the kernel records. The kernel stores what an adapter
 produced using revisions, occurrences, derivations, and links, and never
 learns the external format itself (see [Information shapes](information-shapes.md)).
 
 ## Seam
 
-A driver is replaceable behind a capability-oriented contract. A read-only
-importer and a bidirectional filesystem driver implement different
+An adapter is replaceable behind a capability-oriented seam. A read-only
+importer and a bidirectional filesystem adapter implement different
 capabilities rather than pretending every source is writable.
 
 ```ts
-interface ImportDriver {
+interface ImportAdapter {
   detect(source: ExternalSource): Promise<Confidence>;
   import(source: ExternalSource): Promise<ImportResult>;
 }
 
-interface ExportDriver {
+interface ExportAdapter {
   project(change: KernelChange, binding: Binding): Promise<ProjectResult>;
 }
 
-interface ReconcileDriver {
+interface ReconcileAdapter {
   reconcile(binding: Binding): Promise<ReconcileResult>;
 }
 ```
 
-These interfaces are sketches, not settled APIs. The Markdown driver
+These interfaces are sketches, not settled APIs. The Markdown adapter
 implements all four capabilities: detect, import, project, reconcile.
 
-Chunk decomposition is not driver-private policy. A driver chooses *which*
+Chunk decomposition is not adapter-private policy. An adapter chooses *which*
 decomposition applies to its format, but the segmentation itself is a
-registered decomposer method — the Markdown driver uses `md/blocks@1` —
-so addresses and derived parts stay comparable across drivers (see
+registered decomposer method — the Markdown adapter uses `md/blocks@1` —
+so addresses and derived parts stay comparable across adapters (see
 [Decomposition](decomposition.md)).
 
 ## Responsibilities
@@ -51,7 +56,8 @@ so addresses and derived parts stay comparable across drivers (see
   object, via sidecar memory.
 - Report unsupported or lossy translations explicitly; nothing is silently
   dropped.
-- Attribute imported revisions to their driver actor (e.g. `driver:fs`).
+- Attribute imported revisions to their adapter actor (for example,
+  `adapter:filesystem`).
 - Surface divergence between the store and the external object; never
   resolve a two-sided conflict on its own authority.
 
@@ -61,12 +67,13 @@ so addresses and derived parts stay comparable across drivers (see
 - Persisting universal history.
 - Ranking search results.
 - Choosing what an agent sees.
-- Deciding conflicts: a driver detects divergence and files a
+- Deciding conflicts: an adapter detects divergence and files a
   reconciliation [proposal](proposals.md); acceptance is a user act.
 
-## The Markdown driver
+## The Markdown adapter
 
-The first driver is Markdown over the filesystem, acting as `driver:fs`.
+The first adapter is Markdown over the filesystem, acting as
+`adapter:filesystem`.
 It exercises every capability of the seam and proves round-tripping,
 identity preservation, and reconciliation against real files.
 
@@ -87,12 +94,12 @@ not interpreted further yet.
 
 ### Sidecar
 
-Round-trip memory lives in a sidecar owned by the driver, stored under
+Round-trip memory lives in a sidecar owned by the adapter, stored under
 the workspace [store](store.md) — never as inline markers in the `.md`
 file itself. The external file stays clean.
 
 ```text
-.substrate/sidecars/<relpath>.json
+.headspace/sidecars/<relpath>.json
 ```
 
 ```ts
@@ -123,7 +130,7 @@ proposal to rebind.
 ### Reconcile
 
 An external edit is detected when the file's hash differs from
-`lastProjectedFileHash`. The driver then matches the file's current
+`lastProjectedFileHash`. The adapter then matches the file's current
 blocks against the sidecar's chunks:
 
 ```text
@@ -135,27 +142,27 @@ blocks against the sidecar's chunks:
                            the reconciliation proposal
 ```
 
-Fast path: if Substrate holds no internal edits since the last sync,
+Fast path: if the workspace graph holds no internal edits since the last sync,
 matched-changed blocks apply directly as `revise` operations by actor
-`driver:fs` — an external-only edit is just an edit, arriving through the
-driver.
+`adapter:filesystem` — an external-only edit is just an edit, arriving through
+the adapter.
 
-If both sides changed, the driver files a reconciliation proposal
+If both sides changed, the adapter files a reconciliation proposal
 carrying its computed matching; the divergence resolves through the merge
 machinery in [Conflicts](conflicts.md). Never silent loss in either
-direction: external edits cannot vanish under a projection, and Substrate
+direction: external edits cannot vanish under a projection, and workspace graph
 edits cannot vanish under an import.
 
 Divergence handling follows the authority split: the store is
 authoritative for identity, structure, history, and provenance; the bound
-file is authoritative for bytes edited outside Substrate. The driver is
+file is authoritative for bytes edited with external tools. The adapter is
 the border crossing where the two are brought back into agreement.
 
 ## Open questions
 
-- Which driver comes next: a directory tree, or LLM conversation exports
+- Which adapter comes next: a directory tree, or LLM conversation exports
   as mapped in [Information shapes](information-shapes.md)?
-- Should the 0.5 similarity threshold be tunable per driver or per
+- Should the 0.5 similarity threshold be tunable per adapter or per
   binding?
 - How do sidecars travel when a workspace later syncs across machines?
 - When do opaque HTML blocks gain real parsing rather than pass-through?

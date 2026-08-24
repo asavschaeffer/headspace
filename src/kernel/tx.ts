@@ -22,7 +22,7 @@ import {
   proposalStaleReason,
   revisionText,
   validateCommit,
-  type SubstrateState,
+  type WorkspaceGraph,
 } from './state';
 import type {
   ActorId,
@@ -44,10 +44,10 @@ import type {
   RevisionId,
   SpanAddress,
 } from './types';
-import { MEDIA_COMPOSITE, MEDIA_TEXT } from './types';
+import { isCompositeMediaType, MEDIA_COMPOSITE, MEDIA_TEXT } from './types';
 
 export interface TxCtx {
-  state: SubstrateState;
+  state: WorkspaceGraph;
   actorId: ActorId;
   now?: () => string;
   // Durability hook: the commit is validated but NOT yet folded. Throwing here
@@ -106,7 +106,7 @@ function finish(
 
 export type PlaceAt = 'start' | 'end' | { after: OccurrenceId };
 
-function positionIn(state: SubstrateState, containerId: ChunkId, at: PlaceAt = 'end'): string {
+function positionIn(state: WorkspaceGraph, containerId: ChunkId, at: PlaceAt = 'end'): string {
   const sibs = childOccurrences(state, containerId);
   if (at === 'end') return keyBetween(sibs.length ? sibs[sibs.length - 1].position : null, null);
   if (at === 'start') return keyBetween(null, sibs.length ? sibs[0].position : null);
@@ -198,7 +198,7 @@ export async function revise(
 }
 
 // One atomic commit for a whole composite: the container, every child, and
-// their placements. This is what drivers use so an import can never be seen
+// their placements. This is what adapters use so an import can never be seen
 // (or persisted) half-done.
 export async function createComposite(
   ctx: TxCtx,
@@ -438,7 +438,7 @@ export function transclude(
 
 // ── promotion ────────────────────────────────────────────────────────────────
 
-const spanStale = (state: SubstrateState, span: SpanAddress): Revision => {
+const spanStale = (state: WorkspaceGraph, span: SpanAddress): Revision => {
   const rev = state.revisions.get(span.revisionId);
   if (!rev) throw new Error(`promote: unknown revision ${span.revisionId}`);
   const chunk = state.chunks.get(rev.chunkId)!;
@@ -458,7 +458,7 @@ export async function promoteExtract(
   const opId = newOperationId();
   const when = t(ctx);
   const parentRev = spanStale(ctx.state, opts.span);
-  if (parentRev.mediaType === MEDIA_COMPOSITE) throw new Error('promote: cannot extract from a composite; extract from its child');
+  if (isCompositeMediaType(parentRev.mediaType)) throw new Error('promote: cannot extract from a composite; extract from its child');
   const text = revisionText(ctx.state, parentRev.id);
   let { start, end } = opts.span;
   if (!(start >= 0 && end <= text.length && start < end)) throw new Error(`promote: span [${start},${end}) out of range`);
@@ -701,7 +701,7 @@ export function propose(
 }
 
 // Why is this proposal no longer applicable, or null if it is fresh.
-export function staleReason(state: SubstrateState, p: Proposal): string | null {
+export function staleReason(state: WorkspaceGraph, p: Proposal): string | null {
   return proposalStaleReason(state, p);
 }
 

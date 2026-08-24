@@ -1,7 +1,7 @@
 // The kernel vocabulary. Truth is graph-shaped: chunks are continuing identities,
 // revisions are immutable historical states, blobs are immutable payloads,
 // occurrences place chunks in containers, derivations record ancestry, links
-// record explicit connections. Everything else in Substrate is built over these.
+// record explicit connections. Everything else in Headspace is built over these.
 
 export type ChunkId = string;
 export type RevisionId = string;
@@ -12,13 +12,17 @@ export type DerivationId = string;
 export type OperationId = string;
 export type ProposalId = string;
 export type CommitId = string;
-export type ActorId = string; // "human:asa", "agent:<model>", "driver:fs", "external:<layer>"
+export type ActorId = string; // "human:asa", "agent:<model>", "adapter:filesystem", "external:<layer>"
 
 export const MEDIA_MARKDOWN = 'text/markdown';
 export const MEDIA_TEXT = 'text/plain';
 // A composite's content is its child occurrences; ordering lives in occurrence
 // positions, never in the blob, so rearrangement is not a content edit.
-export const MEDIA_COMPOSITE = 'application/x-substrate-composite';
+export const MEDIA_COMPOSITE = 'application/x-headspace-composite';
+
+export function isCompositeMediaType(mediaType: string): boolean {
+  return mediaType === MEDIA_COMPOSITE;
+}
 
 export interface Chunk {
   id: ChunkId;
@@ -195,17 +199,16 @@ export interface ProducerRef {
 
 export interface Proposal {
   id: ProposalId;
-  // The exact propose operation carries the complete input revision set. This
-  // stays optional only so pre-release snapshots written before 0.1.0 can be
-  // inspected; every newly created proposal records it.
-  operationId?: OperationId;
+  // The exact propose operation carries the complete input revision set.
+  operationId: OperationId;
   kind: ProposalKind;
   status: ProposalStatus;
   basisRevisionIds: RevisionId[]; // what the proposal was computed against
   // Revisions whose heads must remain current for this proposal to be honest.
   // Generation records every context revision here: a proposal may still be
   // structurally applicable after a context edit, but it is no longer fresh.
-  // Optional only for pre-release snapshots created before this field existed.
+  // Optional when freshness depends only on the proposal's basis and payload
+  // preconditions rather than additional current-head context.
   freshnessRevisionIds?: RevisionId[];
   freshnessRevisionStates?: ContextRevisionPrecondition[];
   freshnessStructure?: ContextStructurePrecondition;
@@ -215,7 +218,7 @@ export interface Proposal {
   note?: string; // short human-readable account of what is proposed and why
   createdBy: ActorId;
   createdAt: string;
-  resolution?: { by: ActorId; at: string; operationId?: OperationId; reason?: string };
+  resolution?: { by: ActorId; at: string; operationId: OperationId; reason?: string };
 }
 
 // The atomic unit of change: one operation, its resulting facts, one log append.
@@ -247,6 +250,6 @@ export interface Commit {
 
 export interface Actor {
   id: ActorId;
-  kind: 'human' | 'agent' | 'driver' | 'external';
+  kind: 'human' | 'agent' | 'adapter' | 'external';
   name: string;
 }

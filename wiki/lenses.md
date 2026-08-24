@@ -45,7 +45,7 @@ type LensFilter =
   | { kind: "term"; text: string }              // term index
   | { kind: "actor"; actorId: ActorId }         // provenance
   | { kind: "actorKind";
-      value: "human" | "agent" | "driver" | "external" }
+      value: "human" | "agent" | "adapter" | "external" }
   | { kind: "date"; from?: string; to?: string }
   | { kind: "operationKind"; value: string }    // operation history
   | { kind: "echo"; span: SpanAddress }         // span echo index
@@ -91,7 +91,7 @@ the evidence its actor is permitted to read, nothing more.
 ```text
 term-search lens   term predicate over the term index; highlights and
                    groups occurrences of a term across the scope
-provenance lens    actorKind grouping; colors human, model, driver, and
+provenance lens    actorKind grouping; colors human, model, adapter, and
                    external material distinctly
 ```
 

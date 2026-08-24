@@ -5,7 +5,7 @@ import {
   SingleFlightDrain,
   StateReplacementMutex,
   TruthQuarantine,
-} from '../src/client/useSubstrate';
+} from '../src/client/useWorkspace';
 
 let prevented = false;
 const event = {
@@ -110,6 +110,6 @@ assert.equal(truth.unknown, false, 'a later successful authoritative reload rest
 assert.equal(truth.failedReplacement('GET'), false);
 assert.equal(truth.unknown, false, 'a failed read does not make previously known truth ambiguous');
 assert.equal(truth.failedReplacement('POST'), true);
-assert.equal(truth.unknown, true, 'a failed mutating replacement quarantines its unknown server outcome');
+assert.equal(truth.unknown, true, 'a failed mutating replacement quarantines its unknown host outcome');
 
 console.log('client durability gates OK — reload preserves queued commits and in-flight proposal state');

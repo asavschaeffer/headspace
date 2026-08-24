@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSubstrateServer } from '../src/host/api';
+import { createHeadspaceHost } from '../src/host/api';
 import { makeBlob } from '../src/kernel/hash';
 import {
   newCommitId,
@@ -80,7 +80,9 @@ const mutateProposal = (
   refuses(materialize(baseLog), commit, pattern);
 };
 
-mutateProposal((proposal) => { delete proposal.operationId; }, /must name its propose operation/);
+mutateProposal((proposal) => {
+  delete (proposal as { operationId?: string }).operationId;
+}, /operationId must be a non-empty string/);
 mutateProposal((proposal) => {
   proposal.producer = { id: 'forged.provider', version: '9' };
 }, /producer disagrees/);
@@ -225,6 +227,10 @@ const original = propose(
   const wrongOperation = clone(valid);
   wrongOperation.facts.proposalUpdates![0].resolution!.operationId = baseLog[0].operation.id;
   refuses(materialize(historyLog), wrongOperation, /belongs to operation/);
+
+  const missingResolutionOperation = clone(valid);
+  delete (missingResolutionOperation.facts.proposalUpdates![0].resolution as { operationId?: string }).operationId;
+  refuses(materialize(historyLog), missingResolutionOperation, /operationId must be a non-empty string/);
 
   const unresolved = clone(valid);
   delete unresolved.facts.proposalUpdates![0].resolution;
@@ -438,29 +444,6 @@ const original = propose(
   assert.equal(state.proposals.get(placed.proposalId)!.status, 'superseded');
 }
 
-// The only compatibility escape hatch is explicit disk replay. Strict live
-// validation rejects omitted linkage; legacy replay still validates everything
-// else and retains sedimentary resolution history.
-{
-  const log: Commit[] = [];
-  const state = emptyState();
-  const ctx: TxCtx = { state, actorId: 'human:legacy', now, onCommit: (commit) => log.push(commit) };
-  const seed = await createChunk(ctx, { text: 'legacy' });
-  const candidate = propose(ctx, {
-    kind: 'suggested-edit',
-    basisRevisionIds: [seed.revisionId],
-    targetChunkIds: [seed.chunkId],
-    payload: [{ op: 'revise', chunkId: seed.chunkId, text: 'legacy suggestion' }],
-  });
-  rejectProposal(ctx, { proposalId: candidate.proposalId });
-  const legacy = clone(log);
-  delete legacy[1].facts.proposals![0].operationId;
-  delete legacy[2].facts.proposalUpdates![0].resolution!.operationId;
-  assert.throws(() => materialize(legacy), /must name its propose operation/);
-  const replayed = materialize(legacy, { allowLegacyProposalLinkageOmissions: true });
-  assert.equal(replayed.proposals.get(candidate.proposalId)!.status, 'rejected');
-}
-
 // Exercise the same duplicate-ID exploit through the live HTTP boundary.
 {
   const root = mkdtempSync(join(tmpdir(), 'headspace-proposal-boundary-'));
@@ -476,7 +459,7 @@ const original = propose(
     };
     next();
   });
-  const runtime = createSubstrateServer({ root, contentDirs: [], contentFiles: [], collaborators: [] });
+  const runtime = createHeadspaceHost({ root, contentDirs: [], contentFiles: [], collaborators: [] });
   if (typeof runtime.plugin.configureServer !== 'function') throw new Error('configureServer hook missing');
   (runtime.plugin.configureServer as unknown as (server: {
     httpServer: unknown;
@@ -560,4 +543,4 @@ const original = propose(
   }
 }
 
-console.log('proposal invariants OK — immutable history, inert review, exact acceptance, strict live admission, and legacy replay');
+console.log('proposal invariants OK — immutable history, inert review, exact acceptance, and strict current-format admission');

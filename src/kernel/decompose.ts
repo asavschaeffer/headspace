@@ -2,9 +2,9 @@
 // Parts are addresses, not chunks: nothing here mints durable identity.
 // Methods are versioned because segmentation is an interpretation.
 
-import { revisionText, type SubstrateState } from './state';
+import { revisionText, type WorkspaceGraph } from './state';
 import type { RevisionId, SpanAddress } from './types';
-import { MEDIA_COMPOSITE } from './types';
+import { isCompositeMediaType } from './types';
 
 export const METHOD_BLOCKS = 'md/blocks@1';
 export const METHOD_SENTENCES = 'sent/icu@1';
@@ -120,10 +120,10 @@ export function decomposeText(text: string, method: string): Array<Span & { kind
   }
 }
 
-export function decomposeRevision(state: SubstrateState, revisionId: RevisionId, method: string): DerivedPart[] {
+export function decomposeRevision(state: WorkspaceGraph, revisionId: RevisionId, method: string): DerivedPart[] {
   const rev = state.revisions.get(revisionId);
   if (!rev) throw new Error(`decompose: unknown revision ${revisionId}`);
-  if (rev.mediaType === MEDIA_COMPOSITE) {
+  if (isCompositeMediaType(rev.mediaType)) {
     throw new Error('decompose: composites decompose through their children, not their blob');
   }
   const text = revisionText(state, revisionId);

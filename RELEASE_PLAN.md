@@ -27,9 +27,9 @@ A capability is not complete merely because its kernel operation or endpoint exi
 - Strict TypeScript checking and the Vite production asset build pass.
 - The kernel, filesystem store, Markdown reconciliation, merge behavior, and lexical indexes have substantial automated coverage.
 - The current UI demonstrates navigation into a document, editing, raw-span promotion, deterministic dispatch, proposal acceptance/rejection, and explicit Markdown projection.
-- The current development server is fixed to the repository's own documentation corpus.
+- The current development host is fixed to the repository's own documentation corpus.
 - The production asset build has no production host for its API.
-- Ingestion is directly coupled to the Markdown driver; directory scans ignore non-Markdown files.
+- Ingestion is directly coupled to the Markdown adapter; directory scans ignore non-Markdown files.
 - Directory hierarchy is inferred from path strings rather than represented as navigable containers.
 - Dispatch uses the deterministic stub, selected context is not inspectable, and completed proposal outcomes disappear from the UI.
 
@@ -79,7 +79,7 @@ Acceptance:
 - A root-confined directory source emits explicit file and directory observations.
 - Each observation records source identity, relative path, media type, size, fingerprint, and symlink status.
 - An ingestion adapter declares its ID, version, accepted media types, and output behavior.
-- Native Markdown and plain-text adapters are separate reference tenants.
+- Native Markdown and plain-text adapters are separate reference implementations.
 - Each item reports `imported`, `updated`, `unchanged`, `proposal`, `unsupported`, or `failed` with adapter and diagnostic information.
 - A second scan and process restart preserve source identities.
 
@@ -111,7 +111,7 @@ Verified:
 
 - The API projects durable directory observations into stable `SourceId` parent edges; the client never has to invent hierarchy from display paths.
 - The persistent workspace header shows the active name and root, supports stable-ID breadcrumbs, and returns from Star to the originating container.
-- Directory portals expose nested skies while represented documents remain editable stars and unbound substrate documents remain visible at workspace scale.
+- Directory portals expose nested skies while represented documents remain editable stars and unbound graph-native documents remain visible at workspace scale.
 - Unsupported sources, failed refreshes, and missing sources remain visible and inspectable. A retained last-good representation stays usable without disguising its external status.
 - Deep document search hits illuminate every ancestor directory portal without rearranging the sky.
 - A `HEADSPACE_WORKSPACE` startup setting selects one local root; the repository design corpus remains the zero-configuration demo.
@@ -135,7 +135,7 @@ Acceptance:
 
 Verified:
 
-- The deterministic collaborator is a named tenant outside the kernel; dispatch requires an explicit completer and author identity.
+- The deterministic collaborator is a named adapter outside the kernel; dispatch requires an explicit completer and author identity.
 - The exact bounded context is visible before dispatch with roles, inclusion reasons, chunk, occurrence, and revision identities, including recursively rendered and pinned dependencies.
 - Text heads, redaction/tombstone state, occurrence order, placement, pinning, severing, and nested rendered dependencies are captured before provider latency and participate in proposal freshness.
 - Provider failure occurs before proposal creation and leaves the head, commits, operations, chunks, and proposal set unchanged.
@@ -143,7 +143,7 @@ Verified:
 - Acceptance provenance—including proposer, acceptor, input revisions, derivation source/operation, and outcome—survives log replay and restart.
 - Delayed-provider adversarial tests cover focus and child edits, nested edits, redaction, reorder, sever, pinned leaf, and pinned composite semantics.
 
-### Loop 5 — Prove replaceability with external tenants
+### Loop 5 — Prove replaceability with external adapters
 
 Status: complete
 
@@ -158,12 +158,12 @@ Acceptance:
 
 Verified:
 
-- The optional HTTP PDF-to-Markdown tenant retains the PDF source identity and records its exact observation, adapter, provider identity/version, derived output revisions, operations, and warnings. Its endpoint and bearer credential never enter durable state.
+- The optional HTTP PDF-to-Markdown adapter retains the PDF source identity and records its exact observation, adapter, provider identity/version, derived output revisions, operations, and warnings. Its endpoint and bearer credential never enter durable state.
 - Converter work is bounded by an end-to-end deadline, response-size cap, fatal UTF-8/JSON validation, redirect refusal, HTTPS credential rule, and a per-run retryable-failure circuit. Failure creates no partial representation or source materialization.
 - Write-ahead recovery binds initial imports and revisions to the exact adapter actor, product, source text, rendered text, output revisions, and composite child structure. Tampered or ambiguous historical work remains visibly pending rather than acquiring false provenance, while later human heads are preserved.
-- The optional OpenAI Responses tenant is configured only when both an API key and explicit model are present on the host. The browser sends an allowlisted collaborator ID, visible bounded context, and instruction; credentials stay host-side.
+- The optional OpenAI Responses adapter is configured only when both an API key and explicit model are present on the host. The browser sends an allowlisted collaborator ID, visible bounded context, and instruction; credentials stay host-side.
 - Remote proposal provenance records the configured capability, provider-resolved model, and response receipt. Provider, transport, timeout, malformed-response, or status failure creates no proposal or kernel truth.
-- The deterministic local collaborator remains available with no external configuration, and unavailable external tenants remain visible with actionable diagnostics.
+- The deterministic local collaborator remains available with no external configuration, and unavailable external adapters remain visible with actionable diagnostics.
 
 ### Loop 6 — Ship a release-shaped application
 
@@ -177,7 +177,7 @@ Acceptance:
 - An automated release-runtime test performs the complete product loop, stops the host, restarts it, and verifies integrated state and provenance.
 - Browser-side pending work is durable across reload, or reload is explicitly prevented until the host acknowledges it.
 - A clean checkout can install, test, typecheck, and build in CI using a declared Node version.
-- Headspace/Substrate naming is deliberately resolved.
+- Product and component vocabulary is deliberately resolved.
 - Package and lockfile versions agree; README, license decision, supported-platform statement, final release notes, and `v0.1.0` tag are ready.
 
 Verified:
@@ -186,8 +186,8 @@ Verified:
 - The runtime confines its workspace and static roots, rejects non-loopback binding, foreign request authorities and API origins, traversal and symlink escapes, and applies release-wide framing, referrer, and content-type protections.
 - The automated runtime test performs mixed ingestion, bounded selection, deterministic dispatch, proposal review and acceptance, host shutdown, fresh restart, and durable authorship, acceptance, input, derivation, and text checks.
 - Browser commits use a single-flight acknowledgement queue and unload warning. Reload/ingest waits for active dispatch and pending commits; divergence or an ambiguous mutating response quarantines the browser until a successful authoritative reload.
-- Node 22.12 is the declared minimum; package and lockfile both name `headspace` 0.1.0; CI is configured for Windows and Ubuntu; isolated copies on both platforms pass `npm ci`, the advisory audit, and the full test/typecheck/build gate. A live Vite 8 development host also serves the shell and substrate API correctly.
-- Headspace is the product name and Substrate is its internal kernel/store. The README records setup, data location, external egress, supported platforms, limitations, and the deliberate `UNLICENSED` decision.
+- Node 22.12 is the declared minimum; package and lockfile both name `headspace` 0.1.0; CI is configured for Windows and Ubuntu; isolated copies on both platforms pass `npm ci`, the advisory audit, and the full test/typecheck/build gate. A live Vite 8 development host also serves the shell and workspace API correctly.
+- Headspace is the product; a workspace is one user space; the workspace graph is the versioned canonical record of its material, relations, and history; the kernel is the shared invariant engine; the client is the browser session; the host is the authoritative local runtime; the store provides durability; seams are capability boundaries implemented by adapters; and Nebula and Star are product surfaces. The README records setup, the `.headspace/` data location, external egress, supported platforms, limitations, and the deliberate `UNLICENSED` decision.
 
 ### Post-0.1 hardening queue
 
@@ -195,7 +195,7 @@ These audit findings do not block the trusted, loopback-only 0.1 contract, but s
 
 - Make multi-commit HTTP batches atomic rather than admitting their commits sequentially.
 - Extend hostile-JSON shape validation uniformly across every generic fact collection, beyond the strict envelope and proposal paths required for this release.
-- Decide whether trusted external tenants may return arbitrary durable text/warnings, or whether future adapters need provider-output secret scanning and redaction.
+- Decide whether trusted external adapters may return arbitrary durable text/warnings, or whether future adapters need provider-output secret scanning and redaction.
 - Bound shutdown time for active HTTP requests before a future packaged or remotely managed host depends on graceful termination.
 - Move the Vite configuration dependency graph to explicit TypeScript extensions before Vite's native config loader becomes the default; 0.1.0 deliberately uses the current bundled loader.
 
@@ -203,6 +203,6 @@ These audit findings do not block the trusted, loopback-only 0.1 contract, but s
 
 Do not tag 0.1.0 until every acceptance statement above is either verified or deliberately removed from the release contract. A passing kernel suite alone is necessary but not sufficient; the released user loop is the product.
 
-Local implementation gate, 2026-08-22: **passed** — isolated Windows and Ubuntu copies pass `npm ci`, report zero known npm vulnerabilities, and pass 25/25 test files, strict TypeScript checking, and the Vite 8 production build; the source tree also passes an adversarial release audit and a documented-command restart smoke test.
+Local implementation gate, 2026-08-24: **passed** — the current naming and latest-format-only tree reports zero known npm vulnerabilities and passes 25/25 test files, strict TypeScript checking, and the Vite 8 production build. Earlier isolated Windows and Ubuntu copies also passed `npm ci` and the same release gate; CI must repeat that evidence from the final commit.
 
-Release operations still required before the tag: commit the dirty/untracked release tree without absorbing unrelated user work, connect a Git remote, let the Windows and Ubuntu CI jobs pass from that commit, then create `v0.1.0`. No remote or tag is currently configured. The authenticated account's existing public `asavs/headspace` repository contains a different legacy Python application and unrelated history, so this workback will not attach or overwrite it by inference.
+The naming/current-format release candidate is committed and clean. Release operations still required: connect the intended Git remote and let the Windows and Ubuntu CI jobs pass from that exact commit. The existing local annotated `v0.1.0` tag points to `233b7c1`, the parent of the naming refactor, so it is not the release candidate and must not be published. No remote or upstream is currently configured, which does not prove whether that tag was ever shared elsewhere. Recreate it only after confirming it is local-only; otherwise choose a new version rather than rewriting published history. The existing public `asavs/headspace` repository contains an unrelated earlier Python application, so this workback will not attach or overwrite it by inference.

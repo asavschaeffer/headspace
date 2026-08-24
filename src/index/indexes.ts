@@ -5,9 +5,9 @@
 // a stale index without a rebuild.
 
 import { METHOD_SENTENCES, METHOD_WORDS, decomposeText } from '../kernel/decompose';
-import { currentRevision, revisionText, type SubstrateState } from '../kernel/state';
+import { currentRevision, revisionText, type WorkspaceGraph } from '../kernel/state';
 import type { BlobHash, ChunkId, Revision, RevisionId } from '../kernel/types';
-import { MEDIA_COMPOSITE } from '../kernel/types';
+import { isCompositeMediaType } from '../kernel/types';
 
 export interface TermPosting {
   chunkId: ChunkId;
@@ -41,7 +41,7 @@ const wordSpans = (text: string) => decomposeText(text, METHOD_WORDS);
 
 // Is this index entry still answerable evidence? Current revision of a live
 // chunk, not redacted. One staleness definition everywhere.
-function visible(state: SubstrateState, chunkId: ChunkId, revisionId: RevisionId): boolean {
+function visible(state: WorkspaceGraph, chunkId: ChunkId, revisionId: RevisionId): boolean {
   const chunk = state.chunks.get(chunkId);
   if (!chunk || chunk.tombstoned || chunk.currentRevisionId !== revisionId) return false;
   return !state.revisions.get(revisionId)?.redacted;
@@ -51,20 +51,20 @@ function visible(state: SubstrateState, chunkId: ChunkId, revisionId: RevisionId
 // spans ALL non-redacted revisions (history included) for exact-content
 // equality. Composites are skipped everywhere: their blobs are join config,
 // not content.
-export function buildIndexes(state: SubstrateState): Indexes {
+export function buildIndexes(state: WorkspaceGraph): Indexes {
   const term = new Map<string, TermPosting[]>();
   const interning = new Map<BlobHash, RevisionId[]>();
   const echo = new Map<string, EchoSpan[]>();
 
   for (const rev of state.revisions.values()) {
-    if (rev.redacted || rev.mediaType === MEDIA_COMPOSITE) continue;
+    if (rev.redacted || isCompositeMediaType(rev.mediaType)) continue;
     push(interning, rev.blobHash, rev.id);
   }
 
   for (const chunk of state.chunks.values()) {
     if (chunk.tombstoned) continue;
     const rev = state.revisions.get(chunk.currentRevisionId);
-    if (!rev || rev.redacted || rev.mediaType === MEDIA_COMPOSITE) continue;
+    if (!rev || rev.redacted || isCompositeMediaType(rev.mediaType)) continue;
     const text = state.blobs.get(rev.blobHash)?.text ?? '';
     for (const w of wordSpans(text)) {
       push(term, normalizeToken(text.slice(w.start, w.end)), { chunkId: chunk.id, revisionId: rev.id, start: w.start });
@@ -80,7 +80,7 @@ export function buildIndexes(state: SubstrateState): Indexes {
 
 // Every query token must prefix-match some indexed token of the chunk; rank by
 // total matched postings, chunk id as deterministic tiebreak.
-export function searchChunks(state: SubstrateState, ix: Indexes, query: string): ChunkId[] {
+export function searchChunks(state: WorkspaceGraph, ix: Indexes, query: string): ChunkId[] {
   const qtokens = wordSpans(query).map((w) => normalizeToken(query.slice(w.start, w.end)));
   if (!qtokens.length) return [];
   const perToken = qtokens.map(() => new Map<ChunkId, number>());
@@ -106,7 +106,7 @@ export function searchChunks(state: SubstrateState, ix: Indexes, query: string):
 // Sentences of this chunk that also appear, verbatim after normalization, in
 // other visible chunks. Soft findings: promotion is someone else's explicit act.
 export function echoesOf(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   ix: Indexes,
   chunkId: ChunkId,
 ): { key: string; text: string; others: ChunkId[] }[] {
@@ -128,7 +128,7 @@ export function echoesOf(
 }
 
 // Chunks whose CURRENT revision carries this exact content.
-export function duplicatesOf(state: SubstrateState, ix: Indexes, blobHash: BlobHash): ChunkId[] {
+export function duplicatesOf(state: WorkspaceGraph, ix: Indexes, blobHash: BlobHash): ChunkId[] {
   const out = new Set<ChunkId>();
   for (const revId of ix.interning.get(blobHash) ?? []) {
     const rev = state.revisions.get(revId);
@@ -140,7 +140,7 @@ export function duplicatesOf(state: SubstrateState, ix: Indexes, blobHash: BlobH
 // Earliest visible bearer of this content — a query result, never a stored
 // crown: redact or tombstone the earliest and attribution reflows to the next
 // eligible revision (deletion.md).
-export function firstSeen(state: SubstrateState, ix: Indexes, blobHash: BlobHash): Revision | null {
+export function firstSeen(state: WorkspaceGraph, ix: Indexes, blobHash: BlobHash): Revision | null {
   let best: Revision | null = null;
   for (const revId of ix.interning.get(blobHash) ?? []) {
     const rev = state.revisions.get(revId);
@@ -152,9 +152,9 @@ export function firstSeen(state: SubstrateState, ix: Indexes, blobHash: BlobHash
   return best;
 }
 
-export type ProvenanceKind = 'human' | 'agent' | 'driver' | 'external';
+export type ProvenanceKind = 'human' | 'agent' | 'adapter' | 'external';
 
-export function provenanceKind(state: SubstrateState, chunkId: ChunkId): ProvenanceKind {
+export function provenanceKind(state: WorkspaceGraph, chunkId: ChunkId): ProvenanceKind {
   const prefix = currentRevision(state, chunkId).createdBy.split(':', 1)[0];
-  return prefix === 'human' || prefix === 'agent' || prefix === 'driver' ? prefix : 'external';
+  return prefix === 'human' || prefix === 'agent' || prefix === 'adapter' ? prefix : 'external';
 }

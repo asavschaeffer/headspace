@@ -69,7 +69,7 @@ for (const [apiKey, model, expectedReady] of [
   assert.doesNotMatch(JSON.stringify(adapter.capability), /secret-key/);
   if (!expectedReady) {
     await assert.rejects(() => dispatchToCollaborator([adapter], request), CollaboratorError);
-    assert.equal(calls, 0, 'an unavailable tenant never attempts provider I/O');
+    assert.equal(calls, 0, 'an unavailable adapter never attempts provider I/O');
   }
 }
 
@@ -259,16 +259,16 @@ await assert.rejects(
     /allowed size/.test(error.message),
 );
 
-// A real tenant still enters truth only through a proposal, with exact model
+// A real provider-backed adapter still enters truth only through a proposal, with exact model
 // authorship and operation inputs surviving restart.
-const root = mkdtempSync(join(tmpdir(), 'headspace-model-tenant-'));
+const root = mkdtempSync(join(tmpdir(), 'headspace-model-provider-'));
 let ws: WorkspaceStore | null = null;
 try {
   ws = await openWorkspace(root);
   const ctx = ws.ctxFor('human:dispatcher');
   const doc = await createComposite(ctx, {
     join: '\n\n',
-    blocks: [{ text: '# Model tenant', mediaType: MEDIA_MARKDOWN }],
+    blocks: [{ text: '# Model provider', mediaType: MEDIA_MARKDOWN }],
   });
   const before = {
     head: ws.state.head,
@@ -349,4 +349,4 @@ try {
   rmSync(root, { recursive: true, force: true });
 }
 
-console.log('collaborator tenants OK — explicit configuration, bounded remote dispatch, inert failure, and durable model provenance');
+console.log('collaborator adapters OK — explicit configuration, bounded remote dispatch, inert failure, and durable model provenance');

@@ -1,6 +1,6 @@
-// End-to-end check against a running dev server (npm run dev), simulating the
-// browser: fetch state, apply a commit locally, post it, verify server truth.
-// Not part of the auto-run suite (no .test suffix): it needs the live server.
+// End-to-end check against a running development host (npm run dev), simulating
+// the browser: fetch state, apply a commit locally, post it, verify host truth.
+// Not part of the auto-run suite (no .test suffix): it needs the live host.
 import assert from 'node:assert';
 import { OFFLINE_COLLABORATOR, stubCompleter } from '../src/collaboration/stub';
 import { deserializeState } from '../src/kernel/serialize';
@@ -40,11 +40,11 @@ const r = await fetch(`${base}/api/commits`, {
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ commits: sent }),
 });
-assert.equal(r.status, 200, `server refused: ${r.status} ${await r.text()}`);
+assert.equal(r.status, 200, `host refused: ${r.status} ${await r.text()}`);
 
 const after = await get();
-assert.equal(after.state.head, state.head, 'server head matches client head after replay');
-const serverText = renderChunk(after.state, doc.docChunkId);
-assert.ok(serverText.includes('live-loop verified block'), 'server holds the revised block');
-assert.ok(serverText.startsWith(before.slice(0, 200)), 'original doc content intact');
-console.log(`live loop OK — ${sent.length} commits replayed, server head ${after.state.head?.slice(0, 12)}…`);
+assert.equal(after.state.head, state.head, 'host head matches client head after replay');
+const hostText = renderChunk(after.state, doc.docChunkId);
+assert.ok(hostText.includes('live-loop verified block'), 'host holds the revised block');
+assert.ok(hostText.startsWith(before.slice(0, 200)), 'original doc content intact');
+console.log(`live loop OK — ${sent.length} commits replayed, host head ${after.state.head?.slice(0, 12)}…`);

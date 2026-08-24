@@ -51,7 +51,7 @@ const configured = (
   pdfConverter: {
     url: 'https://pdf.example.test/convert',
     bearerToken: 'test-only-secret',
-    serviceIdentity: 'tenant-a',
+    serviceIdentity: 'provider-a',
     implementationVersion: 'converter-2026.08',
     timeoutMs: 100,
     maxResponseBytes: 16 * 1024,
@@ -68,16 +68,16 @@ try {
     const neverFetch: typeof globalThis.fetch = async () => {
       throw new Error('capability inspection must not fetch');
     };
-    const tenantA = ingestionAdapterCapabilities(configured(neverFetch))[2];
-    const tenantB = ingestionAdapterCapabilities(
-      configured(neverFetch, { serviceIdentity: 'tenant-b', implementationVersion: 'converter-9' }),
+    const providerA = ingestionAdapterCapabilities(configured(neverFetch))[2];
+    const providerB = ingestionAdapterCapabilities(
+      configured(neverFetch, { serviceIdentity: 'provider-b', implementationVersion: 'converter-9' }),
     )[2];
-    assert.deepEqual(tenantA.provider, {
-      identity: 'tenant-a',
+    assert.deepEqual(providerA.provider, {
+      identity: 'provider-a',
       implementationVersion: 'converter-2026.08',
     });
-    assert.deepEqual(tenantB.provider, { identity: 'tenant-b', implementationVersion: 'converter-9' });
-    assert.notDeepEqual(tenantA.provider, tenantB.provider);
+    assert.deepEqual(providerB.provider, { identity: 'provider-b', implementationVersion: 'converter-9' });
+    assert.notDeepEqual(providerA.provider, providerB.provider);
 
     const insecure = ingestionAdapterCapabilities(
       configured(neverFetch, { url: 'http://converter.example.test/convert' }),
@@ -87,7 +87,7 @@ try {
       insecure.availability.status === 'unavailable' && insecure.availability.diagnostic.code,
       'adapter.pdf-converter-insecure-token-transport',
     );
-    assert.deepEqual(insecure.provider, tenantA.provider);
+    assert.deepEqual(insecure.provider, providerA.provider);
     const loopback = ingestionAdapterCapabilities(
       configured(neverFetch, { url: 'http://127.0.0.1:4319/convert' }),
     )[2];
@@ -131,7 +131,7 @@ try {
     active = null;
   }
 
-  // Changing a configured converter tenant is an adapter change even if the
+  // Changing a configured converter provider is an adapter change even if the
   // source bytes and produced Markdown are identical.
   {
     const root = freshRoot('headspace-pdf-provider-identity-');
@@ -147,30 +147,30 @@ try {
       await ingestWorkspace(
         active,
         { contentFiles: ['same.pdf'] },
-        configured(fetch, { serviceIdentity: 'tenant-b', implementationVersion: 'converter-9' }),
+        configured(fetch, { serviceIdentity: 'provider-b', implementationVersion: 'converter-9' }),
       ),
       'same.pdf',
     );
     assert.equal(first.status, 'imported');
-    assert.equal(second.status, 'updated', 'a tenant switch cannot silently reuse the old representation');
+    assert.equal(second.status, 'updated', 'a provider switch cannot silently reuse the old representation');
     assert.equal(calls, 2);
     assert.equal(second.observation.sourceId, first.observation.sourceId);
     assert.equal(second.observation.id, first.observation.id);
     assert.equal(second.representation?.rootChunkId, first.representation?.rootChunkId);
     assert.notEqual(second.representation?.id, first.representation?.id);
     assert.deepEqual(second.representation?.adapter.provider, {
-      identity: 'tenant-b',
+      identity: 'provider-b',
       implementationVersion: 'converter-9',
     });
     const apiSource = workspacePayload(root, active).sources.find(
       (source) => source.observation.relPath === 'same.pdf',
     );
     assert.deepEqual(apiSource?.representation?.adapter.provider, {
-      identity: 'tenant-b',
+      identity: 'provider-b',
       implementationVersion: 'converter-9',
     });
     const catalogText = readFileSync(ingestionCatalogPath(root), 'utf8');
-    assert.match(catalogText, /tenant-b/);
+    assert.match(catalogText, /provider-b/);
     assert.equal(catalogText.includes('pdf.example.test'), false);
     assert.equal(catalogText.includes('test-only-secret'), false);
     active.close();
@@ -183,7 +183,7 @@ try {
     assert.ok(restartedNode);
     assert.equal(
       restartedNode.adapterLabel,
-      'headspace.pdf-to-markdown.http@1.0.0 via tenant-b@converter-9',
+      'headspace.pdf-to-markdown.http@1.0.0 via provider-b@converter-9',
     );
     assert.ok(restartedNode.diagnostics.includes('stable warning'));
     assert.ok(restartedNode.diagnostics.some((message) => /HEADSPACE_PDF_CONVERTER_URL/.test(message)));
@@ -394,26 +394,34 @@ try {
     const pendingCatalog = readIngestionCatalog(root)!;
     assert.equal(pendingCatalog.pendingMaterializations.length, 1);
     assert.equal(pendingCatalog.pendingMaterializations[0].operationKind, 'revise');
-    assert.equal(pendingCatalog.pendingMaterializations[0].warnings[0].message, 'v2 exact warning');
-    assert.equal(pendingCatalog.pendingMaterializations[0].priorRepresentationId, first.representation?.id);
+    const pending = pendingCatalog.pendingMaterializations[0];
+    if (pending.operationKind !== 'revise') throw new Error('expected a current-format revise intent');
+    assert.equal(pending.warnings[0].message, 'v2 exact warning');
+    assert.equal(pending.priorRepresentationId, first.representation?.id);
     assert.deepEqual(
-      pendingCatalog.pendingMaterializations[0].priorOutputRevisionIds,
+      pending.priorOutputRevisionIds,
       first.representation?.outputRevisionIds,
     );
     const correlatedOperation = [...active.state.operations.values()].find(
       (operation) =>
         (operation.params as Record<string, unknown> | undefined)?.ingestionToken ===
-        pendingCatalog.pendingMaterializations[0].token,
+        pending.token,
     );
     assert.ok(correlatedOperation);
     assert.equal(
       (correlatedOperation.params as Record<string, unknown>).productIdentityHash,
-      pendingCatalog.pendingMaterializations[0].productIdentityHash,
+      pending.productIdentityHash,
     );
-    // Exercise the migration fallback too: old pending records lack the new
-    // embedded provenance but still point at their durable prior binding.
-    delete pendingCatalog.pendingMaterializations[0].priorRepresentationId;
-    delete pendingCatalog.pendingMaterializations[0].priorOutputRevisionIds;
+    // Current revise intents require exact product and historical provenance.
+    // Missing fields are rejected rather than synthesized from another binding.
+    for (const field of ['productIdentityHash', 'priorRepresentationId', 'priorOutputRevisionIds'] as const) {
+      const malformed = structuredClone(pendingCatalog) as unknown as {
+        pendingMaterializations: Array<Record<string, unknown>>;
+      };
+      delete malformed.pendingMaterializations[0][field];
+      writeFileSync(ingestionCatalogPath(root), `${JSON.stringify(malformed, null, 2)}\n`);
+      assert.throws(() => readIngestionCatalog(root), new RegExp(field));
+    }
     writeFileSync(ingestionCatalogPath(root), `${JSON.stringify(pendingCatalog, null, 2)}\n`);
 
     const human = await revise(active.ctxFor('human:after-converter'), {
@@ -443,7 +451,7 @@ try {
     assert.ok(recovered.representation?.operationIds.includes(correlatedOperation.id));
     assert.equal(recovered.representation?.operationIds.includes(humanOperationId), false);
     assert.deepEqual(recovered.representation?.adapter.provider, {
-      identity: 'tenant-a',
+      identity: 'provider-a',
       implementationVersion: 'converter-2026.08',
     });
     assert.equal(readIngestionCatalog(root)?.pendingMaterializations.length, 0);
@@ -533,7 +541,7 @@ try {
     assert.match(proposalB.note ?? '', /warning B/);
     assert.equal((proposalB.note ?? '').includes('warning A'), false);
     assert.deepEqual(proposalB.producer, {
-      id: 'tenant-a',
+      id: 'provider-a',
       version: 'converter-2026.08',
       implementation: 'headspace.pdf-to-markdown.http@1.0.0',
       receiptId: proposalB.producer?.receiptId,

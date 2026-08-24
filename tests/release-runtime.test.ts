@@ -53,7 +53,7 @@ mkdirSync(join(dist, 'assets'), { recursive: true });
 mkdirSync(emptyDist, { recursive: true });
 mkdirSync(outsideAssets, { recursive: true });
 mkdirSync(escapedIndexDist, { recursive: true });
-mkdirSync(join(corruptWorkspace, '.substrate'), { recursive: true });
+mkdirSync(join(corruptWorkspace, '.headspace'), { recursive: true });
 writeFileSync(join(workspace, 'notes', 'focus.md'), '# Release focus\n\nA durable local thought.\n');
 writeFileSync(join(workspace, 'references', 'plain.txt'), 'A second ingestible representation.\n');
 writeFileSync(join(workspace, 'references', 'opaque.bin'), Buffer.from([0, 1, 2, 3]));
@@ -62,7 +62,7 @@ writeFileSync(join(dist, 'assets', 'app.js'), 'globalThis.headspaceRelease = tru
 writeFileSync(join(sandbox, 'secret.txt'), secret);
 writeFileSync(join(outsideAssets, 'secret.txt'), secret);
 writeFileSync(distFile, 'not a directory');
-writeFileSync(join(corruptWorkspace, '.substrate', 'log.jsonl'), 'not a commit\n');
+writeFileSync(join(corruptWorkspace, '.headspace', 'log.jsonl'), 'not a commit\n');
 
 const directoryLinkType = process.platform === 'win32' ? 'junction' : 'dir';
 let directoryLinksAvailable = false;
@@ -149,7 +149,7 @@ try {
   assert.equal(lockedRuntime.server.listening, false);
   await lockedRuntime.close();
 
-  const catalogPath = join(workspace, '.substrate', 'ingestion.json');
+  const catalogPath = join(workspace, '.headspace', 'ingestion.json');
   const catalogBeforeRejectedRequests = readFileSync(catalogPath, 'utf8');
 
   const rebound = await rawGet(`${firstBase}/api/state`, { host: 'evil.example' });
@@ -209,6 +209,8 @@ try {
 
   // Exercise the explicit release ingest endpoint before reconstructing the
   // browser's local materialized state.
+  const removedSyncAlias = await fetch(`${firstBase}/api/sync`, { method: 'POST' });
+  assert.equal(removedSyncAlias.status, 404, 'the pre-release sync route alias is not exposed');
   const ingestion = await fetch(`${firstBase}/api/ingest`, { method: 'POST' });
   if (ingestion.status !== 200) {
     assert.fail(`release ingest failed (${ingestion.status}): ${await ingestion.text()}`);

@@ -1,6 +1,6 @@
 import type { ChunkId } from '../kernel/types';
 import type { IngestionStatus, SourceKind } from '../host/ingestion';
-import type { BindingInfo, SourceItemView } from './useSubstrate';
+import type { BindingInfo, SourceItemView } from './useWorkspace';
 
 export const WORKSPACE_ROOT = '@workspace';
 export type WorkspaceContainerId = typeof WORKSPACE_ROOT | string;

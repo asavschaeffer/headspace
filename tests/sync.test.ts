@@ -7,7 +7,7 @@ import { openWorkspace, type WorkspaceStore } from '../src/host/store-fs';
 
 const envelopes: string[] = [];
 const freshEnvelope = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'substrate-sync-'));
+  const dir = mkdtempSync(join(tmpdir(), 'headspace-sync-'));
   envelopes.push(dir);
   return dir;
 };
@@ -30,7 +30,7 @@ const trySymlink = (target: string, path: string, type: 'file' | 'dir' | 'juncti
 
 let linksExercised = 0;
 try {
-  // The compatibility sync summary now rides over native Markdown and text
+  // The sync summary rides over native Markdown and text
   // adapters while preserving recursive, case-insensitive Markdown handling.
   {
     const envelope = freshEnvelope();
@@ -75,7 +75,7 @@ try {
         contentFiles: ['../outside/secret.md', secret],
       });
       assert.deepEqual(report.imported, []);
-      assert.equal(ws.state.chunks.size, 0, 'outside Markdown never enters the substrate');
+      assert.equal(ws.state.chunks.size, 0, 'outside Markdown never enters Headspace');
     } finally {
       close(ws);
       ws = null;

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This page orders the build. Every other page says what Substrate is; this one
+This page orders the build. The other pages describe Headspace's architecture; this one
 says what gets built first, what proof each stage owes, and — honestly — how
 much of it exists right now. The plan is dependency-ordered: nothing here
 overrides a design page, and a milestone is not complete until its named proof
@@ -20,7 +20,7 @@ proofs, not by lines.
 ### The kernel is built before anything that depends on it
 
 The order runs inward-out: types and invariants first, then durability, then
-operations, then the seams that translate the world in and out ([drivers](drivers.md)),
+operations, then the seams that translate the world in and out ([adapters](adapters.md)),
 then the derived layers ([index](index.md), [lenses](lenses.md)) that are
 rebuildable and therefore safe to build last. Derived layers never determine
 identity, so deferring them costs nothing but features.
@@ -33,12 +33,12 @@ M1  kernel              types + transactions                    invariant tests:
                                                                 immutability, occurrence
                                                                 acyclicity, atomic promote,
                                                                 proposal freshness
-M2  persistence         .substrate log/blobs/snapshot           crash-safe append; reload
+M2  persistence         .headspace log/blobs/snapshot           crash-safe append; reload
                         behind StorePort                        equivalence:
                                                                 materialize(log) === snapshot
 M3  operations +        full transaction vocabulary;            generation is proposal-first
     proposals           select/reduce/generate pipeline         end to end
-M4  markdown driver     ingest -> sidecar -> project ->         round-trip: import then export
+M4  markdown adapter    ingest -> sidecar -> project ->         round-trip: import then export
                         external-edit reconcile                 is byte-stable on untouched
                                                                 files
 M5  decomposition +     decomposers + promote shapes +          selection-to-promotion works
@@ -61,7 +61,7 @@ target's current revision is no longer in `basisRevisionIds`.
 
 M2 implements the `StorePort` seam of [Store](store.md) — `openWorkspace`,
 `append(commit)`, `readLog(from)`, `loadSnapshot`, `saveSnapshot`, `getBlob`,
-`putBlob` — over the `.substrate/` layout. The reload-equivalence proof is the
+`putBlob` — over the `.headspace/` layout. The reload-equivalence proof is the
 central one:
 
 ```ts
@@ -73,10 +73,10 @@ M3 makes model output real without making it authoritative: `generate`
 records `inputRevisionIds` from the reduced set and always yields a
 [Proposal](proposals.md), inert until accepted.
 
-M4 is the first driver and the first authority split: the store authoritative
+M4 is the first adapter and the first authority split: the store authoritative
 for identity, structure, history, and provenance; the bound file authoritative
-for bytes edited outside Substrate; divergence reconciled through the driver
-per [Drivers](drivers.md) and [Conflicts](conflicts.md), never silently.
+for bytes edited with external tools; divergence reconciled through the adapter
+per [Adapters](adapters.md) and [Conflicts](conflicts.md), never silently.
 
 M5 delivers the three promotion shapes of [Decomposition](decomposition.md)
 — extracted chunk, copied chunk, addressable span — reachable from a text
@@ -104,7 +104,7 @@ partial.
 - M1: the kernel vocabulary lives in `src/kernel/` with transactions applied
   atomically through `applyCommit`; the invariant suite (`tests/kernel.test.ts`)
   pins immutability, acyclicity, atomic promotion, and proposal freshness.
-- M2: `.substrate/` (append-only `log.jsonl`, content-addressed `blobs/`,
+- M2: `.headspace/` (append-only `log.jsonl`, content-addressed `blobs/`,
   atomic `snapshot.json`, single-writer lock) sits behind the `WorkspaceStore`
   port in `src/host/store-fs.ts`; reload equivalence and torn-tail recovery
   are proven in `tests/store-fs.test.ts`. Snapshot cadence: every 50 commits
@@ -112,10 +112,10 @@ partial.
 - M3: the full transaction vocabulary is implemented; `generate` is
   proposal-first end to end, with the model actor as revision creator and the
   accepting actor on the operation, behind a replaceable `Completer` seam
-  (a stub completer stands where the model driver plugs in).
-- M4: the markdown driver imports, projects, and reconciles with sidecars
-  under `.substrate/sidecars/`; canonical files round-trip byte-stable;
-  external-only edits fast-forward as `driver:fs` revisions; two-sided
+  (a stub completer stands where the model adapter plugs in).
+- M4: the Markdown adapter imports, projects, and reconciles with sidecars
+  under `.headspace/sidecars/`; canonical files round-trip byte-stable;
+  external-only edits fast-forward as `adapter:filesystem` revisions; two-sided
   divergence raises reconciliation proposals.
 - M5: extract, copy, and span-anchor promotion run from a text selection in
   the star.
@@ -126,8 +126,8 @@ partial.
 - M8: `ExternalRef` and the candidate shapes compile; the external cache
   store does not exist yet, and no layer fetches.
 
-The browser and the dev server run the same kernel: the client applies
-commits locally and posts them; the server replays each commit (validation)
+The browser and the development host run the same kernel: the client applies
+commits locally and posts them; the host replays each commit (validation)
 and appends it to the log. Three-way merge (`src/kernel/merge.ts`) raises
 two-parent merge proposals per [Conflicts](conflicts.md).
 

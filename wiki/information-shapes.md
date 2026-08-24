@@ -3,10 +3,10 @@
 ## Purpose
 
 Concrete information types act as architectural fixtures. They test whether the
-kernel, drivers, decomposition rules, and views can represent real material
+kernel, adapters, decomposition rules, and views can represent real material
 without adding domain-specific concepts to the universal core.
 
-A driver decides how an external form is interpreted. The kernel records the
+An adapter decides how an external form is interpreted. The kernel records the
 result using occurrences, derivations, and links. A view chooses the most useful
 projection for a task.
 
@@ -66,7 +66,7 @@ Possible mapping:
 - an authored hyperlink is a link from a source span to a chunk, revision, or
   external address;
 - the source HTML or Markdown blob remains available for faithful round-trip;
-- a driver or decomposer exposes block and inline structure without requiring
+- an adapter or decomposer exposes block and inline structure without requiring
   every token to become a chunk.
 
 This fixture shows that block order, inline addresses, content identity, and
@@ -78,5 +78,5 @@ external binding are separate concerns.
   single numeric index?
 - Which explicit structures from an imported document are promoted immediately,
   and which remain derived parser facts?
-- How does a driver preserve faithful source order while allowing promoted
+- How does an adapter preserve faithful source order while allowing promoted
   chunks to be rearranged?

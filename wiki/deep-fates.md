@@ -3,7 +3,8 @@
 ## Purpose
 
 Deep fates are the visible histories and relationships that connect repeated,
-copied, referenced, transcluded, and transformed material across Substrate.
+copied, referenced, transcluded, and transformed material across the workspace
+graph.
 
 The user-facing question is:
 
@@ -17,8 +18,8 @@ The kernel-facing question is:
 ## Core idea
 
 When a writer creates `the lake is still`, and another writer later creates the
-same phrase, Substrate may record a relationship between them without making
-them the same editable object.
+same phrase, the workspace graph may record a relationship between them without
+making them the same editable object.
 
 The relationship can say:
 
@@ -137,7 +138,7 @@ document occurrence --renders--> pinned source revision
 ```
 
 The user's document remains stable because it renders a pinned revision. If the
-source changes, Substrate can notify the user and offer an explicit update.
+source changes, the client can notify the user and offer an explicit update.
 
 This preserves authorship while keeping the deep fate alive.
 
@@ -218,7 +219,7 @@ socially owned by someone else.
 
 ## Edit behavior
 
-If `the lake is still` becomes `the lake is stormy`, Substrate can preserve
+If `the lake is still` becomes `the lake is stormy`, Headspace can preserve
 partial fate:
 
 ```text

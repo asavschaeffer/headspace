@@ -12,7 +12,7 @@ objects. They look in two directions at once:
 Example: someone wrote `the lake is still` two years ago, and another writer
 writes `the lake is still` today.
 
-Substrate should be able to reveal the deep relation between those phrases
+Headspace should be able to reveal the deep relation between those phrases
 without forcing them to be the same editable object.
 
 Janus watches over thresholds: same/different, copy/edit, source/descendant,

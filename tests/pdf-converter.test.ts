@@ -80,7 +80,7 @@ const configuredRuntime: IngestionRuntime = {
   pdfConverter: {
     url: 'https://converter.invalid/v1/pdf-to-markdown',
     bearerToken: 'host-secret-token',
-    serviceIdentity: 'test-converter-tenant',
+    serviceIdentity: 'test-converter-provider',
     implementationVersion: '2026.08',
   },
 };
@@ -114,7 +114,7 @@ try {
   )!;
   assert.deepEqual(configuredCapability.availability, { status: 'ready' });
   assert.deepEqual(configuredCapability.provider, {
-    identity: 'test-converter-tenant',
+    identity: 'test-converter-provider',
     implementationVersion: '2026.08',
   });
 
@@ -135,7 +135,7 @@ try {
   assert.deepEqual(good.representation.adapter, {
     id: 'headspace.pdf-to-markdown.http',
     version: '1.0.0',
-    provider: { identity: 'test-converter-tenant', implementationVersion: '2026.08' },
+    provider: { identity: 'test-converter-provider', implementationVersion: '2026.08' },
   });
   assert.equal(good.representation.warnings[0].code, 'adapter.pdf-converter-warning');
   assert.match(good.representation.warnings[0].message, /low-confidence OCR/);
@@ -180,7 +180,7 @@ try {
   const durableCatalogText = readFileSync(ingestionCatalogPath(root), 'utf8');
   assert.equal(durableCatalogText.includes('host-secret-token'), false, 'host credentials are never persisted in the catalog');
   assert.equal(durableCatalogText.includes('converter.invalid'), false, 'the converter endpoint is never persisted in the catalog');
-  assert.match(durableCatalogText, /test-converter-tenant/);
+  assert.match(durableCatalogText, /test-converter-provider/);
   assert.match(durableCatalogText, /2026\.08/);
 
   const rootChunkId = good.representation.rootChunkId;
@@ -195,7 +195,7 @@ try {
   assert.equal(offlineDerived.diagnostics[0].code, 'adapter.pdf-converter-unconfigured');
   assert.equal(calls.length, 4, 'restart reuse does not contact the converter');
 
-  console.log('PDF converter tenant OK — derived Markdown is durable, non-projecting, and failure-isolated');
+  console.log('PDF converter provider OK — derived Markdown is durable, non-projecting, and failure-isolated');
 } finally {
   ws?.close();
   rmSync(envelope, { recursive: true, force: true });

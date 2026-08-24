@@ -1,7 +1,7 @@
-// Compatibility orchestration over the observable ingestion seam. New sources
+// Sync orchestration over the observable ingestion seam. New sources
 // are adapted, known native sources reconcile, and watched sources raise
-// update proposals. The richer per-item report travels alongside the original
-// summary while API/client callers migrate from the old "sync" vocabulary.
+// update proposals. The report pairs summary metrics with the complete
+// per-item ingestion result.
 
 import { scanWatchedSources } from '../kernel/tx';
 import { ingestWorkspace, type IngestionRunReport } from './ingestion';
@@ -28,7 +28,7 @@ export async function syncWorkspace(
     imported: representedFiles.filter((item) => item.status === 'imported').map((item) => item.observation.relPath),
     fastForwarded: representedFiles.filter((item) => item.status === 'updated').map((item) => item.observation.relPath),
     proposals: representedFiles.flatMap((item) => (item.proposalId ? [item.proposalId] : [])),
-    sourceUpdates: scanWatchedSources(ws.ctxFor('driver:fs')),
+    sourceUpdates: scanWatchedSources(ws.ctxFor('adapter:filesystem')),
     unchanged: representedFiles.filter((item) => item.status === 'unchanged').length,
     ingestion,
   };

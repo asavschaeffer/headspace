@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Deletion governs how Substrate removes, hides, tombstones, severs, or redacts
+Deletion governs how Headspace removes, hides, tombstones, severs, or redacts
 objects without corrupting identity, provenance, permissions, indexes, or deep
 fates.
 
@@ -103,4 +103,3 @@ The practical implementation can start with:
 4. redact content/attribution from visible indexes.
 
 Hard delete can remain a rarer administrative or retention operation.
-

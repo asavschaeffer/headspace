@@ -9,7 +9,7 @@ import { importMarkdownFile, reconcileMarkdownFile } from '../src/host/markdown'
 const root = mkdtempSync(join(tmpdir(), 'headspace-reconcile-confidence-'));
 try {
   const state = emptyState();
-  const ctx: TxCtx = { state, actorId: 'driver:fs' };
+  const ctx: TxCtx = { state, actorId: 'adapter:filesystem' };
   // Similarity intentionally samples the head and tail of blocks above its
   // exact-comparison cap. Change only the unseen middle so the sampled score is
   // maximally convincing while still being explicitly approximate evidence.

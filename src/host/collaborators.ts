@@ -1,4 +1,4 @@
-// Host-side model tenants. Secrets and provider protocols terminate here; the
+// Host-side model adapters. Secrets and provider protocols terminate here; the
 // kernel receives only a generic completer result and an author identity.
 
 import type { ContextItem, ReducedContext } from '../kernel/select';

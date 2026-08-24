@@ -2,8 +2,8 @@
 
 ## Purpose
 
-External knowledge layers connect Substrate to entities that live outside any
-workspace: encyclopedia articles, structured knowledge bases, and the general
+External knowledge layers connect a Headspace workspace to entities that live
+outside it: encyclopedia articles, structured knowledge bases, and the general
 web.
 
 The external seam answers three questions: which outside sources a workspace is

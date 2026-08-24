@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { SubstrateHook } from './App';
+import type { WorkspaceSession } from './App';
 import { ancestorContainers, docList, labelOf, proposalsForDoc } from './client/helpers';
 import {
   WORKSPACE_ROOT,
@@ -61,25 +61,25 @@ const keyboardActivate = (event: React.KeyboardEvent<SVGGElement>, action: () =>
 };
 
 export function Nebula({
-  sub,
+  session,
   containerId,
   onOpenContainer,
   onFocus,
 }: {
-  sub: SubstrateHook;
+  session: WorkspaceSession;
   containerId: WorkspaceContainerId;
   onOpenContainer: (id: WorkspaceContainerId) => void;
   onFocus: (id: ChunkId) => void;
 }) {
-  const { state, bindings, sources } = sub.ws!;
+  const { state, bindings, sources } = session.ws!;
   const [query, setQuery] = useState('');
   const [lens, setLens] = useState<'none' | 'provenance'>('none');
   const [selectedIssue, setSelectedIssue] = useState<string | null>(null);
 
   useEffect(() => setSelectedIssue(null), [containerId]);
 
-  const indexes = useMemo(() => buildIndexes(state), [sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
-  const children = useMemo(() => workspaceChildren(sources, containerId), [sources, containerId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const indexes = useMemo(() => buildIndexes(state), [session.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const children = useMemo(() => workspaceChildren(sources, containerId), [sources, containerId, session.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const directories = children.filter((node) => node.kind === 'directory');
   const represented = children.filter((node) => node.docChunkId);
   const issues = children.filter((node) => node.kind !== 'directory' && !node.docChunkId);
@@ -127,7 +127,7 @@ export function Nebula({
     const counts = new Map<ChunkId, number>();
     for (const doc of docs) counts.set(doc.id, proposalsForDoc(state, doc.id).length);
     return counts;
-  }, [docs, state, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [docs, state, session.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const agentTouched = useMemo(() => {
     const touched = new Set<ChunkId>();
@@ -138,10 +138,10 @@ export function Nebula({
       }
     }
     return touched;
-  }, [lens, docs, state, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lens, docs, state, session.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = children.find((child) => child.sourceId === selectedIssue) ?? null;
-  const currentLabel = containerLabel(sources, containerId, sub.ws!.identity?.displayName ?? 'workspace');
+  const currentLabel = containerLabel(sources, containerId, session.ws!.identity?.displayName ?? 'workspace');
 
   return (
     <main className="nebula">
@@ -282,8 +282,8 @@ export function Nebula({
       {selected && (
         <SourceStatusPanel
           source={selected}
-          busy={sub.busy}
-          onRetry={() => void sub.ingestNow()}
+          busy={session.busy}
+          onRetry={() => void session.ingestNow()}
           onClose={() => setSelectedIssue(null)}
         />
       )}

@@ -73,8 +73,7 @@ try {
   });
   const proposal = ws.state.proposals.get(generated.proposalId)!;
   assert.equal(proposal.createdBy, 'agent:stub');
-  assert.ok(proposal.operationId);
-  const proposeOperation = ws.state.operations.get(proposal.operationId!)!;
+  const proposeOperation = ws.state.operations.get(proposal.operationId)!;
   assert.equal(proposeOperation.actorId, 'human:author', 'dispatcher and content author remain distinct');
   assert.deepEqual(
     proposeOperation.inputRevisionIds,
@@ -204,7 +203,7 @@ try {
   });
   const nestedProposal = ws.state.proposals.get(delayedNestedRevision.proposalId)!;
   assert.ok(
-    ws.state.operations.get(nestedProposal.operationId!)?.inputRevisionIds.includes(nestedBeforeDispatch),
+    ws.state.operations.get(nestedProposal.operationId)?.inputRevisionIds.includes(nestedBeforeDispatch),
     'every recursively rendered revision is an exact proposal input',
   );
   assert.match(staleReason(ws.state, nestedProposal) ?? '', /context chunk .* moved on/);
@@ -257,7 +256,7 @@ try {
     modelActorId: OFFLINE_COLLABORATOR.actorId,
   });
   const pinnedProposal = ws.state.proposals.get(pinnedGeneration.proposalId)!;
-  assert.ok(ws.state.operations.get(pinnedProposal.operationId!)?.inputRevisionIds.includes(pinnedLeafRevision));
+  assert.ok(ws.state.operations.get(pinnedProposal.operationId)?.inputRevisionIds.includes(pinnedLeafRevision));
   await revise(human, { chunkId: pinnedSource.blockChunkIds[0], text: 'current newer again' });
   assert.equal(staleReason(ws.state, pinnedProposal), null, 'a pinned input does not falsely follow the source head');
 
@@ -290,7 +289,7 @@ try {
   ws = await openWorkspace(root);
   assert.equal(ws.state.proposals.get(generated.proposalId)?.status, 'open');
   assert.deepEqual(
-    ws.state.operations.get(ws.state.proposals.get(generated.proposalId)!.operationId!)?.inputRevisionIds,
+    ws.state.operations.get(ws.state.proposals.get(generated.proposalId)!.operationId)?.inputRevisionIds,
     proposeOperation.inputRevisionIds,
   );
   assert.match(staleReason(ws.state, ws.state.proposals.get(delayedFocus.proposalId)!) ?? '', /moved on/);
@@ -354,10 +353,10 @@ try {
   assert.equal(history.find((candidate) => candidate.id === leftOpen.proposalId)?.status, 'open');
   assert.equal(currentRevision(ws.state, createdId).createdBy, 'agent:stub');
   const acceptedAfterRestart = ws.state.proposals.get(generated.proposalId)!;
-  assert.equal(acceptedAfterRestart.resolution?.by, 'human:reviewer');
-  assert.ok(acceptedAfterRestart.resolution?.operationId);
+  const acceptedResolution = acceptedAfterRestart.resolution!;
+  assert.equal(acceptedResolution.by, 'human:reviewer');
   assert.deepEqual(
-    ws.state.operations.get(acceptedAfterRestart.operationId!)?.inputRevisionIds,
+    ws.state.operations.get(acceptedAfterRestart.operationId)?.inputRevisionIds,
     proposeOperation.inputRevisionIds,
   );
   const derivationAfterRestart = [...ws.state.derivations.values()].find(
@@ -365,7 +364,7 @@ try {
   )!;
   assert.equal(derivationAfterRestart.via, 'generate');
   assert.equal(derivationAfterRestart.sourceRevisionId, proposal.basisRevisionIds[0]);
-  assert.equal(derivationAfterRestart.operationId, acceptedAfterRestart.resolution?.operationId);
+  assert.equal(derivationAfterRestart.operationId, acceptedResolution.operationId);
   assert.ok(ws.state.proposals.get(rejected.proposalId)?.resolution?.operationId);
   assert.ok(ws.state.proposals.get(superseded.proposalId)?.resolution?.operationId);
   assert.match(ws.state.proposals.get(superseded.proposalId)?.resolution?.reason ?? '', /moved on|basis/);

@@ -7,10 +7,10 @@ import {
   occurrencesOfChunk,
   occurrenceRevision,
   renderChunk,
-  type SubstrateState,
+  type WorkspaceGraph,
 } from '../kernel/state';
-import type { ChunkId, Occurrence, Proposal, Revision } from '../kernel/types';
-import type { BindingInfo } from './useSubstrate';
+import { isCompositeMediaType, type ChunkId, type Occurrence, type Proposal, type Revision } from '../kernel/types';
+import type { BindingInfo } from './useWorkspace';
 
 // A leaf block as the Star renders it: transclusions arrive read-only.
 export interface LeafBlock {
@@ -22,16 +22,16 @@ export interface LeafBlock {
   transcluded: boolean;
 }
 
-export function leafBlocks(state: SubstrateState, containerId: ChunkId, depth = 0, seen = new Set<ChunkId>()): LeafBlock[] {
+export function leafBlocks(state: WorkspaceGraph, containerId: ChunkId, depth = 0, seen = new Set<ChunkId>()): LeafBlock[] {
   if (seen.has(containerId)) return [];
   seen.add(containerId);
   const out: LeafBlock[] = [];
   for (const occ of childOccurrences(state, containerId)) {
     const rev = occurrenceRevision(state, occ);
     const transcluded = occ.mode === 'transclude';
-    if (rev.mediaType === 'application/x-substrate-composite' && !transcluded) {
+    if (isCompositeMediaType(rev.mediaType) && !transcluded) {
       out.push(...leafBlocks(state, occ.chunkId, depth + 1, seen));
-    } else if (rev.mediaType === 'application/x-substrate-composite') {
+    } else if (isCompositeMediaType(rev.mediaType)) {
       // A transcluded composite renders as ONE read-only block: descending
       // would expose the source's internal occurrences to sever/move —
       // authority the transclusion does not grant (wiki/deep-fates.md).
@@ -60,7 +60,7 @@ export function leafBlocks(state: SubstrateState, containerId: ChunkId, depth = 
 
 // Where should the UI land when following a link to this chunk? Leaf chunks
 // open through their nearest container, so the star never opens empty.
-export function focusTarget(state: SubstrateState, chunkId: ChunkId): ChunkId {
+export function focusTarget(state: WorkspaceGraph, chunkId: ChunkId): ChunkId {
   let current = chunkId;
   const seen = new Set<ChunkId>();
   while (!seen.has(current)) {
@@ -77,7 +77,7 @@ export function focusTarget(state: SubstrateState, chunkId: ChunkId): ChunkId {
 
 // All containers reachable upward from a chunk (for illumination: a match
 // deep inside nested composites still lights its document).
-export function ancestorContainers(state: SubstrateState, chunkId: ChunkId): ChunkId[] {
+export function ancestorContainers(state: WorkspaceGraph, chunkId: ChunkId): ChunkId[] {
   const out: ChunkId[] = [];
   const seen = new Set<ChunkId>([chunkId]);
   const frontier = [chunkId];
@@ -93,7 +93,7 @@ export function ancestorContainers(state: SubstrateState, chunkId: ChunkId): Chu
   return out;
 }
 
-export function labelOf(state: SubstrateState, bindings: BindingInfo[], chunkId: ChunkId): string {
+export function labelOf(state: WorkspaceGraph, bindings: BindingInfo[], chunkId: ChunkId): string {
   const bound = bindings.find((b) => b.docChunkId === chunkId);
   if (bound) return bound.relPath;
   const text = renderChunk(state, chunkId).trim();
@@ -103,7 +103,7 @@ export function labelOf(state: SubstrateState, bindings: BindingInfo[], chunkId:
 
 // The nebula's stars: bound docs plus unbound root composites (e.g. accepted
 // generations that grew into documents).
-export function docList(state: SubstrateState, bindings: BindingInfo[]): ChunkId[] {
+export function docList(state: WorkspaceGraph, bindings: BindingInfo[]): ChunkId[] {
   const docs = new Set<ChunkId>();
   for (const b of bindings) if (state.chunks.get(b.docChunkId) && !state.chunks.get(b.docChunkId)!.tombstoned) docs.add(b.docChunkId);
   const contained = new Set<ChunkId>();
@@ -115,14 +115,14 @@ export function docList(state: SubstrateState, bindings: BindingInfo[]): ChunkId
   return [...docs];
 }
 
-export function revisionCount(state: SubstrateState, chunkId: ChunkId): number {
+export function revisionCount(state: WorkspaceGraph, chunkId: ChunkId): number {
   let n = 0;
   for (const r of state.revisions.values()) if (r.chunkId === chunkId) n++;
   return n;
 }
 
 // Open proposals touching this doc or anything rendered inside it.
-export function proposalsForDoc(state: SubstrateState, docId: ChunkId): Proposal[] {
+export function proposalsForDoc(state: WorkspaceGraph, docId: ChunkId): Proposal[] {
   const scope = new Set<ChunkId>([docId, ...leafBlocks(state, docId).map((b) => b.chunkId)]);
   const out: Proposal[] = [];
   for (const p of state.proposals.values()) {
@@ -134,14 +134,14 @@ export function proposalsForDoc(state: SubstrateState, docId: ChunkId): Proposal
 
 // Resolved proposals are product history, not transient UI notifications.
 // Keep them inspectable beside open work after accept/reject/restart.
-export function proposalHistoryForDoc(state: SubstrateState, docId: ChunkId): Proposal[] {
+export function proposalHistoryForDoc(state: WorkspaceGraph, docId: ChunkId): Proposal[] {
   const scope = new Set<ChunkId>([docId, ...leafBlocks(state, docId).map((block) => block.chunkId)]);
   return [...state.proposals.values()]
     .filter((proposal) => proposal.targetChunkIds.some((target) => scope.has(target)))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function currentText(state: SubstrateState, chunkId: ChunkId): string {
+export function currentText(state: WorkspaceGraph, chunkId: ChunkId): string {
   const rev = currentRevision(state, chunkId);
   return rev.redacted ? '[redacted]' : (state.blobs.get(rev.blobHash)?.text ?? '');
 }

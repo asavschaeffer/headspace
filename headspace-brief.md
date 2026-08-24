@@ -2,18 +2,18 @@
 
 ## The idea
 
-Substrate is a spatial workspace for navigating, editing, and connecting writing, projects, files, and AI conversations.
-> **Substrate is a spatial interface for an evolving tree of human and machine-created information, held together by a tiny composable kernel.**
+Headspace is a spatial environment for navigating, editing, and connecting writing, projects, files, and AI conversations.
+> **Headspace is a spatial interface over a versioned workspace graph of human- and machine-created information, held together by a tiny composable kernel.**
 
-Its foundation is one common object, five replaceable parts, and three universal operations.**
+Its foundation is one common object, a small set of explicit boundaries, and reviewable operations.
 
 ## The experience
 
-Substrate has two primary surfaces.
+Headspace has two primary surfaces.
 
 ### The Star
 
-The star is the discrete kernel unit. It's upper bound is a directory, but it can be as small as a single token. The UX is a simple canvas that can act as a text editor.
+A Star is the focused product surface for one addressable piece or scope. It can focus something as broad as a directory or as small as a derived text span. Its canvas can act as a text editor without making Star itself a kernel concept.
 
 The user can:
 
@@ -26,13 +26,13 @@ The user can:
 - Dispatch an agent
 - Accept, edit, branch, or discard its proposal
 
-Agents operate on explicit targets and context. Their results return, of course, as stars.
+Agents operate on explicit targets and context. Their results return as reviewable proposals inside the Star surface.
 
 The trick is to understand that up from afar a directory looks like a star. but diving into it, even one document can house a nebula.
 
 ### The Nebula
 
-The nebula replaces the index with a beautiful, meaningful spatial map.
+The Nebula turns indexes, placements, and relations into a beautiful, meaningful spatial map.
 
 Stars chain together hard and soft.
 - hard chain: tokens in a sentence, or paragraphs in an essay, back and forth of a chat, or contents of a project
@@ -48,7 +48,7 @@ Clicking a cluster opens it. Clicking a star moves into focused work. There will
 
 ## The model
 
-Everything meaningful becomes a **chunk**: an addressable unit such as a paragraph, section, message, file, or directory. Chunks connect into trees.
+Everything promoted into durable identity becomes a **chunk**: an addressable unit such as a paragraph, section, message, file, or directory. Chunks form a graph; surfaces may project that graph as a tree when tree-shaped navigation is useful.
 
 A chunk separates:
 
@@ -61,24 +61,28 @@ Versioning and provenance are supporting guarantees, not the product itself. The
 
 ## The architecture
 
-The five parts are:
+The implementation separates:
 
-- **Kernel:** chunks, trees, and invariants
-- **Driver:** translates external things into or out of chunks
-- **Index:** makes chunks discoverable and relatable
-- **Binding:** connects chunks to real files, URLs, or other objects
-- **Store:** persists content and history
+- **Kernel:** the workspace graph vocabulary, transactions, and invariants
+- **Client:** the interactive browser session and its optimistic local state
+- **Host:** the authoritative local runtime that owns filesystem access and external credentials
+- **Store:** the append-only history and durable payloads
+- **Index:** disposable, rebuildable discovery and relation projections
+- **Surfaces:** Nebula for spatial navigation and Star for focused work
+- **Seams and adapters:** capability boundaries and their replaceable implementations, including ingestion, projection, collaboration, indexing, and persistence
 
 The three operations are:
 
 - **Select:** choose relevant material
 - **Reduce:** compile it into a bounded representation
-- **Generate:** transform it through a model<?? what about just human editing lol>
+- **Generate:** ask a collaborator to transform it into an inert proposal
+
+Direct human editing remains an ordinary kernel transaction; it does not need to masquerade as model generation.
 
 Everything is a seam. Filesystems, model providers, indexes, stores, interfaces, and parsers must remain replaceable. The kernel should know as little as possible about them.
 
 ```text
-world → drivers → chunk kernel → store
+world → adapters → chunk kernel → store
                       │
                  index + bindings
 
@@ -95,7 +99,7 @@ It should prove one loop:
 navigate → focus → compose → dispatch → integrate → return
 ```
 
-The existing filesystem remains authoritative. Substrate reflects its contents and binds representations back to their sources.
+The existing filesystem remains authoritative. Headspace reflects its contents and binds representations in the workspace graph back to their sources.
 
 ## The direction
 
@@ -103,6 +107,6 @@ If the workspace proves valuable:
 
 1. Build a high-performance, encrypted, local-first desktop application.
 2. Add filesystem watching, offline models, synchronization, and native editing.
-3. Allow Substrate’s versioned content store to become authoritative for human knowledge.
+3. Allow Headspace's versioned workspace graph to become authoritative for human knowledge.
 4. Expose ordinary filesystem paths as a compatibility interface.
 5. Explore deeper operating-system integration only after conventional files become the limiting abstraction.

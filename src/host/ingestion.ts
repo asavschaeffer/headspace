@@ -19,9 +19,10 @@ import { MEDIA_COMPOSITE, MEDIA_MARKDOWN, MEDIA_TEXT, type Operation } from '../
 import { atomicWriteText, type AtomicPublish } from './atomic-file';
 import { importMarkdownFile, reconcileMarkdownFile, recoverMarkdownImport, sidecarPath } from './markdown';
 import type { WorkspaceStore } from './store-fs';
+import { HEADSPACE_DATA_DIRNAME, workspaceDataPaths } from './workspace-data';
 
 const CATALOG_SCHEMA_VERSION = 1;
-const SKIP = new Set(['node_modules', '.git', '.substrate', 'dist', 'public']);
+const SKIP = new Set(['node_modules', '.git', HEADSPACE_DATA_DIRNAME, 'dist', 'public']);
 
 export type SourceId = string;
 export type ObservationId = string;
@@ -130,9 +131,8 @@ export interface SourceRecord {
   currentRepresentationId?: RepresentationId;
 }
 
-export interface PendingMaterialization {
+interface PendingMaterializationBase {
   token: string;
-  operationKind: 'import' | 'revise';
   sourceId: SourceId;
   observationId: ObservationId;
   relPath: string;
@@ -140,17 +140,27 @@ export interface PendingMaterialization {
   relationship: 'native' | 'derived';
   mediaType: string;
   normalizedTextHash: string;
-  normalizedRenderedTextHash?: string;
   productIdentityHash: string;
   warnings: IngestionDiagnostic[];
   startedAt: string;
-  rootChunkId?: string;
-  contentChunkIds?: string[];
-  targetChunkId?: string;
-  basisRevisionId?: string;
-  priorRepresentationId?: RepresentationId;
-  priorOutputRevisionIds?: string[];
 }
+
+export interface PendingImportMaterialization extends PendingMaterializationBase {
+  operationKind: 'import';
+  normalizedRenderedTextHash: string;
+}
+
+export interface PendingRevisionMaterialization extends PendingMaterializationBase {
+  operationKind: 'revise';
+  rootChunkId: string;
+  contentChunkIds: string[];
+  targetChunkId: string;
+  basisRevisionId: string;
+  priorRepresentationId: RepresentationId;
+  priorOutputRevisionIds: string[];
+}
+
+export type PendingMaterialization = PendingImportMaterialization | PendingRevisionMaterialization;
 
 export interface IngestionItemResult {
   status: IngestionStatus;
@@ -402,7 +412,7 @@ function observeConfiguredSources(
 }
 
 export function ingestionCatalogPath(workspaceRoot: string): string {
-  return join(workspaceRoot, '.substrate', 'ingestion.json');
+  return workspaceDataPaths(workspaceRoot).ingestionCatalogPath;
 }
 
 const emptyCatalog = (): IngestionCatalog => ({
@@ -415,70 +425,209 @@ const emptyCatalog = (): IngestionCatalog => ({
   lastRun: null,
 });
 
+type JsonObject = Record<string, unknown>;
+
+const isJsonObject = (value: unknown): value is JsonObject =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function requireCatalog(condition: unknown, path: string): asserts condition {
+  if (!condition) throw new Error(`invalid ingestion catalog: ${path}`);
+}
+
+function requireStringArray(value: unknown, path: string): asserts value is string[] {
+  requireCatalog(Array.isArray(value) && value.every((item) => typeof item === 'string'), `${path} must be a string array`);
+}
+
+function requireAdapterRef(value: unknown, path: string): asserts value is AdapterRef {
+  requireCatalog(isJsonObject(value), `${path} must be an object`);
+  requireCatalog(typeof value.id === 'string', `${path}.id must be a string`);
+  requireCatalog(typeof value.version === 'string', `${path}.version must be a string`);
+  if (value.provider !== undefined) {
+    requireCatalog(isJsonObject(value.provider), `${path}.provider must be an object`);
+    requireCatalog(typeof value.provider.identity === 'string', `${path}.provider.identity must be a string`);
+    requireCatalog(
+      typeof value.provider.implementationVersion === 'string',
+      `${path}.provider.implementationVersion must be a string`,
+    );
+  }
+}
+
+function requireDiagnostic(value: unknown, path: string): asserts value is IngestionDiagnostic {
+  requireCatalog(isJsonObject(value), `${path} must be an object`);
+  requireCatalog(typeof value.code === 'string', `${path}.code must be a string`);
+  requireCatalog(
+    value.severity === 'info' || value.severity === 'warning' || value.severity === 'error',
+    `${path}.severity is unsupported`,
+  );
+  requireCatalog(
+    value.phase === 'observe' ||
+      value.phase === 'select' ||
+      value.phase === 'read' ||
+      value.phase === 'adapt' ||
+      value.phase === 'materialize' ||
+      value.phase === 'bind',
+    `${path}.phase is unsupported`,
+  );
+  requireCatalog(typeof value.message === 'string', `${path}.message must be a string`);
+  requireCatalog(value.retryable === undefined || typeof value.retryable === 'boolean', `${path}.retryable must be boolean`);
+}
+
+function requireDiagnostics(value: unknown, path: string): asserts value is IngestionDiagnostic[] {
+  requireCatalog(Array.isArray(value), `${path} must be an array`);
+  value.forEach((diagnostic, index) => requireDiagnostic(diagnostic, `${path}[${index}]`));
+}
+
+function requireSource(value: unknown, path: string): asserts value is SourceRecord {
+  requireCatalog(isJsonObject(value), `${path} must be an object`);
+  for (const field of ['id', 'identityKey', 'currentObservationId', 'currentRelPath'] as const) {
+    requireCatalog(typeof value[field] === 'string', `${path}.${field} must be a string`);
+  }
+  requireCatalog(
+    value.currentRepresentationId === undefined || typeof value.currentRepresentationId === 'string',
+    `${path}.currentRepresentationId must be a string`,
+  );
+}
+
+function requireObservation(value: unknown, path: string): asserts value is SourceObservation {
+  requireCatalog(isJsonObject(value), `${path} must be an object`);
+  for (const field of ['id', 'sourceId', 'identityKey', 'relPath', 'mediaType', 'observedAt'] as const) {
+    requireCatalog(typeof value[field] === 'string', `${path}.${field} must be a string`);
+  }
+  requireCatalog(
+    value.kind === 'file' || value.kind === 'directory' || value.kind === 'symlink' || value.kind === 'other',
+    `${path}.kind is unsupported`,
+  );
+  requireCatalog(typeof value.sizeBytes === 'number' && Number.isFinite(value.sizeBytes), `${path}.sizeBytes must be a number`);
+  requireCatalog(isJsonObject(value.fingerprint), `${path}.fingerprint must be an object`);
+  requireCatalog(value.fingerprint.algorithm === 'sha256', `${path}.fingerprint.algorithm is unsupported`);
+  requireCatalog(typeof value.fingerprint.value === 'string', `${path}.fingerprint.value must be a string`);
+  requireCatalog(
+    value.fingerprint.basis === 'file-bytes' ||
+      value.fingerprint.basis === 'directory-entries' ||
+      value.fingerprint.basis === 'symlink-target' ||
+      value.fingerprint.basis === 'metadata',
+    `${path}.fingerprint.basis is unsupported`,
+  );
+  requireCatalog(isJsonObject(value.symlink), `${path}.symlink must be an object`);
+  requireCatalog(
+    value.symlink.status === 'not-symlink' ||
+      value.symlink.status === 'unfollowed-inside-root' ||
+      value.symlink.status === 'unfollowed-outside-root' ||
+      value.symlink.status === 'unresolved',
+    `${path}.symlink.status is unsupported`,
+  );
+}
+
+function requireRepresentation(value: unknown, path: string): asserts value is RepresentationRecord {
+  requireCatalog(isJsonObject(value), `${path} must be an object`);
+  for (const field of ['id', 'sourceId', 'observationId', 'mediaType', 'rootChunkId', 'createdAt'] as const) {
+    requireCatalog(typeof value[field] === 'string', `${path}.${field} must be a string`);
+  }
+  requireCatalog(value.relationship === 'native' || value.relationship === 'derived', `${path}.relationship is unsupported`);
+  requireAdapterRef(value.adapter, `${path}.adapter`);
+  requireStringArray(value.contentChunkIds, `${path}.contentChunkIds`);
+  requireStringArray(value.outputRevisionIds, `${path}.outputRevisionIds`);
+  requireStringArray(value.operationIds, `${path}.operationIds`);
+  requireDiagnostics(value.warnings, `${path}.warnings`);
+}
+
+function requirePendingMaterialization(value: unknown, path: string): asserts value is PendingMaterialization {
+  requireCatalog(isJsonObject(value), `${path} must be an object`);
+  for (const field of [
+    'token',
+    'sourceId',
+    'observationId',
+    'relPath',
+    'mediaType',
+    'normalizedTextHash',
+    'productIdentityHash',
+    'startedAt',
+  ] as const) {
+    requireCatalog(typeof value[field] === 'string', `${path}.${field} must be a string`);
+  }
+  requireCatalog(value.relationship === 'native' || value.relationship === 'derived', `${path}.relationship is unsupported`);
+  requireAdapterRef(value.adapter, `${path}.adapter`);
+  requireDiagnostics(value.warnings, `${path}.warnings`);
+  if (value.operationKind === 'import') {
+    requireCatalog(
+      typeof value.normalizedRenderedTextHash === 'string',
+      `${path}.normalizedRenderedTextHash must be a string for import`,
+    );
+    return;
+  }
+  requireCatalog(value.operationKind === 'revise', `${path}.operationKind is unsupported`);
+  for (const field of [
+    'rootChunkId',
+    'targetChunkId',
+    'basisRevisionId',
+    'priorRepresentationId',
+  ] as const) {
+    requireCatalog(typeof value[field] === 'string', `${path}.${field} must be a string for revise`);
+  }
+  requireStringArray(value.contentChunkIds, `${path}.contentChunkIds`);
+  requireStringArray(value.priorOutputRevisionIds, `${path}.priorOutputRevisionIds`);
+}
+
+const INGESTION_STATUSES: readonly IngestionStatus[] = [
+  'imported',
+  'updated',
+  'unchanged',
+  'proposal',
+  'unsupported',
+  'failed',
+];
+
+function requireRunItem(value: unknown, path: string): asserts value is IngestionItemResult {
+  requireCatalog(isJsonObject(value), `${path} must be an object`);
+  requireCatalog(INGESTION_STATUSES.includes(value.status as IngestionStatus), `${path}.status is unsupported`);
+  requireObservation(value.observation, `${path}.observation`);
+  if (value.adapter !== null) requireAdapterRef(value.adapter, `${path}.adapter`);
+  requireDiagnostics(value.diagnostics, `${path}.diagnostics`);
+  if (value.representation !== null) requireRepresentation(value.representation, `${path}.representation`);
+  requireCatalog(value.proposalId === undefined || typeof value.proposalId === 'string', `${path}.proposalId must be a string`);
+}
+
+function requireRun(value: unknown, path: string): asserts value is IngestionRunReport {
+  requireCatalog(isJsonObject(value), `${path} must be an object`);
+  for (const field of ['id', 'startedAt', 'finishedAt'] as const) {
+    requireCatalog(typeof value[field] === 'string', `${path}.${field} must be a string`);
+  }
+  requireCatalog(Array.isArray(value.items), `${path}.items must be an array`);
+  value.items.forEach((item, index) => requireRunItem(item, `${path}.items[${index}]`));
+  requireCatalog(isJsonObject(value.counts), `${path}.counts must be an object`);
+  for (const status of INGESTION_STATUSES) {
+    requireCatalog(typeof value.counts[status] === 'number', `${path}.counts.${status} must be a number`);
+  }
+  requireDiagnostics(value.diagnostics, `${path}.diagnostics`);
+}
+
+function requireIngestionCatalog(value: unknown): asserts value is IngestionCatalog {
+  requireCatalog(isJsonObject(value), 'root must be an object');
+  if (value.schemaVersion !== CATALOG_SCHEMA_VERSION) {
+    throw new Error(`unsupported ingestion catalog schema: ${String(value.schemaVersion)}`);
+  }
+  requireCatalog(typeof value.workspaceId === 'string', 'workspaceId must be a string');
+  requireCatalog(Array.isArray(value.sources), 'sources must be an array');
+  value.sources.forEach((source, index) => requireSource(source, `sources[${index}]`));
+  requireCatalog(Array.isArray(value.observations), 'observations must be an array');
+  value.observations.forEach((observation, index) => requireObservation(observation, `observations[${index}]`));
+  requireCatalog(Array.isArray(value.representations), 'representations must be an array');
+  value.representations.forEach((representation, index) =>
+    requireRepresentation(representation, `representations[${index}]`),
+  );
+  requireCatalog(Array.isArray(value.pendingMaterializations), 'pendingMaterializations must be an array');
+  value.pendingMaterializations.forEach((pending, index) =>
+    requirePendingMaterialization(pending, `pendingMaterializations[${index}]`),
+  );
+  requireCatalog(value.lastRun === null || isJsonObject(value.lastRun), 'lastRun must be null or an object');
+  if (value.lastRun !== null) requireRun(value.lastRun, 'lastRun');
+}
+
 export function readIngestionCatalog(workspaceRoot: string): IngestionCatalog | null {
   const path = ingestionCatalogPath(workspaceRoot);
   if (!existsSync(path)) return null;
-  const parsed = JSON.parse(readFileSync(path, 'utf8')) as IngestionCatalog;
-  if (parsed.schemaVersion !== CATALOG_SCHEMA_VERSION) {
-    throw new Error(`unsupported ingestion catalog schema: ${String(parsed.schemaVersion)}`);
-  }
-  // Pre-release catalogs written before identity/correlation metadata existed
-  // are upgraded in memory. The next atomic publication makes the upgrade
-  // durable without losing the continuing source IDs they already assigned.
-  parsed.pendingMaterializations ??= [];
-  for (const pending of parsed.pendingMaterializations) {
-    pending.operationKind ??= 'import';
-    pending.productIdentityHash ??= sha256(
-      JSON.stringify({
-        adapter: pending.adapter,
-        relationship: pending.relationship,
-        mediaType: pending.mediaType,
-        normalizedTextHash: pending.normalizedTextHash,
-        warnings: pending.warnings,
-      }),
-    );
-  }
-  for (const source of parsed.sources) {
-    source.identityKey ??= normalizedIdentityKey(source.currentRelPath);
-  }
-  for (const observation of parsed.observations) {
-    observation.identityKey ??= normalizedIdentityKey(observation.relPath);
-  }
-  for (const representation of parsed.representations) {
-    const legacy = representation as RepresentationRecord & { operationId?: string };
-    legacy.operationIds ??= legacy.operationId ? [legacy.operationId] : [];
-  }
-  // Revise intents created before historical provenance was embedded can
-  // recover it from the still-bound prior representation. A pending intent is
-  // published before the converter revise, so the durable source binding is
-  // deliberately still the representation that supplied its basis revision.
-  for (const pending of parsed.pendingMaterializations) {
-    if (pending.operationKind !== 'revise' || (pending.priorRepresentationId && pending.priorOutputRevisionIds)) {
-      continue;
-    }
-    const source = parsed.sources.find((candidate) => candidate.id === pending.sourceId);
-    const candidates = [
-      pending.priorRepresentationId
-        ? parsed.representations.find((candidate) => candidate.id === pending.priorRepresentationId)
-        : undefined,
-      source?.currentRepresentationId
-        ? parsed.representations.find((candidate) => candidate.id === source.currentRepresentationId)
-        : undefined,
-      ...parsed.representations.filter((candidate) => candidate.sourceId === pending.sourceId),
-    ];
-    const prior = candidates.find(
-      (candidate) =>
-        candidate !== undefined &&
-        candidate.rootChunkId === pending.rootChunkId &&
-        candidate.contentChunkIds.length === pending.contentChunkIds?.length &&
-        candidate.contentChunkIds.every((chunkId, index) => chunkId === pending.contentChunkIds?.[index]) &&
-        candidate.outputRevisionIds.includes(pending.basisRevisionId ?? ''),
-    );
-    if (prior) {
-      pending.priorRepresentationId ??= prior.id;
-      pending.priorOutputRevisionIds ??= [...prior.outputRevisionIds];
-    }
-  }
+  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  requireIngestionCatalog(parsed);
   return parsed;
 }
 
@@ -487,6 +636,7 @@ export function writeIngestionCatalog(
   catalog: IngestionCatalog,
   publish?: AtomicPublish,
 ): void {
+  requireIngestionCatalog(catalog);
   atomicWriteText(ingestionCatalogPath(workspaceRoot), `${JSON.stringify(catalog, null, 2)}\n`, publish);
 }
 
@@ -1009,7 +1159,6 @@ function operationForPending(ws: WorkspaceStore, pending: PendingMaterialization
     throw new Error(`kernel operation ${operation.id} does not match its ingestion product identity`);
   }
   if (pending.operationKind === 'import') {
-    const fullyCorrelated = pending.normalizedRenderedTextHash !== undefined;
     const expected = {
       productIdentityHash: pending.productIdentityHash,
       relationship: pending.relationship,
@@ -1018,20 +1167,15 @@ function operationForPending(ws: WorkspaceStore, pending: PendingMaterialization
       normalizedRenderedTextHash: pending.normalizedRenderedTextHash,
     };
     for (const [key, value] of Object.entries(expected)) {
-      if (fullyCorrelated || params[key] !== undefined) {
-        if (params[key] !== value) {
-          throw new Error(`kernel operation ${operation.id} does not match ingestion ${key}`);
-        }
+      if (params[key] !== value) {
+        throw new Error(`kernel operation ${operation.id} does not match ingestion ${key}`);
       }
     }
   }
   return operation;
 }
 
-function importOperationParams(pending: PendingMaterialization): Record<string, unknown> {
-  if (pending.operationKind !== 'import' || pending.normalizedRenderedTextHash === undefined) {
-    throw new Error(`ingestion intent ${pending.token} lacks complete import correlation metadata`);
-  }
+function importOperationParams(pending: PendingImportMaterialization): Record<string, unknown> {
   return {
     ingestionToken: pending.token,
     sourceId: pending.sourceId,
@@ -1051,16 +1195,17 @@ function pendingFor(
   adapter: AdapterRef,
   product: AdapterProduct,
   now: string,
-): PendingMaterialization {
+): PendingImportMaterialization {
   const existing = catalog.pendingMaterializations.find(
-    (pending) =>
+    (pending): pending is PendingImportMaterialization =>
+      pending.operationKind === 'import' &&
       pending.sourceId === source.id &&
       pending.observationId === observation.id &&
       sameAdapterRef(pending.adapter, adapter) &&
       pending.productIdentityHash === productIdentityHash(adapter, product),
   );
   if (existing) return existing;
-  const pending: PendingMaterialization = {
+  const pending: PendingImportMaterialization = {
     token: `materialization_${randomUUID()}`,
     operationKind: 'import',
     sourceId: source.id,
@@ -1089,10 +1234,10 @@ function pendingRevisionFor(
   targetChunkId: string,
   basisRevisionId: string,
   now: string,
-): PendingMaterialization {
+): PendingRevisionMaterialization {
   const identityHash = productIdentityHash(adapter, product);
   const existing = catalog.pendingMaterializations.find(
-    (pending) =>
+    (pending): pending is PendingRevisionMaterialization =>
       pending.operationKind === 'revise' &&
       pending.sourceId === source.id &&
       pending.observationId === observation.id &&
@@ -1101,12 +1246,8 @@ function pendingRevisionFor(
       pending.targetChunkId === targetChunkId &&
       pending.basisRevisionId === basisRevisionId,
   );
-  if (existing) {
-    existing.priorRepresentationId ??= representation.id;
-    existing.priorOutputRevisionIds ??= [...representation.outputRevisionIds];
-    return existing;
-  }
-  const pending: PendingMaterialization = {
+  if (existing) return existing;
+  const pending: PendingRevisionMaterialization = {
     token: `materialization_${randomUUID()}`,
     operationKind: 'revise',
     sourceId: source.id,
@@ -1137,29 +1278,27 @@ function clearPending(catalog: IngestionCatalog, token: string): void {
 function recoveredRevisionProvenance(
   ws: WorkspaceStore,
   catalog: IngestionCatalog,
-  pending: PendingMaterialization,
+  pending: PendingRevisionMaterialization,
   correlatedRevisionId: string,
 ): { outputRevisionIds: string[]; operationIds: string[] } {
-  const priorRepresentation = pending.priorRepresentationId
-    ? catalog.representations.find((candidate) => candidate.id === pending.priorRepresentationId)
-    : catalog.representations.find(
-        (candidate) =>
-          candidate.sourceId === pending.sourceId &&
-          candidate.rootChunkId === pending.rootChunkId &&
-          candidate.outputRevisionIds.includes(pending.basisRevisionId ?? ''),
-      );
-  const priorOutputRevisionIds = pending.priorOutputRevisionIds ?? priorRepresentation?.outputRevisionIds;
-  if (
-    !pending.rootChunkId ||
-    !pending.contentChunkIds ||
-    !pending.targetChunkId ||
-    !pending.basisRevisionId ||
-    !priorOutputRevisionIds
-  ) {
+  const priorRepresentation = catalog.representations.find(
+    (candidate) => candidate.id === pending.priorRepresentationId,
+  );
+  if (!priorRepresentation) {
     throw new Error(`ingestion intent ${pending.token} lost its prior representation provenance`);
   }
+  const priorOutputRevisionIds = pending.priorOutputRevisionIds;
   const expectedChunkIds = [pending.rootChunkId, ...pending.contentChunkIds];
-  if (new Set(expectedChunkIds).size !== expectedChunkIds.length || priorOutputRevisionIds.length !== expectedChunkIds.length) {
+  if (
+    priorRepresentation.sourceId !== pending.sourceId ||
+    priorRepresentation.rootChunkId !== pending.rootChunkId ||
+    priorRepresentation.contentChunkIds.length !== pending.contentChunkIds.length ||
+    priorRepresentation.contentChunkIds.some((chunkId, index) => chunkId !== pending.contentChunkIds[index]) ||
+    priorRepresentation.outputRevisionIds.length !== priorOutputRevisionIds.length ||
+    priorRepresentation.outputRevisionIds.some((revisionId, index) => revisionId !== priorOutputRevisionIds[index]) ||
+    new Set(expectedChunkIds).size !== expectedChunkIds.length ||
+    priorOutputRevisionIds.length !== expectedChunkIds.length
+  ) {
     throw new Error(`ingestion intent ${pending.token} has an invalid prior representation shape`);
   }
   const priorByChunk = new Map<string, string>();
@@ -1198,7 +1337,7 @@ async function recoverPendingMaterializations(
       persist();
       continue;
     }
-    const operationKind = pending.operationKind ?? 'import';
+    const operationKind = pending.operationKind;
     if (operation.kind !== operationKind) {
       throw new Error(`ingestion operation ${operation.id} is ${operation.kind}, expected ${operationKind}`);
     }
@@ -1207,13 +1346,7 @@ async function recoverPendingMaterializations(
     if (!source || !observation) throw new Error(`ingestion intent ${pending.token} lost its source observation`);
 
     if (operationKind === 'revise') {
-      if (
-        operation.outputRevisionIds.length !== 1 ||
-        !pending.rootChunkId ||
-        !pending.contentChunkIds ||
-        !pending.targetChunkId ||
-        !pending.basisRevisionId
-      ) {
+      if (operation.outputRevisionIds.length !== 1) {
         throw new Error(`ingestion operation ${operation.id} has an invalid revise intent shape`);
       }
       if (
@@ -1349,13 +1482,7 @@ async function recoverPendingMaterializations(
       throw new Error(`ingestion operation ${operation.id} actual composite rendering does not match its outputs`);
     }
     const renderedHash = normalizedTextHash(renderedText);
-    const renderedMatches = pending.normalizedRenderedTextHash !== undefined
-      ? renderedHash === pending.normalizedRenderedTextHash
-      : renderedHash === pending.normalizedTextHash ||
-        (pending.relationship === 'native' &&
-          pending.mediaType === MEDIA_MARKDOWN &&
-          normalizedTextHash(`${renderedText}\n`) === pending.normalizedTextHash);
-    if (!renderedMatches) {
+    if (renderedHash !== pending.normalizedRenderedTextHash) {
       throw new Error(`ingestion operation ${operation.id} rendered output does not match its ingestion intent`);
     }
     if (pending.relationship === 'native' && pending.mediaType === MEDIA_MARKDOWN) {
@@ -1670,7 +1797,7 @@ export async function ingestWorkspace(
       // This runs before adapter selection so an unreadable/unsupported newer
       // observation still makes an older file proposal unacceptably stale.
       invalidateOlderSourceProposals(
-        ws.ctxFor('driver:ingestion'),
+        ws.ctxFor('adapter:ingestion'),
         boundRepresentation,
         source,
         observation,

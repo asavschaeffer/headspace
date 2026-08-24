@@ -9,7 +9,7 @@ import {
   workspaceChildren,
   workspaceCrumbs,
 } from '../src/client/workspaceTree';
-import type { SourceItemView } from '../src/client/useSubstrate';
+import type { SourceItemView } from '../src/client/useWorkspace';
 
 const source = (
   relPath: string,
@@ -43,7 +43,7 @@ const source = (
             ? {
                 id: 'test',
                 version: '1',
-                provider: { identity: 'converter-tenant', implementationVersion: '2026.08' },
+                provider: { identity: 'converter-provider', implementationVersion: '2026.08' },
               }
             : { id: 'test', version: '1' },
         rootChunkId: docChunkId,
@@ -100,7 +100,7 @@ assert.deepEqual(
 assert.equal(workspaceChildren(sources, 'source_notes').find((node) => node.status === 'unsupported')?.mediaType, 'application/pdf');
 assert.equal(
   workspaceChildren(sources, 'source_notes').find((node) => node.path === 'notes/alpha.md')?.adapterLabel,
-  'test@1 via converter-tenant@2026.08',
+  'test@1 via converter-provider@2026.08',
 );
 assert.deepEqual(
   workspaceChildren(sources, WORKSPACE_ROOT).find((node) => node.status === 'failed')?.diagnostics,

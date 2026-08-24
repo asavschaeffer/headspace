@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SubstrateHook } from './App';
+import type { WorkspaceSession } from './App';
 import {
   currentText,
   focusTarget,
@@ -13,7 +13,7 @@ import { dispatchToLocalCollaborator, OFFLINE_COLLABORATOR } from './collaborati
 import type { CollaboratorCapability } from './collaboration/types';
 import { buildIndexes, duplicatesOf, echoesOf, searchChunks } from './index/indexes';
 import { generateProposal, reduce, select, type CompletionOutput, type ContextRole } from './kernel/select';
-import { isComposite, occurrencesOfChunk, revisionText, type SubstrateState } from './kernel/state';
+import { isComposite, occurrencesOfChunk, revisionText, type WorkspaceGraph } from './kernel/state';
 import {
   acceptProposal,
   moveOccurrence,
@@ -42,20 +42,20 @@ const CONTEXT_REASON: Record<ContextRole, string> = {
 
 // The focused work surface: compose, promote, dispatch, integrate.
 export function Star({
-  sub,
+  session,
   docId,
   onFocusDoc,
   onBack,
   backLabel,
 }: {
-  sub: SubstrateHook;
+  session: WorkspaceSession;
   docId: ChunkId;
   onFocusDoc: (id: ChunkId) => void;
   onBack: () => void;
   backLabel?: string;
 }) {
-  const { state, bindings, adapters } = sub.ws!;
-  const ctx = sub.ctx!;
+  const { state, bindings, adapters } = session.ws!;
+  const ctx = session.ctx!;
   const [instruction, setInstruction] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [span, setSpan] = useState<Span | null>(null);
@@ -71,23 +71,23 @@ export function Star({
     setInstruction('');
   }, [docId]);
 
-  const blocks = useMemo(() => leafBlocks(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
-  const indexes = useMemo(() => buildIndexes(state), [sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
-  const proposalHistory = useMemo(() => proposalHistoryForDoc(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const blocks = useMemo(() => leafBlocks(state, docId), [docId, session.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const indexes = useMemo(() => buildIndexes(state), [session.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const proposalHistory = useMemo(() => proposalHistoryForDoc(state, docId), [docId, session.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const contextSearchHits = useMemo(
     () => (instruction.trim() ? searchChunks(state, indexes, instruction).slice(0, 5) : []),
     [instruction, indexes, state],
   );
   const contextPreview = useMemo(
     () => reduce(select(state, docId, contextSearchHits)),
-    [state, docId, contextSearchHits, sub.version], // eslint-disable-line react-hooks/exhaustive-deps
+    [state, docId, contextSearchHits, session.version], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const collaborators = useMemo(() => {
-    const advertised = sub.ws?.collaborators ?? [];
+    const advertised = session.ws?.collaborators ?? [];
     const byId = new Map<string, CollaboratorCapability>([[OFFLINE_COLLABORATOR.id, OFFLINE_COLLABORATOR]]);
     for (const capability of advertised) byId.set(capability.id, capability);
     return [...byId.values()];
-  }, [sub.ws?.collaborators]);
+  }, [session.ws?.collaborators]);
   const collaborator = collaborators.find((candidate) => candidate.id === collaboratorId) ?? OFFLINE_COLLABORATOR;
   const binding = bindings.find((b) => b.docChunkId === docId);
   const canProject = Boolean(
@@ -124,7 +124,7 @@ export function Star({
   const dispatch = () => {
     if (dispatching) return Promise.resolve();
     setDispatching(true);
-    return sub.runDispatch((dispatchCtx) => guard('dispatch', async () => {
+    return session.runDispatch((dispatchCtx) => guard('dispatch', async () => {
       if (collaborator.availability.status !== 'ready') {
         throw new Error(collaborator.availability.diagnostic.message);
       }
@@ -136,7 +136,7 @@ export function Star({
         };
         const result = collaborator.execution === 'local'
           ? await dispatchToLocalCollaborator(request)
-          : await sub.complete(request);
+          : await session.complete(request);
         if (
           result.collaboratorId !== collaborator.id ||
           result.collaboratorVersion !== collaborator.version ||
@@ -179,7 +179,7 @@ export function Star({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ relPath: binding.relPath }),
       });
-      if (!r.ok) throw new Error(`server refused: ${r.status}`);
+      if (!r.ok) throw new Error(`host refused: ${r.status}`);
       flash(`projected to ${binding.relPath}`);
     });
 
@@ -346,7 +346,7 @@ function BlockView({
   onError,
 }: {
   block: LeafBlock;
-  state: SubstrateState;
+  state: WorkspaceGraph;
   ctx: TxCtx;
   prevSibling?: LeafBlock;
   nextSibling?: LeafBlock;
@@ -445,7 +445,7 @@ function LeafDocView({
   docId,
   onError,
 }: {
-  state: SubstrateState;
+  state: WorkspaceGraph;
   ctx: TxCtx;
   docId: ChunkId;
   onError: (msg: string) => void;
@@ -474,7 +474,7 @@ function LeafDocView({
 }
 
 function proposalBasisText(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   p: Proposal,
   chunkId: ChunkId | undefined,
   explicitRevisionIds?: string[],
@@ -489,7 +489,7 @@ function proposalBasisText(
 }
 
 function summarizeChange(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   p: Proposal,
   ch: ProposedChange,
 ): { title: string; before?: string; beforeLabel?: string; after?: string; afterLabel?: string } {
@@ -539,11 +539,11 @@ function ProposalCard({
   onReject,
 }: {
   p: Proposal;
-  state: SubstrateState;
+  state: WorkspaceGraph;
   onAccept: () => void;
   onReject: () => void;
 }) {
-  const operation = p.operationId ? state.operations.get(p.operationId) : undefined;
+  const operation = state.operations.get(p.operationId)!;
   const stale = p.status === 'open' ? staleReason(state, p) : null;
   const freshness = p.status === 'open' ? (stale ? `stale · ${stale}` : 'fresh') : p.status;
   return (
@@ -559,12 +559,12 @@ function ProposalCard({
           <dt>proposal</dt><dd>{p.id}</dd>
           <dt>author</dt><dd>{p.createdBy}</dd>
           <dt>created</dt><dd>{p.createdAt}</dd>
-          <dt>dispatcher</dt><dd>{operation?.actorId ?? 'legacy proposal'}</dd>
-          <dt>operation</dt><dd>{p.operationId ?? 'not recorded'}</dd>
-          <dt>inputs</dt><dd>{operation?.inputRevisionIds.join(', ') || 'none'}</dd>
+          <dt>dispatcher</dt><dd>{operation.actorId}</dd>
+          <dt>operation</dt><dd>{p.operationId}</dd>
+          <dt>inputs</dt><dd>{operation.inputRevisionIds.join(', ') || 'none'}</dd>
           <dt>basis</dt><dd>{p.basisRevisionIds.join(', ') || 'none'}</dd>
-          <dt>freshness</dt><dd>{p.freshnessRevisionIds?.join(', ') || 'basis/payload rules'}</dd>
-          <dt>structure</dt><dd>{p.freshnessStructure ? `${p.freshnessStructure.containers.length} container(s), ${p.freshnessStructure.placements.length} placement set(s)` : 'legacy proposal'}</dd>
+          <dt>freshness</dt><dd>{p.freshnessRevisionIds?.join(', ') || 'not current-head-dependent'}</dd>
+          <dt>structure</dt><dd>{p.freshnessStructure ? `${p.freshnessStructure.containers.length} container(s), ${p.freshnessStructure.placements.length} placement set(s)` : 'not structure-dependent'}</dd>
           <dt>targets</dt><dd>{p.targetChunkIds.join(', ') || 'none'}</dd>
           <dt>producer</dt><dd>{p.producer ? `${p.producer.id}@${p.producer.version}` : 'not recorded'}</dd>
           {p.producer?.implementation && <><dt>implementation</dt><dd>{p.producer.implementation}</dd></>}
@@ -572,7 +572,7 @@ function ProposalCard({
           {p.resolution && (
             <>
               <dt>resolved</dt><dd>{p.resolution.by} · {p.resolution.at}</dd>
-              <dt>resolution op</dt><dd>{p.resolution.operationId ?? 'status-only resolution'}</dd>
+              <dt>resolution op</dt><dd>{p.resolution.operationId}</dd>
               {p.resolution.reason && <><dt>reason</dt><dd>{p.resolution.reason}</dd></>}
             </>
           )}
@@ -607,7 +607,7 @@ function FatesPanel({
   bindings,
   onFocusDoc,
 }: {
-  state: SubstrateState;
+  state: WorkspaceGraph;
   indexes: ReturnType<typeof buildIndexes>;
   chunkId: ChunkId;
   bindings: { docChunkId: string; relPath: string }[];
@@ -698,7 +698,7 @@ function AttachBox({
   bindings,
   onError,
 }: {
-  state: SubstrateState;
+  state: WorkspaceGraph;
   ctx: TxCtx;
   indexes: ReturnType<typeof buildIndexes>;
   docId: ChunkId;

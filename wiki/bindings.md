@@ -2,9 +2,9 @@
 
 ## Purpose
 
-A binding records correspondence between a Substrate object and something
-outside Substrate. It is the durable answer to: **what external thing does
-this chunk represent or affect?**
+A binding records correspondence between an object in the workspace graph and
+something outside the graph. It is the durable answer to: **what external
+thing does this chunk represent or affect?**
 
 A filesystem path alone is not stable enough to be identity. Files can move,
 paths can be reused, and one file may correspond to several chunks.
@@ -15,14 +15,14 @@ paths can be reused, and one file may correspond to several chunks.
 interface Binding {
   id: BindingId;
   chunkId: ChunkId;
-  driver: DriverId;
+  adapter: AdapterId;
   locator: ExternalLocator;
   observedVersion?: ExternalVersion;
 }
 ```
 
 `observedVersion` is the external content hash last seen or projected. It
-supports conflict detection — the driver compares it against the external
+supports conflict detection — the adapter compares it against the external
 object's current state to notice divergence; it does not become chunk
 identity.
 
@@ -39,7 +39,7 @@ corresponds to, and projection works from that chunk's current revision.
 One chunk may carry multiple bindings — the same material exported to several
 external targets. One external file binds to one doc chunk: the file's block
 chunks ride the doc's sidecar rather than binding individually (see
-[Drivers](drivers.md)).
+[Adapters](adapters.md)).
 
 ### Renamed files are rediscovered by content
 
@@ -55,8 +55,7 @@ trust requires them.
 
 ## Responsibilities
 
-- Locate an external object through the appropriate driver.
+- Locate an external object through the appropriate adapter.
 - Record the external version last observed or projected.
 - Support moves and renamed external objects without redefining the chunk.
 - Make conflicts and broken correspondence visible.
-

@@ -9,7 +9,7 @@ import {
   occurrencesOfChunk,
   renderRevision,
   isComposite,
-  type SubstrateState,
+  type WorkspaceGraph,
 } from './state';
 import { propose, type TxCtx } from './tx';
 import type {
@@ -24,7 +24,7 @@ import type {
   ProducerRef,
   RevisionId,
 } from './types';
-import { MEDIA_COMPOSITE, MEDIA_MARKDOWN } from './types';
+import { isCompositeMediaType, MEDIA_MARKDOWN } from './types';
 
 export type ContextRole = 'focus' | 'child' | 'parent' | 'sibling' | 'search';
 
@@ -42,7 +42,7 @@ export interface ContextItem {
 const ROLE_ORDER: ContextRole[] = ['focus', 'child', 'parent', 'sibling', 'search'];
 
 function revisionDependencies(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   chunkId: ChunkId,
   rootRevisionId: RevisionId,
   rootFollowsCurrent: boolean,
@@ -74,7 +74,7 @@ function revisionDependencies(
     const revision = state.revisions.get(revisionId);
     if (!revision || revision.chunkId !== currentChunkId) return;
     add(revision.id, followsCurrent);
-    if (!revision.redacted && revision.mediaType === MEDIA_COMPOSITE) {
+    if (!revision.redacted && isCompositeMediaType(revision.mediaType)) {
       for (const occurrence of childOccurrences(state, currentChunkId)) {
         const effective = occurrenceRevision(state, occurrence);
         visitRendered(occurrence.chunkId, effective.id, occurrence.pin === 'current', seen);
@@ -90,7 +90,7 @@ function revisionDependencies(
 // Gather the focus, its children, its containers and their other children, and
 // any externally supplied hits (e.g. index search results). Inspectable: every
 // item says why it is here.
-export function select(state: SubstrateState, focusId: ChunkId, searchHits: ChunkId[] = []): ContextItem[] {
+export function select(state: WorkspaceGraph, focusId: ChunkId, searchHits: ChunkId[] = []): ContextItem[] {
   const picked = new Map<ChunkId, ContextItem>();
   const add = (
     chunkId: ChunkId,
@@ -200,7 +200,7 @@ const occurrencePrecondition = (occurrence: Occurrence): OccurrencePrecondition 
 });
 
 function contextStructurePrecondition(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   context: ReducedContext,
 ): ContextStructurePrecondition {
   const containerIds = new Set<ChunkId>();
@@ -216,7 +216,7 @@ function contextStructurePrecondition(
       !revision ||
       revision.chunkId !== chunkId ||
       revision.redacted ||
-      revision.mediaType !== MEDIA_COMPOSITE
+      !isCompositeMediaType(revision.mediaType)
     ) return;
     seen.add(chunkId);
     containerIds.add(chunkId);

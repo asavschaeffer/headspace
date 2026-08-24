@@ -1,8 +1,8 @@
-// Normalized Levenshtein similarity for driver block matching, pass 2 of the
-// reconcile match (wiki/drivers.md): 1 means identical, 0 means disjoint.
+// Normalized Levenshtein similarity for adapter block matching, pass 2 of the
+// reconcile match: 1 means identical, 0 means disjoint.
 //
 // The DP is O(n*m) in time, so cost must be bounded before it is paid. Two
-// guards do that, and both are stated in terms of the driver's 0.5 threshold:
+// guards do that, and both are stated in terms of the adapter's 0.5 threshold:
 // a cheap length test rejects pairs that provably cannot reach it, and a hard
 // cap keeps any single comparison bounded no matter how large the blocks are.
 // Reconcile runs this over (free manifest entries x file blocks), and the dev

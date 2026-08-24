@@ -20,9 +20,9 @@ try {
   writeFileSync(join(outside, 'bound.md'), original);
 
   const state = emptyState();
-  const driver: TxCtx = { state, actorId: 'driver:fs' };
+  const filesystemAdapter: TxCtx = { state, actorId: 'adapter:filesystem' };
   const human: TxCtx = { state, actorId: 'human:test' };
-  const imported = await importMarkdownFile(driver, { workspaceRoot: root, relPath, text: original });
+  const imported = await importMarkdownFile(filesystemAdapter, { workspaceRoot: root, relPath, text: original });
   await revise(human, { chunkId: imported.blockChunkIds[0], text: '# Internal revision' });
 
   // Replace an ordinary imported ancestor with a link/junction to an external
@@ -39,7 +39,7 @@ try {
 
   if (linkExercised) {
     await assert.rejects(
-      writeProjection(driver, { workspaceRoot: root, relPath }),
+      writeProjection(filesystemAdapter, { workspaceRoot: root, relPath }),
       /source resolves outside the workspace root/,
     );
     assert.equal(readFileSync(join(outside, 'bound.md'), 'utf8'), original, 'external target remains untouched');

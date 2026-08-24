@@ -105,5 +105,8 @@ assert.equal(provenanceKind(state, a.chunkId), 'human');
 const agentCtx: TxCtx = { state, actorId: 'agent:stub', now };
 const gen = await createChunk(agentCtx, { text: 'machine reverie output' });
 assert.equal(provenanceKind(state, gen.chunkId), 'agent');
+const adapterCtx: TxCtx = { state, actorId: 'adapter:filesystem', now };
+const imported = await createChunk(adapterCtx, { text: 'filesystem adapter import' });
+assert.equal(provenanceKind(state, imported.chunkId), 'adapter');
 
 console.log('indexes OK —', ix.term.size, 'terms,', ix.interning.size, 'blobs,', ix.echo.size, 'echo keys');

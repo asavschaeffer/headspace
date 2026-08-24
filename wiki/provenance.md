@@ -12,7 +12,7 @@ trust, attribution, authorship, recovery, analytics, and deep fates.
 
 ### Default authorship is operation-level
 
-Substrate's default authorship model is operation-level authorship.
+Headspace's default authorship model is operation-level authorship.
 
 The current revision has a creator, and every transformation records the
 operation that produced it. Span-level authorship can be derived when needed,
@@ -86,4 +86,3 @@ intent.
 - Permissions decide who may view, copy, reference, transclude, edit, publish,
   or delete.
 - Lenses may derive span-level authorship or style analytics from provenance.
-

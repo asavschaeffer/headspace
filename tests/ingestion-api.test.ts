@@ -89,7 +89,7 @@ try {
   assert.equal(
     missingText.representation?.rootChunkId,
     textSource.representation?.rootChunkId,
-    'a missing external source retains its recoverable substrate representation',
+    'a missing external source retains its recoverable Headspace representation',
   );
   ws.close();
   ws = await openWorkspace(root);

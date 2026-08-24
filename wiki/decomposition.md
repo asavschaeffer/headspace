@@ -176,13 +176,13 @@ contain or transclude it.
 Use when the user edits, moves, or rearranges the part as part of the original
 object.
 
-When extraction makes a parent composite, the parent gains a new revision whose
-mediaType is `application/x-substrate-composite+json` and whose content lists
+When extraction makes a parent composite, the parent gains a new internal
+composite revision whose content lists
 its child occurrence ids in order. The children carry the parts; the
 unextracted remainder becomes the minimal set of sibling chunks — the
 contiguous spans before and after the extracted part — so the composite covers
 the whole text without minting one chunk per derived part of the decomposition
-method. A [driver](drivers.md) reassembles markdown
+method. An [adapter](adapters.md) reassembles Markdown
 from the composite on export. The prior flat revision remains in history — the
 parent's identity continues, and its earlier byte-for-byte form stays
 recoverable (the layered representation described in [Content](content.md)).

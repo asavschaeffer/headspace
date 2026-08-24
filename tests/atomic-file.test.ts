@@ -18,7 +18,7 @@ try {
   );
   assert.equal(readFileSync(destination, 'utf8'), 'old', 'failed publish preserves the previous destination');
   assert.deepEqual(
-    readdirSync(root).filter((name) => name.startsWith('.substrate-write-')),
+    readdirSync(root).filter((name) => name.startsWith('.headspace-write-')),
     [],
     'failed publish cleans its unpublished temporary file',
   );

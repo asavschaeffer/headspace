@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSubstrate } from './client/useSubstrate';
+import { useWorkspace } from './client/useWorkspace';
 import {
   containerExists,
   containerForDocument,
@@ -10,43 +10,43 @@ import {
 import { Nebula } from './Nebula';
 import { Star } from './Star';
 
-export type SubstrateHook = ReturnType<typeof useSubstrate>;
+export type WorkspaceSession = ReturnType<typeof useWorkspace>;
 
 // The proved loop: navigate (Nebula) → focus (Star) → compose → dispatch →
 // integrate (proposals) → return. Truth lives in the kernel state; both
 // surfaces are views over it.
 export function App() {
-  const sub = useSubstrate();
+  const session = useWorkspace();
   const [focus, setFocus] = useState<string | null>(null);
   const [containerId, setContainerId] = useState(WORKSPACE_ROOT);
 
   useEffect(() => {
-    if (sub.ws && !containerExists(sub.ws.sources, containerId)) {
+    if (session.ws && !containerExists(session.ws.sources, containerId)) {
       setContainerId(WORKSPACE_ROOT);
       setFocus(null);
     }
-  }, [containerId, sub.version, sub.ws]);
+  }, [containerId, session.version, session.ws]);
 
-  // A failed fetch before anything loaded is a dead server; after that, errors
+  // A failed fetch before anything loaded is an unreachable host; after that, errors
   // surface as a banner — a healthy workspace is never unmounted over a blip.
-  if (sub.error && !sub.ws)
+  if (session.error && !session.ws)
     return (
       <div className="hint">
         Headspace host unreachable — start with: npm start
-        <div className="meta">{sub.error}</div>
+        <div className="meta">{session.error}</div>
         <p>
-          <button onClick={() => void sub.reload()}>retry</button>
+          <button onClick={() => void session.reload()}>retry</button>
         </p>
       </div>
     );
-  if (!sub.ws || !sub.ctx) return <div className="hint">loading nebula…</div>;
+  if (!session.ws || !session.ctx) return <div className="hint">loading nebula…</div>;
 
-  const banner = sub.error ?? sub.status;
-  const identity = sub.ws.identity;
-  const crumbs = workspaceCrumbs(sub.ws.sources, containerId, identity?.displayName ?? 'workspace');
-  const counts = sub.ws.lastIngestion?.counts;
+  const banner = session.error ?? session.status;
+  const identity = session.ws.identity;
+  const crumbs = workspaceCrumbs(session.ws.sources, containerId, identity?.displayName ?? 'workspace');
+  const counts = session.ws.lastIngestion?.counts;
   const focusDoc = (docId: string) => {
-    const home = containerForDocument(sub.ws!.sources, sub.ws!.bindings, docId);
+    const home = containerForDocument(session.ws!.sources, session.ws!.bindings, docId);
     if (home !== null) setContainerId(home);
     setFocus(docId);
   };
@@ -55,10 +55,10 @@ export function App() {
       {banner && (
         <div className="banner">
           {banner}
-          {sub.error ? (
-            <button onClick={() => void sub.reload()}>retry</button>
+          {session.error ? (
+            <button onClick={() => void session.reload()}>retry</button>
           ) : (
-            <button onClick={sub.dismissStatus}>dismiss</button>
+            <button onClick={session.dismissStatus}>dismiss</button>
           )}
         </div>
       )}
@@ -87,46 +87,46 @@ export function App() {
           ))}
         </nav>
         {counts && (
-          <span className="ingestion-summary meta" title={`ingestion ${sub.ws.lastIngestion?.id}`}>
+          <span className="ingestion-summary meta" title={`ingestion ${session.ws.lastIngestion?.id}`}>
             {counts.failed > 0 ? `${counts.failed} failed` : counts.unsupported > 0 ? `${counts.unsupported} unsupported` : 'sources ready'}
           </span>
         )}
-        {sub.pendingCount > 0 && (
+        {session.pendingCount > 0 && (
           <span className="pending-summary meta">
-            {sub.pendingCount} local change{sub.pendingCount === 1 ? '' : 's'} awaiting the durable host · keep this tab open
+            {session.pendingCount} local change{session.pendingCount === 1 ? '' : 's'} awaiting the durable host · keep this tab open
           </span>
         )}
         <button
-          onClick={() => void sub.ingestNow()}
-          disabled={sub.busy || sub.collaborating || sub.recoveringTruth || sub.truthUnknown}
+          onClick={() => void session.ingestNow()}
+          disabled={session.busy || session.collaborating || session.recoveringTruth || session.truthUnknown}
         >
-          {sub.truthUnknown
+          {session.truthUnknown
             ? 'truth unavailable'
-            : sub.recoveringTruth
+            : session.recoveringTruth
             ? 'reloading truth…'
-            : sub.collaborating
+            : session.collaborating
               ? 'collaborator thinking…'
-              : sub.busy
+              : session.busy
                 ? 'ingesting…'
                 : 'ingest sources'}
         </button>
       </header>
-      {sub.truthUnknown ? (
+      {session.truthUnknown ? (
         <main className="hint" aria-live="assertive">
-          The server may have changed, but authoritative truth is not reachable yet. Editing and dispatch are paused.
-          <p><button onClick={() => void sub.reload()}>retry authoritative reload</button></p>
+          The host may have changed, but authoritative truth is not reachable yet. Editing and dispatch are paused.
+          <p><button onClick={() => void session.reload()}>retry authoritative reload</button></p>
         </main>
-      ) : focus && sub.ws.state.chunks.has(focus) ? (
+      ) : focus && session.ws.state.chunks.has(focus) ? (
         <Star
-          sub={sub}
+          session={session}
           docId={focus}
           onFocusDoc={focusDoc}
           onBack={() => setFocus(null)}
-          backLabel={containerLabel(sub.ws.sources, containerId, sub.ws.identity?.displayName ?? 'workspace')}
+          backLabel={containerLabel(session.ws.sources, containerId, session.ws.identity?.displayName ?? 'workspace')}
         />
       ) : (
         <Nebula
-          sub={sub}
+          session={session}
           containerId={containerId}
           onOpenContainer={setContainerId}
           onFocus={focusDoc}

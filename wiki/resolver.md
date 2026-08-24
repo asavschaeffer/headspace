@@ -29,7 +29,7 @@ needed before turning a candidate into durable truth.
 
 Example: `Janus` may connect to:
 
-- the local Substrate threshold-guardian seam;
+- the local threshold-guardian concept;
 - `wiki/janus.md`;
 - Janus, the Roman god;
 - Janus-faced language;
@@ -73,7 +73,7 @@ Resolver results may come from multiple layers:
 personal/private corpus
 local project corpus
 shared/team corpus
-public Substrate corpus
+public corpus
 approved knowledge bases
 general web
 ```

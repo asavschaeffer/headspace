@@ -2,14 +2,14 @@
 
 ## Purpose
 
-The kernel defines the smallest truthful model shared by every Substrate
+The kernel defines the smallest truthful model shared by every Headspace
 implementation. It owns chunks and the invariants required to manipulate them
 safely. It should not know about filesystems, model providers, search engines,
 databases, or user interfaces.
 
 ## Accepted principles
 
-### Substrate truth is graph-shaped; default navigation is tree-shaped
+### Workspace graph truth is graph-shaped; default navigation is tree-shaped
 
 The kernel should allow graph structure: chunks can reference, derive from,
 transclude, and associate with many other chunks.

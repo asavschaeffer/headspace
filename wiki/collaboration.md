@@ -2,13 +2,14 @@
 
 ## Purpose
 
-Collaboration defines who acts in Substrate, what authority each actor holds,
+Collaboration defines who acts in a Headspace workspace, what authority each
+actor holds,
 and how work moves between actors and workspaces without anyone's document
 being changed behind their back.
 
-Substrate is collaborative from the first day, even with one human in it. A
+The workspace is collaborative from the first day, even with one human in it. A
 workspace already contains several kinds of actors — a human, model agents,
-filesystem drivers, external layers — and every kernel operation already
+filesystem adapters, external layers — and every kernel operation already
 records which one acted. Multi-human collaboration extends this model; it does
 not introduce a new one.
 
@@ -18,19 +19,19 @@ not introduce a new one.
 
 ```ts
 interface Actor {
-  id: ActorId;      // "human:asa", "agent:<model>", "driver:fs", "external:<layer>"
-  kind: "human" | "agent" | "driver" | "external";
+  id: ActorId;      // "human:asa", "agent:<model>", "adapter:filesystem", "external:<layer>"
+  kind: "human" | "agent" | "adapter" | "external";
   name: string;
 }
 ```
 
 Every operation records an `actorId` ([Provenance](provenance.md)). There are
-no anonymous kernel changes. A model that generates text, a driver that
+no anonymous kernel changes. A model that generates text, an adapter that
 reconciles a file, and a human who revises a paragraph are the same kind of
 fact at the kernel level: an actor performed an operation.
 
 The single-human workspace is the first collaboration case, not a special
-case. One human, several agents, and drivers already exercise the full
+case. One human, several agents, and adapters already exercise the full
 machinery: direct edits for the trusted actor, proposals for everyone else,
 authorship queries by actor kind, provenance lenses that color human against
 model material.
@@ -84,7 +85,7 @@ as a reference until the source owner approves (see
 A commenter can propose; an editor can accept. The proposal carries its basis
 revisions, so a stale suggestion is refused and superseded rather than applied
 against text that has moved on. This is the same lifecycle that governs model
-output and driver reconciliation — collaborators are actors with lower default
+output and adapter reconciliation — collaborators are actors with lower default
 trust, not a different mechanism.
 
 Notifications are the proposal inbox. There is no separate notification
@@ -124,13 +125,13 @@ Asa's workspace, one human:
 
   human:asa        owner      revises directly; accepts and rejects
   agent:<model>    commenter  generation always lands as proposals
-  driver:fs        editor*    fast-path revise on clean external edits;
+  adapter:filesystem editor*  fast-path revise on clean external edits;
                               proposals when both sides changed
   external:<layer> viewer     read-only cached snapshots, never chunk content
                               without an explicit copy
 
-* the driver's edit authority is scoped to bound chunks and to the
-  reconciliation rules in [Drivers](drivers.md); it is not a general editor.
+* the adapter's edit authority is scoped to bound chunks and to the
+  reconciliation rules in [Adapters](adapters.md); it is not a general editor.
 
 Later, Mira joins as commenter:
 

@@ -30,8 +30,9 @@ import {
 import { ProjectionConflictError, writeProjection } from './markdown';
 import { openWorkspace, type WorkspaceStore } from './store-fs';
 import { syncWorkspace, type SyncReport } from './sync';
+import { workspaceDataPaths } from './workspace-data';
 
-export interface SubstrateServerOptions {
+export interface HeadspaceHostOptions {
   root?: string;
   contentDirs?: string[];
   contentFiles?: string[];
@@ -70,7 +71,7 @@ function readBindings(root: string): BindingInfo[] {
       }
     }
   };
-  walk(join(root, '.substrate', 'sidecars'));
+  walk(workspaceDataPaths(root).sidecarsDir);
   const catalog = readIngestionCatalog(root);
   if (catalog) {
     for (const source of catalog.sources) {
@@ -190,7 +191,7 @@ const readBody = (req: IncomingMessage, maxBytes = Number.POSITIVE_INFINITY): Pr
     req.on('error', reject);
   });
 
-export interface SubstrateServerRuntime {
+export interface HeadspaceHostRuntime {
   plugin: Plugin;
   /** Open, validate, and initialize the single owned workspace before serving. */
   ready(): Promise<void>;
@@ -198,7 +199,7 @@ export interface SubstrateServerRuntime {
   close(): void;
 }
 
-export function createSubstrateServer(opts: SubstrateServerOptions = {}): SubstrateServerRuntime {
+export function createHeadspaceHost(opts: HeadspaceHostOptions = {}): HeadspaceHostRuntime {
   let ws: WorkspaceStore | null = null;
   const root = opts.root ?? process.cwd();
   const collaborators = opts.collaborators ?? defaultCollaboratorAdapters();
@@ -248,7 +249,7 @@ export function createSubstrateServer(opts: SubstrateServerOptions = {}): Substr
   };
 
   const plugin: Plugin = {
-    name: 'substrate-server',
+    name: 'headspace-host',
     configureServer(server) {
       server.httpServer?.on('close', close);
       server.middlewares.use((req, res, next) => {
@@ -319,14 +320,14 @@ export function createSubstrateServer(opts: SubstrateServerOptions = {}): Substr
               }
               return json(res, 200, { ok: true, head: w.state.head });
             }
-            if ((url === '/api/sync' || url === '/api/ingest') && req.method === 'POST') {
+            if (url === '/api/ingest' && req.method === 'POST') {
               const report: SyncReport = await syncWorkspace(w, opts);
               return json(res, 200, { report, ...workspacePayload(root, w, collaborators) });
             }
             if (url === '/api/project' && req.method === 'POST') {
               const { relPath } = JSON.parse(await readBody(req)) as { relPath: string };
               try {
-                await writeProjection(w.ctxFor('driver:fs'), { workspaceRoot: root, relPath });
+                await writeProjection(w.ctxFor('adapter:filesystem'), { workspaceRoot: root, relPath });
               } catch (e) {
                 if (e instanceof ProjectionConflictError) {
                   return json(res, 409, { code: 'projection-conflict', error: e.message });
@@ -346,6 +347,6 @@ export function createSubstrateServer(opts: SubstrateServerOptions = {}): Substr
   return { close, plugin, ready };
 }
 
-export function substrateServer(opts: SubstrateServerOptions = {}): Plugin {
-  return createSubstrateServer(opts).plugin;
+export function headspaceHostPlugin(opts: HeadspaceHostOptions = {}): Plugin {
+  return createHeadspaceHost(opts).plugin;
 }

@@ -3,8 +3,8 @@
 ## Purpose
 
 The store durably records kernel state and applies kernel changes atomically.
-It answers **what Substrate knows**, not how an external file or service
-represents it.
+It answers **what the workspace graph records**, not how an external file or
+service represents it.
 
 The store is a seam: the file-backed workspace store, a SQLite database, an
 encrypted local store, or a synchronized remote store should be replaceable
@@ -14,11 +14,11 @@ without changing kernel meaning.
 
 ### Authority is split at the workspace boundary
 
-The Substrate store is authoritative for identity, structure, history, and
+The workspace store is authoritative for identity, structure, history, and
 provenance. A bound external file is authoritative for bytes the user edits
-outside Substrate. Divergence between the two is reconciled through the
-driver; neither side silently wins (see [Drivers](drivers.md) and
-[Conflicts](conflicts.md)). Within Substrate, the store is simply the truth.
+with external tools. Divergence between the two is reconciled through the
+adapter; neither side silently wins (see [Adapters](adapters.md) and
+[Conflicts](conflicts.md)). Within the workspace, the store is simply the truth.
 
 A filesystem path never carries identity; correspondence to external objects
 is recorded by [Bindings](bindings.md), and the store keeps the facts that
@@ -26,7 +26,7 @@ make reconciliation possible.
 
 ### Commits snapshot authoritative graph state
 
-Substrate uses a Git-like hybrid rather than full event sourcing.
+The store uses a Git-like hybrid rather than full event sourcing.
 
 Each immutable commit records the operation that was performed and the kernel
 facts that resulted from it: new revisions, occurrences, links, derivations,
@@ -79,11 +79,11 @@ The first durable backend is pure TypeScript with no native dependencies,
 rooted at the workspace:
 
 ```text
-.substrate/
+.headspace/
   log.jsonl        append-only committed transactions
   blobs/ab/abcd…   content-addressed immutable payloads (sha-256 hex, 2-char fan-out)
   snapshot.json    periodic materialized state + log offset (rewritten atomically via temp+rename)
-  sidecars/…       driver-owned round-trip memory (see drivers)
+  sidecars/…       adapter-owned round-trip memory (see adapters)
 ```
 
 `log.jsonl` is the sequence of commits. Blobs are immutable and shared:
@@ -91,7 +91,7 @@ revisions with identical content point at one payload (interning, per
 [Content](content.md) and [Janus](janus.md)). `snapshot.json` is a
 convenience materialization, always reconstructible from the log; it is
 rewritten atomically so a crash leaves either the old snapshot or the new
-one, never a torn file. Sidecars belong to [Drivers](drivers.md) and hold no
+one, never a torn file. Sidecars belong to [Adapters](adapters.md) and hold no
 kernel truth.
 
 ### Hashing

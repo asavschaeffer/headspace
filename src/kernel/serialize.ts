@@ -1,7 +1,7 @@
-// State <-> JSON. Used by the disk snapshot, the dev-server API, and the
+// State <-> JSON. Used by the disk snapshot, the development-host API, and the
 // client loader, so all three stay one representation.
 
-import { emptyState, type SubstrateState } from './state';
+import { emptyState, type WorkspaceGraph } from './state';
 import type {
   Blob,
   Chunk,
@@ -26,7 +26,7 @@ export interface SerializedState {
   commitCount: number;
 }
 
-export function serializeState(state: SubstrateState): SerializedState {
+export function serializeState(state: WorkspaceGraph): SerializedState {
   return {
     chunks: [...state.chunks.values()],
     revisions: [...state.revisions.values()],
@@ -41,7 +41,7 @@ export function serializeState(state: SubstrateState): SerializedState {
   };
 }
 
-export function deserializeState(s: SerializedState): SubstrateState {
+export function deserializeState(s: SerializedState): WorkspaceGraph {
   const state = emptyState();
   for (const c of s.chunks) state.chunks.set(c.id, { ...c });
   for (const r of s.revisions) state.revisions.set(r.id, r);

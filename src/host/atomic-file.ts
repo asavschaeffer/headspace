@@ -10,7 +10,7 @@ export type AtomicPublish = (temporaryPath: string, destinationPath: string) => 
 export function atomicWriteText(path: string, text: string, publish: AtomicPublish = renameSync): void {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
-  const tmp = join(dir, `.substrate-write-${basename(path)}-${process.pid}-${randomUUID()}.tmp`);
+  const tmp = join(dir, `.headspace-write-${basename(path)}-${process.pid}-${randomUUID()}.tmp`);
   try {
     writeFileSync(tmp, text, { flag: 'wx' });
     publish(tmp, path);

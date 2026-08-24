@@ -1,10 +1,11 @@
 // Filesystem workspace store — the first durable backend behind the store seam
-// (wiki/store.md). Rooted at <workspaceRoot>/.substrate/:
+// Rooted at <workspaceRoot>/.headspace/:
 //   log.jsonl      append-only commits, one JSON line each (authoritative)
 //   blobs/ab/abc…  content-addressed payloads, 2-char fan-out; the log also
 //                  carries blobs, so replay never reads this dir — it is the
 //                  canonical payload store for integrity and future compaction
-//   snapshot.json  { coveredCommits, state } materialization (temp + rename)
+//   snapshot.json  { schemaVersion, coveredCommits, state } materialization
+//                  (temp + rename)
 //   lock           single-writer pid, exclusive-create
 // Node-only; writes are sync so a commit is durable before the tx returns.
 
@@ -19,7 +20,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { applyCommit, emptyState, materialize, type SubstrateState } from '../kernel/state';
+import { applyCommit, emptyState, materialize, type WorkspaceGraph } from '../kernel/state';
 import type { TxCtx } from '../kernel/tx';
 import type {
   ActorId,
@@ -33,12 +34,15 @@ import type {
   Proposal,
   Revision,
 } from '../kernel/types';
+import { workspaceDataPaths } from './workspace-data';
 
 const SNAPSHOT_EVERY = 50; // appends between auto-snapshots
+const SNAPSHOT_SCHEMA_VERSION = 1;
 
 export interface WorkspaceStore {
-  root: string; // the workspace root; store files live under <root>/.substrate
-  state: SubstrateState;
+  root: string; // the user-owned workspace root
+  dataDir: string; // the centralized host-owned .headspace directory
+  state: WorkspaceGraph;
   ctxFor(actorId: ActorId): TxCtx;
   appendCommit(commit: Commit): void; // make a validated commit durable, before it is folded (the TxCtx.onCommit hook)
   snapshotIfDue(): void; // cadence check; call only once the commit is folded (the TxCtx.afterCommit hook)
@@ -60,12 +64,137 @@ interface SerializedState {
 }
 
 interface SnapshotFile {
+  schemaVersion: typeof SNAPSHOT_SCHEMA_VERSION;
   coveredCommits: number; // log lines folded into state; replay starts after this
   state: SerializedState;
 }
 
+type JsonObject = Record<string, unknown>;
+
+const isJsonObject = (value: unknown): value is JsonObject =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function invalidSnapshot(message: string): never {
+  throw new Error(`invalid workspace snapshot: ${message}`);
+}
+
+function readSnapshot(snapshotPath: string): SnapshotFile {
+  const parsed: unknown = JSON.parse(readFileSync(snapshotPath, 'utf8'));
+  if (!isJsonObject(parsed)) invalidSnapshot('root must be an object');
+  if (parsed.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported workspace snapshot schema: ${String(parsed.schemaVersion)}; expected ${SNAPSHOT_SCHEMA_VERSION}`,
+    );
+  }
+  if (!Number.isInteger(parsed.coveredCommits) || (parsed.coveredCommits as number) < 0) {
+    invalidSnapshot('coveredCommits must be a non-negative integer');
+  }
+  if (!isJsonObject(parsed.state)) invalidSnapshot('state must be an object');
+  const state = parsed.state;
+  const arrayFields = [
+    'chunks',
+    'revisions',
+    'blobs',
+    'occurrences',
+    'links',
+    'derivations',
+    'proposals',
+    'operations',
+  ] as const;
+  for (const field of arrayFields) {
+    if (!Array.isArray(state[field])) invalidSnapshot(`state.${field} must be an array`);
+  }
+  if (state.head !== null && typeof state.head !== 'string') invalidSnapshot('state.head must be a string or null');
+  if (!Number.isInteger(state.commitCount) || (state.commitCount as number) < 0) {
+    invalidSnapshot('state.commitCount must be a non-negative integer');
+  }
+  if (parsed.coveredCommits !== state.commitCount) {
+    invalidSnapshot('coveredCommits must equal state.commitCount');
+  }
+  if ((state.commitCount === 0) !== (state.head === null)) {
+    invalidSnapshot('state.head does not match state.commitCount');
+  }
+
+  const operations = new Map<string, JsonObject>();
+  const operationValues = state.operations as unknown[];
+  operationValues.forEach((value, index) => {
+    if (!isJsonObject(value)) invalidSnapshot(`state.operations[${index}] must be an object`);
+    if (typeof value.id !== 'string' || value.id.length === 0) invalidSnapshot(`state.operations[${index}].id must be a string`);
+    if (operations.has(value.id)) invalidSnapshot(`duplicate operation ${value.id}`);
+    if (typeof value.kind !== 'string') invalidSnapshot(`operation ${value.id}.kind must be a string`);
+    if (typeof value.actorId !== 'string') invalidSnapshot(`operation ${value.id}.actorId must be a string`);
+    if (typeof value.at !== 'string') invalidSnapshot(`operation ${value.id}.at must be a string`);
+    if (!Array.isArray(value.inputRevisionIds) || value.inputRevisionIds.some((id) => typeof id !== 'string')) {
+      invalidSnapshot(`operation ${value.id}.inputRevisionIds must be a string array`);
+    }
+    if (!Array.isArray(value.outputRevisionIds) || value.outputRevisionIds.some((id) => typeof id !== 'string')) {
+      invalidSnapshot(`operation ${value.id}.outputRevisionIds must be a string array`);
+    }
+    operations.set(value.id, value);
+  });
+  if (operations.size !== state.commitCount) invalidSnapshot('operation count must equal state.commitCount');
+
+  const proposalIds = new Set<string>();
+  const proposalValues = state.proposals as unknown[];
+  proposalValues.forEach((value, index) => {
+    if (!isJsonObject(value)) invalidSnapshot(`state.proposals[${index}] must be an object`);
+    if (typeof value.id !== 'string' || value.id.length === 0) invalidSnapshot(`state.proposals[${index}].id must be a string`);
+    if (proposalIds.has(value.id)) invalidSnapshot(`duplicate proposal ${value.id}`);
+    proposalIds.add(value.id);
+    if (typeof value.operationId !== 'string') invalidSnapshot(`proposal ${value.id}.operationId must be a string`);
+    if (typeof value.kind !== 'string') invalidSnapshot(`proposal ${value.id}.kind must be a string`);
+    if (typeof value.createdBy !== 'string' || typeof value.createdAt !== 'string') {
+      invalidSnapshot(`proposal ${value.id} creation provenance is malformed`);
+    }
+    const proposeOperation = operations.get(value.operationId);
+    if (
+      !proposeOperation ||
+      proposeOperation.kind !== 'propose' ||
+      proposeOperation.at !== value.createdAt ||
+      !isJsonObject(proposeOperation.params) ||
+      proposeOperation.params.kind !== value.kind
+    ) {
+      invalidSnapshot(`proposal ${value.id} does not resolve to its matching propose operation`);
+    }
+    if (value.status === 'open') {
+      if (value.resolution !== undefined) invalidSnapshot(`open proposal ${value.id} cannot have a resolution`);
+      return;
+    }
+    if (value.status !== 'accepted' && value.status !== 'rejected' && value.status !== 'superseded') {
+      invalidSnapshot(`proposal ${value.id}.status is unsupported`);
+    }
+    if (!isJsonObject(value.resolution)) invalidSnapshot(`terminal proposal ${value.id} requires a resolution`);
+    const resolution = value.resolution;
+    if (
+      typeof resolution.operationId !== 'string' ||
+      typeof resolution.by !== 'string' ||
+      typeof resolution.at !== 'string'
+    ) {
+      invalidSnapshot(`proposal ${value.id} resolution provenance is malformed`);
+    }
+    const resolutionOperation = operations.get(resolution.operationId);
+    const expectedKind = value.status === 'accepted' ? 'accept' : 'reject';
+    if (
+      !resolutionOperation ||
+      resolutionOperation.kind !== expectedKind ||
+      resolutionOperation.actorId !== resolution.by ||
+      resolutionOperation.at !== resolution.at
+    ) {
+      invalidSnapshot(`proposal ${value.id} resolution does not resolve consistently`);
+    }
+    if (
+      value.status === 'accepted' &&
+      (!isJsonObject(resolutionOperation.params) || resolutionOperation.params.proposalId !== value.id)
+    ) {
+      invalidSnapshot(`proposal ${value.id} acceptance operation names another proposal`);
+    }
+  });
+
+  return parsed as unknown as SnapshotFile;
+}
+
 // Map keys are always the value's own id/hash, so arrays of values round-trip.
-function serializeState(s: SubstrateState): SerializedState {
+function serializeState(s: WorkspaceGraph): SerializedState {
   return {
     chunks: [...s.chunks.values()],
     revisions: [...s.revisions.values()],
@@ -80,7 +209,7 @@ function serializeState(s: SubstrateState): SerializedState {
   };
 }
 
-function deserializeState(d: SerializedState): SubstrateState {
+function deserializeState(d: SerializedState): WorkspaceGraph {
   const s = emptyState();
   for (const c of d.chunks) s.chunks.set(c.id, c);
   for (const r of d.revisions) s.revisions.set(r.id, r);
@@ -127,11 +256,12 @@ function readLog(logPath: string, from: number): LogTail {
 }
 
 export async function openWorkspace(rootDir: string, opts: { force?: boolean } = {}): Promise<WorkspaceStore> {
-  const dir = join(rootDir, '.substrate');
-  const logPath = join(dir, 'log.jsonl');
-  const snapPath = join(dir, 'snapshot.json');
-  const lockPath = join(dir, 'lock');
-  mkdirSync(join(dir, 'blobs'), { recursive: true });
+  const paths = workspaceDataPaths(rootDir);
+  const dir = paths.dataDir;
+  const logPath = paths.logPath;
+  const snapPath = paths.snapshotPath;
+  const lockPath = paths.lockPath;
+  mkdirSync(paths.blobsDir, { recursive: true });
 
   // Single-writer: exclusive-create wins. A lock whose holder pid is no longer
   // alive is a crash artifact and is taken over; a live holder is respected —
@@ -167,7 +297,7 @@ export async function openWorkspace(rootDir: string, opts: { force?: boolean } =
   acquireLock();
 
   const putBlob = (b: Blob): void => {
-    const fanout = join(dir, 'blobs', b.hash.slice(0, 2));
+    const fanout = join(paths.blobsDir, b.hash.slice(0, 2));
     const path = join(fanout, b.hash);
     if (existsSync(path)) return; // immutable: first write wins
     mkdirSync(fanout, { recursive: true });
@@ -176,17 +306,17 @@ export async function openWorkspace(rootDir: string, opts: { force?: boolean } =
     renameSync(tmp, path);
   };
 
-  let state: SubstrateState;
+  let state: WorkspaceGraph;
   try {
     let log: LogTail;
     if (existsSync(snapPath)) {
-      const snap = JSON.parse(readFileSync(snapPath, 'utf8')) as SnapshotFile;
+      const snap = readSnapshot(snapPath);
       state = deserializeState(snap.state);
       log = readLog(logPath, snap.coveredCommits);
-      for (const c of log.tail) applyCommit(state, c, { allowLegacyProposalLinkageOmissions: true });
+      for (const c of log.tail) applyCommit(state, c);
     } else {
       log = readLog(logPath, 0);
-      state = materialize(log.tail, { allowLegacyProposalLinkageOmissions: true });
+      state = materialize(log.tail);
     }
     // Drop the crash artifact so future appends stay line-aligned.
     if (log.torn) truncateSync(logPath, log.cleanBytes);
@@ -205,7 +335,11 @@ export async function openWorkspace(rootDir: string, opts: { force?: boolean } =
     // coveredCommits is a LINE OFFSET into the log. Recording it while the log
     // is suspect would tell the next open to skip lines that may not be there.
     if (writeFailed) throw new Error(`refusing to snapshot an unwritable workspace: ${writeFailed.message}`);
-    const file: SnapshotFile = { coveredCommits: state.commitCount, state: serializeState(state) };
+    const file: SnapshotFile = {
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+      coveredCommits: state.commitCount,
+      state: serializeState(state),
+    };
     const tmp = `${snapPath}.tmp`;
     writeFileSync(tmp, JSON.stringify(file));
     renameSync(tmp, snapPath);
@@ -247,6 +381,7 @@ export async function openWorkspace(rootDir: string, opts: { force?: boolean } =
 
   return {
     root: rootDir,
+    dataDir: dir,
     state,
     ctxFor: (actorId) => ({ state, actorId, onCommit: appendCommit, afterCommit: snapshotIfDue }),
     appendCommit,

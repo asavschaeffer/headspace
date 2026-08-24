@@ -1,12 +1,12 @@
 # Headspace
 
-Headspace is a local spatial environment for bringing heterogeneous material into a common substrate, navigating it at several scales, and letting people or model collaborators propose changes without silently overwriting the source.
+Headspace is a local spatial environment that brings heterogeneous material into a versioned workspace graph, makes it navigable at several scales, and lets people or model collaborators propose changes without silently overwriting the source.
 
 Version 0.1.0 proves one complete loop:
 
 > ingest → navigate → focus → transform → review → integrate → restart
 
-The product is **Headspace**. **Substrate** is the small immutable kernel and durable local store underneath it.
+**Headspace** is the product. A shared **kernel** enforces the workspace graph's invariants, while the local **host** owns authoritative operations and a replaceable **store** makes them durable.
 
 ## Quick start
 
@@ -21,7 +21,7 @@ npm start
 
 On macOS or Linux, set the workspace with `export HEADSPACE_WORKSPACE=/path/to/workspace`. Open the loopback URL printed by the host. If `HEADSPACE_WORKSPACE` is absent, the release host scans its current directory.
 
-Use a small copy or test workspace first. Headspace keeps its append-only log, snapshots, ingestion catalog, and sidecars in `<workspace>/.substrate/`. The selected filesystem remains authoritative in 0.1.0; source write-back is never automatic and is offered only where the active adapter declares a safe projection.
+Use a small copy or test workspace first. Headspace keeps its append-only log, snapshots, ingestion catalog, and sidecars in `<workspace>/.headspace/`. The selected filesystem remains authoritative in 0.1.0; source write-back is never automatic and is offered only where the active adapter declares a safe projection.
 
 For UI development, run `npm run dev`. With no selected workspace, the development fixture opens this repository's design corpus; the built release host instead defaults to its current directory.
 
@@ -68,7 +68,7 @@ $env:HEADSPACE_OPENAI_MODEL = 'a-model-available-to-your-account'
 
 Headspace has no hidden default model. The API key stays in the host process; the browser can choose only a capability the host has exposed. Dispatching to a remote collaborator sends the visible bounded context and instruction to that provider. The UI labels that egress before dispatch, and a provider or transport failure creates no proposal or partial kernel state.
 
-A successful remote proposal records the exposed collaborator identity and version, the model identity returned by the provider, and the provider response receipt. Credentials and endpoint secrets are never written into substrate state.
+A successful remote proposal records the exposed collaborator identity and version, the model identity returned by the provider, and the provider response receipt. Credentials and endpoint secrets are never written into workspace graph state.
 
 Secrets are ignored by Git. `.env.example` documents variable names, but 0.1.0 does not automatically load `.env`; inject values through your shell or service environment.
 
@@ -103,7 +103,7 @@ The release promise and its workback live in [RELEASE_NOTES.md](RELEASE_NOTES.md
 
 Headspace 0.1.0 selects one workspace at host startup; it does not yet include an in-app folder picker or multi-root workspaces. It also does not move files by spatial drag-and-drop or automatically reorganize the filesystem.
 
-This release does not promise first-party parsing for every format, autonomous changes, continuous bidirectional sync, multi-user realtime collaboration, durable spatial coordinates, semantic clustering, external-web snapshotting, or a plugin marketplace. Those are future tenants of the same seams, not prerequisites hidden inside this kernel.
+This release does not promise first-party parsing for every format, autonomous changes, continuous bidirectional sync, multi-user realtime collaboration, durable spatial coordinates, semantic clustering, external-web snapshotting, or a plugin marketplace. Those are future implementations behind the same seams, not prerequisites hidden inside this kernel.
 
 ## License
 

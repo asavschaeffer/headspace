@@ -1,4 +1,4 @@
-// Release host: one local Node HTTP server owns both the durable substrate API
+// Release host: one local Node HTTP server owns both the durable Headspace API
 // and the built client. The API itself remains the same middleware used by
 // Vite; this module only supplies its production transport and static shell.
 
@@ -13,12 +13,12 @@ import { realpathSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createSubstrateServer, type SubstrateServerOptions } from './api';
+import { createHeadspaceHost, type HeadspaceHostOptions } from './api';
 
 type Next = (error?: unknown) => void;
 type Middleware = (req: IncomingMessage, res: ServerResponse, next: Next) => void;
 
-export interface ReleaseServerOptions extends SubstrateServerOptions {
+export interface ReleaseServerOptions extends HeadspaceHostOptions {
   /** Directory produced by `vite build`. Defaults to HEADSPACE_DIST or ./dist. */
   distDir?: string;
   /** Bind address. Headspace 0.1.0 accepts loopback addresses only. */
@@ -330,15 +330,15 @@ export function createReleaseServer(options: ReleaseServerOptions = {}): Release
   });
 
   const usesDefaultScan = options.contentDirs === undefined && options.contentFiles === undefined;
-  const api = createSubstrateServer({
+  const hostRuntime = createHeadspaceHost({
     root: workspaceRoot,
     contentDirs: usesDefaultScan ? ['.'] : options.contentDirs,
     contentFiles: options.contentFiles,
     collaborators: options.collaborators,
   });
-  const configure = api.plugin.configureServer;
+  const configure = hostRuntime.plugin.configureServer;
   if (typeof configure !== 'function') {
-    throw new Error('substrate API did not expose a server middleware hook');
+    throw new Error('Headspace host did not expose a server middleware hook');
   }
   (configure as unknown as (server: {
     httpServer: Server;
@@ -364,7 +364,7 @@ export function createReleaseServer(options: ReleaseServerOptions = {}): Release
         try {
           // Readiness includes opening, locking, replaying, and initially
           // ingesting the workspace. A broken workspace never gets a socket.
-          await api.ready();
+          await hostRuntime.ready();
           if (terminal) throw new Error('release server closed while starting');
           await new Promise<void>((resolveListen, rejectListen) => {
             const onError = (error: Error): void => {
@@ -406,7 +406,7 @@ export function createReleaseServer(options: ReleaseServerOptions = {}): Release
                 server.closeIdleConnections?.();
               });
             } else {
-              api.close();
+              hostRuntime.close();
             }
           } catch (cleanupError) {
             throw new AggregateError(
@@ -434,7 +434,7 @@ export function createReleaseServer(options: ReleaseServerOptions = {}): Release
       closePromise = (async (): Promise<void> => {
         await listenPromise?.catch(() => undefined);
         if (!server.listening) {
-          api.close();
+          hostRuntime.close();
           runningAddress = null;
           return;
         }

@@ -1,4 +1,4 @@
-// The deterministic reference tenant. It lives outside the kernel so replacing
+// The deterministic reference adapter. It lives outside the kernel so replacing
 // it never changes selection, proposal, or acceptance semantics.
 
 import type { CompletionOutput, ReducedContext } from '../kernel/select';
@@ -18,7 +18,7 @@ export const stubCompleter = async (context: ReducedContext, instruction: string
   const focus = context.items.find((item) => item.role === 'focus');
   return {
     text:
-      `(stub) In response to "${instruction}" — a real model driver plugs in behind the Completer seam. ` +
+      `(stub) In response to "${instruction}" — a real model adapter plugs in behind the Completer seam. ` +
       `It saw ${context.items.length} context items (${context.chars} chars), focused on ${focus?.chunkId ?? 'nothing'}.`,
     producer: { id: OFFLINE_COLLABORATOR.id, version: OFFLINE_COLLABORATOR.version },
   };

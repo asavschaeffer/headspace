@@ -3,7 +3,7 @@
 // authored sides, so it never applies itself. Never silent loss: a conflicted
 // hunk carries both sides verbatim, and resolution is authorship.
 
-import { revisionText, type SubstrateState } from './state';
+import { revisionText, type WorkspaceGraph } from './state';
 import { propose, type TxCtx } from './tx';
 import type { ChunkId, ProposalId, RevisionId } from './types';
 
@@ -148,7 +148,7 @@ export function diff3(base: string, ours: string, theirs: string): Diff3Result {
 
 // Nearest revision reachable from both heads through parentRevisionIds (BFS,
 // so the first meeting point is the closest); null when histories share nothing.
-export function commonAncestor(state: SubstrateState, revA: RevisionId, revB: RevisionId): RevisionId | null {
+export function commonAncestor(state: WorkspaceGraph, revA: RevisionId, revB: RevisionId): RevisionId | null {
   for (const id of [revA, revB]) {
     if (!state.revisions.has(id)) throw new Error(`commonAncestor: unknown revision ${id}`);
   }

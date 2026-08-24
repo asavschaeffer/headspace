@@ -26,7 +26,7 @@ const freshRoot = (prefix: string): string => {
   roots.push(root);
   return root;
 };
-const crash = (root: string): void => rmSync(join(root, '.substrate', 'lock'));
+const crash = (root: string): void => rmSync(join(root, '.headspace', 'lock'));
 const one = (items: IngestionItemResult[]): IngestionItemResult => {
   assert.equal(items.length, 1);
   return items[0];
@@ -70,6 +70,7 @@ try {
     const pendingCatalog = readIngestionCatalog(root)!;
     assert.equal(pendingCatalog.pendingMaterializations.length, 1, 'disk retains the write-ahead intent');
     const pending = pendingCatalog.pendingMaterializations[0];
+    if (pending.operationKind !== 'import') throw new Error('expected a current-format import intent');
     const correlated = [...active.state.operations.values()].find(
       (operation) => (operation.params as Record<string, unknown> | undefined)?.ingestionToken === pending.token,
     );
@@ -92,6 +93,41 @@ try {
       },
     );
 
+    const malformedPendingCases: Array<{
+      field: string;
+      remove(catalog: Record<string, unknown>): void;
+    }> = [
+      {
+        field: 'pendingMaterializations',
+        remove: (catalog) => delete catalog.pendingMaterializations,
+      },
+      {
+        field: 'identityKey',
+        remove: (catalog) => delete (catalog.sources as Array<Record<string, unknown>>)[0].identityKey,
+      },
+      {
+        field: 'identityKey',
+        remove: (catalog) => delete (catalog.observations as Array<Record<string, unknown>>)[0].identityKey,
+      },
+      {
+        field: 'productIdentityHash',
+        remove: (catalog) =>
+          delete (catalog.pendingMaterializations as Array<Record<string, unknown>>)[0].productIdentityHash,
+      },
+      {
+        field: 'normalizedRenderedTextHash',
+        remove: (catalog) =>
+          delete (catalog.pendingMaterializations as Array<Record<string, unknown>>)[0].normalizedRenderedTextHash,
+      },
+    ];
+    for (const malformedCase of malformedPendingCases) {
+      const malformed = structuredClone(pendingCatalog) as unknown as Record<string, unknown>;
+      malformedCase.remove(malformed);
+      writeFileSync(join(root, '.headspace', 'ingestion.json'), `${JSON.stringify(malformed, null, 2)}\n`);
+      assert.throws(() => readIngestionCatalog(root), new RegExp(malformedCase.field));
+    }
+    writeFileSync(join(root, '.headspace', 'ingestion.json'), `${JSON.stringify(pendingCatalog, null, 2)}\n`);
+
     crash(root);
     active = await openWorkspace(root);
     assert.deepEqual([...active.state.chunks.keys()].sort(), durableChunkIds, 'restart replays the durable import');
@@ -101,6 +137,14 @@ try {
     assert.equal(renderChunk(active.state, attemptedRepresentation.rootChunkId), 'v1');
     assert.deepEqual([...active.state.chunks.keys()].sort(), durableChunkIds, 'recovery does not duplicate chunks');
     assert.equal(readIngestionCatalog(root)?.pendingMaterializations.length, 0);
+    const recoveredCatalog = readIngestionCatalog(root)!;
+    const missingOperationIds = structuredClone(recoveredCatalog) as unknown as {
+      representations: Array<Record<string, unknown>>;
+    };
+    delete missingOperationIds.representations[0].operationIds;
+    writeFileSync(join(root, '.headspace', 'ingestion.json'), `${JSON.stringify(missingOperationIds, null, 2)}\n`);
+    assert.throws(() => readIngestionCatalog(root), /operationIds/);
+    writeFileSync(join(root, '.headspace', 'ingestion.json'), `${JSON.stringify(recoveredCatalog, null, 2)}\n`);
     active.close();
     active = null;
   }
@@ -130,7 +174,7 @@ try {
     const catalog = readIngestionCatalog(root)!;
     assert.equal(catalog.pendingMaterializations.length, 1);
     catalog.pendingMaterializations[0].productIdentityHash = '0'.repeat(64);
-    writeFileSync(join(root, '.substrate', 'ingestion.json'), `${JSON.stringify(catalog, null, 2)}\n`);
+    writeFileSync(join(root, '.headspace', 'ingestion.json'), `${JSON.stringify(catalog, null, 2)}\n`);
     active.close();
     active = await openWorkspace(root);
     await assert.rejects(

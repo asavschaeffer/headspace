@@ -118,7 +118,7 @@ This protects both sides of a reuse relationship.
 
 ### Reuse defaults
 
-Substrate's default reuse model is:
+Headspace's default reuse model is:
 
 ```text
 visible material may be referenced
@@ -182,7 +182,7 @@ When the source changes, the default behavior is:
 ```text
 source revision changes
   -> local occurrence remains pinned
-  -> Substrate shows an inline diff/proposal
+  -> the client shows an inline diff/proposal
   -> local author accepts, rejects, or keeps watching
 ```
 

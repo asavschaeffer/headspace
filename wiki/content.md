@@ -53,7 +53,7 @@ For text, there are several possible layers:
 
 The kernel should not collapse these into one thing. Exact bytes preserve file
 round-tripping. Normalized forms and parsed structures can be derived by
-drivers, decomposers, or indexes.
+adapters, decomposers, or indexes.
 
 ### Different content types can share one interface
 
@@ -63,7 +63,7 @@ and generated composites without forcing them into one text model.
 The kernel only needs to know that a revision points at durable content with a
 media type. Specialized behavior belongs behind seams:
 
-- drivers import/export external formats
+- adapters import/export external formats
 - decomposers expose smaller derived parts on demand
 - indexes build searchable or semantic projections
 - views render and manipulate user-facing forms
@@ -72,7 +72,7 @@ media type. Specialized behavior belongs behind seams:
 
 Plain text and Markdown chunks can start as byte blobs. Composed documents can
 be represented structurally by occurrences and relations, then exported to
-Markdown or another file format by a driver.
+Markdown or another file format by an adapter.
 
 This means a document may be:
 

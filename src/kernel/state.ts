@@ -11,13 +11,13 @@ import type {
   RevisionId,
   SpanAddress,
 } from './types';
-import { MEDIA_COMPOSITE, MEDIA_TEXT } from './types';
+import { isCompositeMediaType, MEDIA_TEXT } from './types';
 import { keyBetween } from './fractional';
 
 // The materialized truth: what the log says, folded into queryable maps.
 // The log (commits) is authoritative; this state is its deterministic product.
 
-export interface SubstrateState {
+export interface WorkspaceGraph {
   chunks: Map<ChunkId, Chunk>;
   revisions: Map<RevisionId, Revision>;
   blobs: Map<BlobHash, import('./types').Blob>;
@@ -30,7 +30,7 @@ export interface SubstrateState {
   commitCount: number;
 }
 
-export function emptyState(): SubstrateState {
+export function emptyState(): WorkspaceGraph {
   return {
     chunks: new Map(),
     revisions: new Map(),
@@ -46,13 +46,6 @@ export function emptyState(): SubstrateState {
 }
 
 export class InvariantError extends Error {}
-
-export interface CommitValidationOptions {
-  // Pre-0.1 logs omitted proposal/resolution operation linkage. This is a
-  // disk-replay migration allowance only; live admission must use the strict
-  // default so an incoming commit cannot impersonate legacy history.
-  allowLegacyProposalLinkageOmissions?: boolean;
-}
 
 function fail(msg: string): never {
   throw new InvariantError(msg);
@@ -105,7 +98,7 @@ function validateSpan(
 // reachable downward from chunk (or they are the same identity). `extraEdges`
 // lets a commit be validated with its own not-yet-applied occurrences included.
 export function wouldCreateCycle(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   containerId: ChunkId,
   chunkId: ChunkId,
   extraEdges: { containerId: ChunkId; chunkId: ChunkId }[] = [],
@@ -194,7 +187,7 @@ const sameProducer = (
 // Prove that an accept operation is the exact deterministic realization of
 // the reviewed payload. IDs may be freshly minted, but every semantic field,
 // array cardinality, ordering decision, and authorship edge is fixed.
-function validateAcceptedRealization(state: SubstrateState, commit: Commit, proposal: Proposal): void {
+function validateAcceptedRealization(state: WorkspaceGraph, commit: Commit, proposal: Proposal): void {
   const stale = proposalStaleReason(state, proposal);
   if (stale) fail(`accept operation cannot apply stale proposal ${proposal.id}: ${stale}`);
 
@@ -409,9 +402,8 @@ function validateAcceptedRealization(state: SubstrateState, commit: Commit, prop
 // never leave state ahead of the log (store.md: one operation, one commit, one
 // log append). Throws InvariantError; mutates nothing.
 export function validateCommit(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   commit: Commit,
-  options: CommitValidationOptions = {},
 ): void {
   const rawCommit: unknown = commit;
   if (!isRecord(rawCommit)) fail(`commit must be an object`);
@@ -673,13 +665,9 @@ export function validateCommit(
     if (!proposalKinds.has(p.kind)) fail(`proposal ${proposalId} has unknown kind ${String(p.kind)}`);
     if (p.status !== 'open') fail(`new proposal ${proposalId} must be open`);
     if (p.resolution !== undefined) fail(`new proposal ${proposalId} cannot already have a resolution`);
-    if (p.operationId !== undefined) {
-      requireNonEmptyString(p.operationId, `proposal ${proposalId}.operationId`);
-      if (p.operationId !== commit.operation.id) {
-        fail(`proposal ${proposalId} belongs to operation ${p.operationId}, not ${commit.operation.id}`);
-      }
-    } else if (!options.allowLegacyProposalLinkageOmissions) {
-      fail(`new proposal ${proposalId} must name its propose operation`);
+    requireNonEmptyString(p.operationId, `proposal ${proposalId}.operationId`);
+    if (p.operationId !== commit.operation.id) {
+      fail(`proposal ${proposalId} belongs to operation ${p.operationId}, not ${commit.operation.id}`);
     }
     requireNonEmptyString(p.createdBy, `proposal ${proposalId}.createdBy`);
     requireNonEmptyString(p.createdAt, `proposal ${proposalId}.createdAt`);
@@ -1051,16 +1039,13 @@ export function validateCommit(
     }
 
     if (!isRecord(commit.operation.params) || commit.operation.params.kind === undefined) {
-      if (!options.allowLegacyProposalLinkageOmissions) {
-        fail(`proposal ${proposalId} propose operation must name its kind`);
-      }
-    } else {
-      if (commit.operation.params.kind !== p.kind) {
-        fail(`proposal ${proposalId} kind disagrees with its propose operation`);
-      }
-      if (!sameProducer(p.producer, commit.operation.params.producer)) {
-        fail(`proposal ${proposalId} producer disagrees with its propose operation`);
-      }
+      fail(`proposal ${proposalId} propose operation must name its kind`);
+    }
+    if (commit.operation.params.kind !== p.kind) {
+      fail(`proposal ${proposalId} kind disagrees with its propose operation`);
+    }
+    if (!sameProducer(p.producer, commit.operation.params.producer)) {
+      fail(`proposal ${proposalId} producer disagrees with its propose operation`);
     }
   }
 
@@ -1081,22 +1066,19 @@ export function validateCommit(
     if (commit.operation.kind !== expectedOperationKind) {
       fail(`proposalUpdate: ${u.status} requires ${expectedOperationKind} operation, not ${commit.operation.kind}`);
     }
-    if (u.resolution !== undefined) {
-      if (!isRecord(u.resolution)) fail(`proposalUpdate: resolution for ${id} must be an object`);
-      if (u.resolution.by !== commit.operation.actorId || u.resolution.at !== commit.operation.at) {
-        fail(`proposalUpdate: resolution for ${id} is not bound to the current operation actor and time`);
-      }
-      if (u.resolution.operationId !== undefined && u.resolution.operationId !== commit.operation.id) {
-        fail(`proposalUpdate: resolution for ${id} belongs to operation ${u.resolution.operationId}, not ${commit.operation.id}`);
-      }
-      if (u.resolution.operationId === undefined && !options.allowLegacyProposalLinkageOmissions) {
-        fail(`proposalUpdate: resolution for ${id} must name the current operation`);
-      }
-      if (u.resolution.reason !== undefined && typeof u.resolution.reason !== 'string') {
-        fail(`proposalUpdate: resolution reason for ${id} must be a string`);
-      }
-    } else if (!options.allowLegacyProposalLinkageOmissions) {
+    if (u.resolution === undefined) {
       fail(`proposalUpdate: terminal transition for ${id} requires a resolution`);
+    }
+    if (!isRecord(u.resolution)) fail(`proposalUpdate: resolution for ${id} must be an object`);
+    if (u.resolution.by !== commit.operation.actorId || u.resolution.at !== commit.operation.at) {
+      fail(`proposalUpdate: resolution for ${id} is not bound to the current operation actor and time`);
+    }
+    requireNonEmptyString(u.resolution.operationId, `proposalUpdate: resolution for ${id}.operationId`);
+    if (u.resolution.operationId !== commit.operation.id) {
+      fail(`proposalUpdate: resolution for ${id} belongs to operation ${u.resolution.operationId}, not ${commit.operation.id}`);
+    }
+    if (u.resolution.reason !== undefined && typeof u.resolution.reason !== 'string') {
+      fail(`proposalUpdate: resolution reason for ${id} must be a string`);
     }
     if (isRecord(commit.operation.params) && commit.operation.params.proposalId !== undefined &&
       commit.operation.params.proposalId !== id) {
@@ -1131,7 +1113,7 @@ export function validateCommit(
 // here was proven present above, so this cannot fail partway and tear state.
 // Mutates in place; callers that need react-style change detection bump their
 // own version counter per commit.
-export function foldCommit(state: SubstrateState, commit: Commit): void {
+export function foldCommit(state: WorkspaceGraph, commit: Commit): void {
   const f = commit.facts;
   for (const b of f.blobs ?? []) state.blobs.set(b.hash, b);
   for (const c of f.chunks ?? []) state.chunks.set(c.id, { ...c });
@@ -1163,44 +1145,40 @@ export function foldCommit(state: SubstrateState, commit: Commit): void {
 
 // Validate and fold in one step, for callers with nothing to persist between.
 export function applyCommit(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   commit: Commit,
-  options: CommitValidationOptions = {},
 ): void {
-  validateCommit(state, commit, options);
+  validateCommit(state, commit);
   foldCommit(state, commit);
 }
 
-export function materialize(
-  commits: Iterable<Commit>,
-  options: CommitValidationOptions = {},
-): SubstrateState {
+export function materialize(commits: Iterable<Commit>): WorkspaceGraph {
   const state = emptyState();
-  for (const c of commits) applyCommit(state, c, options);
+  for (const c of commits) applyCommit(state, c);
   return state;
 }
 
 // ── accessors ────────────────────────────────────────────────────────────────
 
-export function currentRevision(state: SubstrateState, chunkId: ChunkId): Revision {
+export function currentRevision(state: WorkspaceGraph, chunkId: ChunkId): Revision {
   const chunk = state.chunks.get(chunkId) ?? fail(`unknown chunk ${chunkId}`);
   return state.revisions.get((chunk as Chunk).currentRevisionId) ?? fail(`chunk ${chunkId} head revision missing`);
 }
 
-export function revisionText(state: SubstrateState, revisionId: RevisionId): string {
+export function revisionText(state: WorkspaceGraph, revisionId: RevisionId): string {
   const rev = state.revisions.get(revisionId) ?? fail(`unknown revision ${revisionId}`);
   if ((rev as Revision).redacted) return '[redacted]';
   const blob = state.blobs.get((rev as Revision).blobHash) ?? fail(`revision ${revisionId} blob missing`);
   return blob.text;
 }
 
-export function childOccurrences(state: SubstrateState, containerId: ChunkId): Occurrence[] {
+export function childOccurrences(state: WorkspaceGraph, containerId: ChunkId): Occurrence[] {
   const out: Occurrence[] = [];
   for (const occ of state.occurrences.values()) if (occ.containerId === containerId) out.push(occ);
   return out.sort((a, b) => (a.position < b.position ? -1 : a.position > b.position ? 1 : 0));
 }
 
-export function occurrencesOfChunk(state: SubstrateState, chunkId: ChunkId): Occurrence[] {
+export function occurrencesOfChunk(state: WorkspaceGraph, chunkId: ChunkId): Occurrence[] {
   const out: Occurrence[] = [];
   for (const occ of state.occurrences.values()) if (occ.chunkId === chunkId) out.push(occ);
   return out;
@@ -1209,7 +1187,7 @@ export function occurrencesOfChunk(state: SubstrateState, chunkId: ChunkId): Occ
 // Why an open proposal can no longer be admitted. Kept in the state layer so
 // both the transaction builder and hostile-commit validator use exactly the
 // same applicability test.
-export function proposalStaleReason(state: SubstrateState, p: Proposal): string | null {
+export function proposalStaleReason(state: WorkspaceGraph, p: Proposal): string | null {
   if (p.freshnessRevisionStates) {
     for (const expected of p.freshnessRevisionStates) {
       const revision = state.revisions.get(expected.revisionId);
@@ -1327,19 +1305,19 @@ export function proposalStaleReason(state: SubstrateState, p: Proposal): string 
 }
 
 // The revision an occurrence renders: its pin, or the chunk's current head.
-export function occurrenceRevision(state: SubstrateState, occ: Occurrence): Revision {
+export function occurrenceRevision(state: WorkspaceGraph, occ: Occurrence): Revision {
   if (occ.pin === 'current') return currentRevision(state, occ.chunkId);
   return (state.revisions.get(occ.pin) as Revision) ?? fail(`occurrence ${occ.id} pinned to missing revision ${occ.pin}`);
 }
 
-export function isComposite(state: SubstrateState, chunkId: ChunkId): boolean {
-  return currentRevision(state, chunkId).mediaType === MEDIA_COMPOSITE;
+export function isComposite(state: WorkspaceGraph, chunkId: ChunkId): boolean {
+  return isCompositeMediaType(currentRevision(state, chunkId).mediaType);
 }
 
 // A composite blob's text is JSON: { "join": string }. The separator is part of
 // how the content reads (content), while ordering stays in occurrences
 // (arrangement) — so rearranging never edits content, but rendering is exact.
-export function compositeJoin(state: SubstrateState, rev: Revision): string {
+export function compositeJoin(state: WorkspaceGraph, rev: Revision): string {
   try {
     const parsed = JSON.parse(state.blobs.get(rev.blobHash)?.text ?? '');
     if (typeof parsed?.join === 'string') return parsed.join;
@@ -1353,7 +1331,7 @@ export function compositeJoin(state: SubstrateState, rev: Revision): string {
 // chunk's occurrence set, while its pinned revision determines visibility,
 // media type, and join semantics. Nested occurrences likewise render their
 // own effective (current or pinned) revision.
-export function renderRevision(state: SubstrateState, revisionId: RevisionId, seen: Set<ChunkId> = new Set()): string {
+export function renderRevision(state: WorkspaceGraph, revisionId: RevisionId, seen: Set<ChunkId> = new Set()): string {
   const rev = state.revisions.get(revisionId) ?? fail(`unknown revision ${revisionId}`);
   const chunkId = (rev as Revision).chunkId;
   if (seen.has(chunkId)) return `[cycle: ${chunkId}]`;
@@ -1362,7 +1340,7 @@ export function renderRevision(state: SubstrateState, revisionId: RevisionId, se
     seen.delete(chunkId);
     return '[redacted]';
   }
-  if (rev.mediaType !== MEDIA_COMPOSITE) {
+  if (!isCompositeMediaType(rev.mediaType)) {
     seen.delete(chunkId);
     return revisionText(state, rev.id);
   }
@@ -1375,11 +1353,11 @@ export function renderRevision(state: SubstrateState, revisionId: RevisionId, se
 }
 
 // Reader's text of a continuing chunk identity at its current revision.
-export function renderChunk(state: SubstrateState, chunkId: ChunkId, seen: Set<ChunkId> = new Set()): string {
+export function renderChunk(state: WorkspaceGraph, chunkId: ChunkId, seen: Set<ChunkId> = new Set()): string {
   return renderRevision(state, currentRevision(state, chunkId).id, seen);
 }
 
-export function openProposals(state: SubstrateState, targetChunkId?: ChunkId): Proposal[] {
+export function openProposals(state: WorkspaceGraph, targetChunkId?: ChunkId): Proposal[] {
   const out: Proposal[] = [];
   for (const p of state.proposals.values()) {
     if (p.status !== 'open') continue;

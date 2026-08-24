@@ -1,6 +1,7 @@
 node_modules
 dist
 public/snapshot.json
+.headspace/
 .substrate/
 .env
 .env.*

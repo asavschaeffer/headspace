@@ -1,7 +1,7 @@
-# Substrate architecture wiki
+# Headspace architecture wiki
 
-This directory is a working notebook for deriving Substrate from first
-principles.
+This directory is a working notebook for deriving Headspace's architecture
+from first principles.
 
 These pages are not a specification yet. They distinguish:
 
@@ -32,7 +32,8 @@ Only stable, compressed conclusions should eventually move into
 - [Deletion and redaction](deletion.md): sever, tombstone, unpublish, redact,
   and hard-delete semantics.
 - [Store](store.md): durable recording and transactions.
-- [Drivers](drivers.md): translation between external forms and chunks.
+- [Adapters](adapters.md): replaceable capability implementations, with source
+  and projection adapters worked through in detail.
 - [Bindings](bindings.md): correspondence with external objects.
 - [Decomposition](decomposition.md): derived parts on demand, durable identity
   on commitment.

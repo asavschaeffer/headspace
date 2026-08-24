@@ -1,4 +1,4 @@
-// Markdown filesystem driver. The sidecar is a projection manifest: it records
+// Markdown filesystem adapter. The sidecar is a projection manifest: it records
 // both identity and the authority an external edit may exercise.
 
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
@@ -11,7 +11,7 @@ import {
   occurrenceRevision,
   renderChunk,
   revisionText,
-  type SubstrateState,
+  type WorkspaceGraph,
 } from '../kernel/state';
 import { createChunk, createComposite, moveOccurrence, propose, revise, supersedeProposal, type TxCtx } from '../kernel/tx';
 import { MEDIA_COMPOSITE, MEDIA_MARKDOWN } from '../kernel/types';
@@ -31,6 +31,7 @@ import type {
 } from '../kernel/types';
 import { atomicWriteText, type AtomicPublish } from './atomic-file';
 import { assessSimilarity } from './similarity';
+import { workspaceDataPaths } from './workspace-data';
 
 const SIM_THRESHOLD = 0.5;
 const SIDECAR_SCHEMA_VERSION = 2;
@@ -55,14 +56,6 @@ export interface MarkdownSidecar {
   docChunkId: ChunkId;
   relPath: string;
   blocks: MarkdownProjectionBlock[];
-  lastImportedFileHash: string;
-  lastProjectedFileHash: string;
-}
-
-interface LegacyMarkdownSidecar {
-  docChunkId: ChunkId;
-  relPath: string;
-  blocks: { chunkId: ChunkId; blobHash: BlobHash }[];
   lastImportedFileHash: string;
   lastProjectedFileHash: string;
 }
@@ -129,11 +122,59 @@ function sourcePathForProjection(workspaceRoot: string, relPath: string): string
 
 export function sidecarPath(workspaceRoot: string, relPath: string): string {
   assertSafeRel(workspaceRoot, relPath);
-  return join(workspaceRoot, '.substrate', 'sidecars', `${relPath}.json`);
+  return join(workspaceDataPaths(workspaceRoot).sidecarsDir, `${relPath}.json`);
 }
 
-function readSidecar(workspaceRoot: string, relPath: string): MarkdownSidecar | LegacyMarkdownSidecar {
-  return JSON.parse(readFileSync(sidecarPath(workspaceRoot, relPath), 'utf8')) as MarkdownSidecar | LegacyMarkdownSidecar;
+function readSidecar(workspaceRoot: string, relPath: string): MarkdownSidecar {
+  const parsed: unknown = JSON.parse(readFileSync(sidecarPath(workspaceRoot, relPath), 'utf8'));
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`invalid Markdown sidecar for ${relPath}: expected an object`);
+  }
+  const sidecar = parsed as Record<string, unknown>;
+  if (sidecar.schemaVersion !== SIDECAR_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported Markdown sidecar schema for ${relPath}: ${String(sidecar.schemaVersion)}; expected ${SIDECAR_SCHEMA_VERSION}`,
+    );
+  }
+  for (const field of ['docChunkId', 'relPath', 'lastImportedFileHash', 'lastProjectedFileHash'] as const) {
+    if (typeof sidecar[field] !== 'string') throw new Error(`invalid Markdown sidecar for ${relPath}: ${field} must be a string`);
+  }
+  if (!Array.isArray(sidecar.blocks)) throw new Error(`invalid Markdown sidecar for ${relPath}: blocks must be an array`);
+  sidecar.blocks.forEach((value, index) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new Error(`invalid Markdown sidecar for ${relPath}: blocks[${index}] must be an object`);
+    }
+    const block = value as Record<string, unknown>;
+    for (const field of [
+      'occurrenceId',
+      'chunkId',
+      'projectedTextHash',
+      'projectedText',
+      'sourceRevisionId',
+      'pin',
+    ] as const) {
+      if (typeof block[field] !== 'string') {
+        throw new Error(`invalid Markdown sidecar for ${relPath}: blocks[${index}].${field} must be a string`);
+      }
+    }
+    if (!Array.isArray(block.occurrencePath) || block.occurrencePath.some((part) => typeof part !== 'string')) {
+      throw new Error(`invalid Markdown sidecar for ${relPath}: blocks[${index}].occurrencePath must be a string array`);
+    }
+    if (!Number.isInteger(block.blockOrdinal) || (block.blockOrdinal as number) < 0) {
+      throw new Error(`invalid Markdown sidecar for ${relPath}: blocks[${index}].blockOrdinal must be a non-negative integer`);
+    }
+    if (block.mode !== 'contain' && block.mode !== 'transclude') {
+      throw new Error(`invalid Markdown sidecar for ${relPath}: blocks[${index}].mode is unsupported`);
+    }
+    if (
+      block.policy !== 'revise-leaf' &&
+      block.policy !== 'flatten-composite' &&
+      block.policy !== 'detach-transclusion'
+    ) {
+      throw new Error(`invalid Markdown sidecar for ${relPath}: blocks[${index}].policy is unsupported`);
+    }
+  });
+  return parsed as MarkdownSidecar;
 }
 
 function writeSidecar(workspaceRoot: string, relPath: string, sc: MarkdownSidecar, publish?: AtomicPublish): void {
@@ -153,19 +194,19 @@ function openReconciliation(ctx: TxCtx, docChunkId: ChunkId): Proposal | undefin
   return undefined;
 }
 
-function policyFor(state: SubstrateState, occ: Occurrence): ReconciliationPolicy {
+function policyFor(state: WorkspaceGraph, occ: Occurrence): ReconciliationPolicy {
   if (occ.mode === 'transclude') return 'detach-transclusion';
   return occurrenceRevision(state, occ).mediaType === MEDIA_COMPOSITE ? 'flatten-composite' : 'revise-leaf';
 }
 
 // Start from the occurrence so a leaf pin is honored. Composite occurrences
 // expand through the kernel renderer instead of leaking their JSON join blob.
-function renderOccurrence(state: SubstrateState, occ: Occurrence): string {
+function renderOccurrence(state: WorkspaceGraph, occ: Occurrence): string {
   const rev = occurrenceRevision(state, occ);
   return rev.mediaType === MEDIA_COMPOSITE ? renderChunk(state, occ.chunkId) : revisionText(state, rev.id);
 }
 
-function projectionUnits(state: SubstrateState, docChunkId: ChunkId): ProjectionUnit[] {
+function projectionUnits(state: WorkspaceGraph, docChunkId: ChunkId): ProjectionUnit[] {
   const units: ProjectionUnit[] = [];
   for (const occ of childOccurrences(state, docChunkId)) {
     const rendered = renderOccurrence(state, occ);
@@ -180,7 +221,7 @@ function projectionUnits(state: SubstrateState, docChunkId: ChunkId): Projection
   return units;
 }
 
-async function buildProjection(state: SubstrateState, docChunkId: ChunkId): Promise<MarkdownProjection> {
+async function buildProjection(state: WorkspaceGraph, docChunkId: ChunkId): Promise<MarkdownProjection> {
   const units = projectionUnits(state, docChunkId);
   const hashes = await Promise.all(units.map((u) => blobHashOf(MEDIA_MARKDOWN, u.text)));
   return {
@@ -218,34 +259,6 @@ function manifestSnapshotEqual(a: MarkdownProjectionBlock[], b: MarkdownProjecti
       );
     })
   );
-}
-
-// V1 sidecars are upgraded in memory. The old hash/text remain the evidence
-// used to match the last file projection, while current occurrence metadata
-// supplies the authority policy.
-function upgradeSidecar(state: SubstrateState, raw: MarkdownSidecar | LegacyMarkdownSidecar): MarkdownSidecar {
-  if ('schemaVersion' in raw && raw.schemaVersion === SIDECAR_SCHEMA_VERSION) return raw;
-  const legacy = raw as LegacyMarkdownSidecar;
-  const unclaimed = childOccurrences(state, legacy.docChunkId);
-  const blocks: MarkdownProjectionBlock[] = legacy.blocks.map((old) => {
-    const i = unclaimed.findIndex((occ) => occ.chunkId === old.chunkId);
-    if (i < 0) throw new Error(`legacy sidecar block ${old.chunkId} no longer occurs in ${legacy.docChunkId}`);
-    const [occ] = unclaimed.splice(i, 1);
-    const oldRevision = [...state.revisions.values()].find((r) => r.chunkId === old.chunkId && r.blobHash === old.blobHash);
-    return {
-      occurrenceId: occ.id,
-      occurrencePath: [occ.id],
-      blockOrdinal: 0,
-      chunkId: old.chunkId,
-      projectedTextHash: old.blobHash,
-      projectedText: state.blobs.get(old.blobHash)?.text ?? '',
-      sourceRevisionId: oldRevision?.id ?? occurrenceRevision(state, occ).id,
-      pin: occ.pin,
-      mode: occ.mode,
-      policy: policyFor(state, occ),
-    };
-  });
-  return { ...legacy, schemaVersion: SIDECAR_SCHEMA_VERSION, blocks };
 }
 
 export async function importMarkdownFile(
@@ -302,7 +315,7 @@ export async function importMarkdownFile(
 // hash of the exact normalized source text recorded in its write-ahead intent;
 // no source bytes need to be duplicated in the catalog.
 export async function recoverMarkdownImport(
-  state: SubstrateState,
+  state: WorkspaceGraph,
   opts: { workspaceRoot: string; relPath: string; docChunkId: ChunkId; lastImportedFileHash: string },
 ): Promise<void> {
   const { workspaceRoot, relPath, docChunkId, lastImportedFileHash } = opts;
@@ -326,7 +339,7 @@ export async function recoverMarkdownImport(
   });
 }
 
-export function projectMarkdown(state: SubstrateState, docChunkId: ChunkId): string {
+export function projectMarkdown(state: WorkspaceGraph, docChunkId: ChunkId): string {
   return canonical(projectionUnits(state, docChunkId).map((u) => u.text));
 }
 
@@ -370,13 +383,13 @@ export async function reconcileMarkdownFile(
   const { workspaceRoot, relPath } = opts;
   const text = normalizeEol(opts.text);
   const state = ctx.state;
-  const sc = upgradeSidecar(state, readSidecar(workspaceRoot, relPath));
+  const sc = readSidecar(workspaceRoot, relPath);
   const fileHash = await sha256Hex(text);
   if (fileHash === sc.lastImportedFileHash || fileHash === sc.lastProjectedFileHash) return { action: 'noop' };
 
   const currentProjection = await buildProjection(state, sc.docChunkId);
   const currentProjectionHash = await sha256Hex(currentProjection.text);
-  // Proposal acceptance mutates kernel truth, not driver memory. Converge the
+  // Proposal acceptance mutates kernel truth, not adapter memory. Converge the
   // manifest when accepted truth now renders exactly as the file.
   if (currentProjectionHash === fileHash) {
     const obsolete = openReconciliation(ctx, sc.docChunkId);

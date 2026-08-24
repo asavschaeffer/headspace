@@ -66,7 +66,7 @@ layer may persist and what it must always be able to recompute
 - Deleting a star severs the occurrence the user is looking at; tombstoning
   the identity everywhere is an explicit, distinct action ([Deletion](deletion.md)).
 - The store is authoritative for identity, structure, history, and provenance;
-  a bound file is authoritative for bytes edited outside Substrate
+  a bound file is authoritative for bytes edited with external tools
   ([Store](store.md)).
 - The atomic unit of change is one operation, one commit, one log append, in
   an append-only log with periodic snapshots ([Store](store.md)).
@@ -79,13 +79,13 @@ layer may persist and what it must always be able to recompute
   one doc chunk, renamed files are rediscovered by content hash, and binding
   history is sedimentary ([Bindings](bindings.md)).
 - Decomposition is a registered, versioned method behind its own seam, not
-  driver-private policy; a driver chooses which method applies to its format
-  ([Decomposition](decomposition.md), [Drivers](drivers.md)).
-- Chunk identity survives repeated imports through driver sidecar memory,
+  adapter-private policy; an adapter chooses which method applies to its format
+  ([Decomposition](decomposition.md), [Adapters](adapters.md)).
+- Chunk identity survives repeated imports through adapter sidecar memory,
   reconstructed by content-hash matching when the sidecar is lost
-  ([Drivers](drivers.md)).
+  ([Adapters](adapters.md)).
 - Lossy projection is declared explicitly; opaque blocks pass through
-  byte-stable rather than being silently dropped ([Drivers](drivers.md)).
+  byte-stable rather than being silently dropped ([Adapters](adapters.md)).
 - Select, reduce, and generate are a pipeline over the transaction vocabulary,
   not kernel primitives; generation terminates in `propose`
   ([Operations](operations.md)).

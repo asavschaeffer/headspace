@@ -1,6 +1,6 @@
 # Headspace 0.1.0
 
-Headspace 0.1.0 is the first complete version of a spatial environment where heterogeneous material becomes navigable and addressable, and where people, models, and tools can safely reshape it through reviewable proposals.
+Headspace 0.1.0 is the first complete release of a local spatial environment that brings heterogeneous material into a navigable, addressable, versioned workspace graph and lets people, models, and tools safely reshape it through reviewable proposals.
 
 The promise of this release is one coherent loop:
 
@@ -10,7 +10,7 @@ The promise of this release is one coherent loop:
 
 ### Bring material in
 
-Headspace can open a local workspace and turn its sources into a common substrate through replaceable ingestion adapters. The first adapters cover directories, Markdown and plain text, plus a converter-backed document format that proves richer formats can plug into the same boundary.
+Headspace can open a local workspace and bring its sources into a versioned workspace graph through replaceable ingestion adapters. The first adapters cover directories, Markdown and plain text, plus a converter-backed document format that proves richer formats can plug into the same boundary.
 
 Conversion is interpretation, not replacement. Headspace retains the identity of the original source and records which adapter and version produced each derived representation.
 
@@ -46,12 +46,12 @@ Copying, referencing, transcluding, extracting, and revising remain distinct act
 
 Headspace does not need to become every parser, model, index, or storage system. It provides small boundaries through which those capabilities can participate:
 
-- Source and ingestion adapters bring material into the substrate.
+- Source and ingestion adapters bring material into the workspace graph.
 - Conversion adapters derive usable representations from external formats.
 - Versioned decomposition methods expose smaller addressable parts on demand.
 - Index and selection strategies find relevant context.
 - Intelligence adapters connect people, models, and tools.
-- Persistence and projection adapters connect durable substrate truth with external representations.
+- Persistence and projection adapters connect the durable workspace graph with external representations.
 
 Each seam preserves provenance, exposes failure rather than hiding it, and allows an implementation to be replaced without changing the meaning of existing material.
 
@@ -89,7 +89,7 @@ Those capabilities can grow through the same seams after the central experience 
 
 Headspace 0.1.0 requires Node.js 22.12 or newer. Build with `npm run build`, select one local workspace with `HEADSPACE_WORKSPACE`, then start the combined client and durable host with `npm start`. The host is deliberately loopback-only in this release.
 
-The offline deterministic collaborator is always available. Hosted OpenAI collaboration and PDF-to-Markdown conversion are optional, explicitly configured external tenants; their context or source bytes leave the machine only when their capability is selected. Headspace stores durable state under the selected workspace's `.substrate/` directory. See [README.md](README.md) for configuration, egress boundaries, and recovery details.
+The offline deterministic collaborator is always available. Hosted OpenAI collaboration and PDF-to-Markdown conversion are optional, explicitly configured external adapters; their context or source bytes leave the machine only when their capability is selected. Headspace stores durable state under the selected workspace's `.headspace/` directory. See [README.md](README.md) for configuration, egress boundaries, and recovery details.
 
 ## The standard for 0.1.0
 

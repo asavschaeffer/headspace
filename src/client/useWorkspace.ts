@@ -1,12 +1,12 @@
-// The browser runs the same kernel as the server. Commits apply locally first
+// The browser runs the same kernel as the host. Commits apply locally first
 // (the UI is never blocked on the network), then post to the log. Failure
-// semantics matter here: a network error means the server never saw the commit
+// semantics matter here: a network error means the host never saw the commit
 // — keep it and retry; only a 409 means truth diverged — drop local commits
 // and reload, reporting what was dropped.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { deserializeState } from '../kernel/serialize';
-import type { SubstrateState } from '../kernel/state';
+import type { WorkspaceGraph } from '../kernel/state';
 import type { TxCtx } from '../kernel/tx';
 import type { Commit } from '../kernel/types';
 import type {
@@ -51,7 +51,7 @@ export interface SourceItemView {
 }
 
 export interface Workspace {
-  state: SubstrateState;
+  state: WorkspaceGraph;
   bindings: BindingInfo[];
   identity: WorkspaceIdentity | null;
   adapters: IngestionAdapterCapability[];
@@ -164,7 +164,7 @@ export function preventPendingUnload(event: BeforeUnloadEvent): void {
   event.returnValue = '';
 }
 
-export function useSubstrate() {
+export function useWorkspace() {
   const [ws, setWs] = useState<Workspace | null>(null);
   const [version, setVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -223,7 +223,7 @@ export function useSubstrate() {
       // authoritative GET succeeds.
       if (truthQuarantine.current!.failedReplacement(method)) {
         setTruthUnknown(true);
-        setStatus('server mutation outcome is unknown — reload authoritative truth before editing');
+        setStatus('host mutation outcome is unknown — reload authoritative truth before editing');
       }
       setError(String(e));
       return null;
@@ -238,14 +238,14 @@ export function useSubstrate() {
         setStatus(null);
       }
       // Replacing the state while commits wait in the retry queue would fork the
-      // screen from what later reaches the server: drain first, or refuse.
+      // screen from what later reaches the host: drain first, or refuse.
       if (queue.current.length > 0) {
         await pump();
         // A 409 schedules authoritative recovery behind this mutex. Return so
         // it can acquire the gate; awaiting it here would deadlock.
         if (divergenceRecovery.current) return null;
         if (queue.current.length > 0) {
-          setStatus(`cannot reload: ${queue.current.length} local change(s) not yet accepted by the server`);
+          setStatus(`cannot reload: ${queue.current.length} local change(s) not yet accepted by the host`);
           return null;
         }
       }
@@ -334,12 +334,12 @@ export function useSubstrate() {
             body: JSON.stringify({ commits: [commit] }),
           });
         } catch {
-          scheduleRetry('server unreachable — changes held locally, retrying…');
+          scheduleRetry('host unreachable — changes held locally, retrying…');
           return;
         }
         if (r.status === 409) {
           // Truth diverged. Local queued commits were built on a state the
-          // server refused; drop them atomically with the reload — including
+          // host refused; drop them atomically with the reload — including
           // anything enqueued while the reload was in flight, which was built
           // on the state object the reload discards.
           const dropped = queue.current.length;
@@ -351,7 +351,7 @@ export function useSubstrate() {
           return;
         }
         if (!r.ok) {
-          scheduleRetry(`server error ${r.status} — changes held locally, retrying…`);
+          scheduleRetry(`host error ${r.status} — changes held locally, retrying…`);
           return;
         }
         queue.current.shift();
@@ -368,14 +368,14 @@ export function useSubstrate() {
       actorId: HUMAN_ACTOR,
       // A writer waits for an already-running dispatch reader, so work under
       // that reader may finish and be drained. Divergence is different: the
-      // server rejected this state, so even an existing dispatch is fenced.
+      // host rejected this state, so even an existing dispatch is fenced.
       policy: () =>
         !truthQuarantine.current!.unknown &&
         divergenceRecovery.current === null &&
         replacementRequests.current === 0,
       // Enqueue while the commit is still only validated: if this threw, the
       // kernel would not fold it, and the screen would never show a change the
-      // server was never told about.
+      // host was never told about.
       onCommit: (commit) => {
         queue.current.push(commit);
         setPendingCount(queue.current.length);
@@ -465,7 +465,6 @@ export function useSubstrate() {
     ingestNow,
     complete,
     runDispatch,
-    syncNow: ingestNow,
     reload: () => load(),
     dismissStatus: () => setStatus(null),
   };

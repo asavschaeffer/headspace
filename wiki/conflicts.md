@@ -21,7 +21,7 @@ in exactly two situations:
 ```text
 two heads        -> two revisions descend from one parent and neither
                     is an ancestor of the other
-store vs external -> a driver observes that a bound file's bytes diverged
+store vs external -> an adapter observes that a bound file's bytes diverged
                      from what the store last projected
 ```
 
@@ -40,8 +40,8 @@ overlapping hunks     -> conflict proposal carrying both sides verbatim
 
 A clean merge is still a proposal: a merge combines two authored sides, and
 combined content — like model output and collaborator suggestions — never
-applies itself ([Proposals](proposals.md)). The driver's fast path is not a
-merge; it applies only when one side changed (see [Drivers](drivers.md)). A
+applies itself ([Proposals](proposals.md)). The adapter's fast path is not a
+merge; it applies only when one side changed (see [Adapters](adapters.md)). A
 personal setting may auto-accept clean merges; the accept is still recorded as
 that actor's operation.
 
@@ -91,9 +91,9 @@ superseded and a fresh merge may be offered against the new heads.
 ```text
 case                          resolution
 ----------------------------  ------------------------------------------------
-internal + external file      reconciliation proposal from the driver; block
+internal + external file      reconciliation proposal from the adapter; block
 edits to the same doc         matching by hash, then order + similarity
-                              (see Drivers)
+                              (see Adapters)
 watched source changed        source-update proposal; never a conflict — the
                               local occurrence stays pinned until accept
 two users edit one chunk      same revision DAG, same merge path; future
@@ -110,19 +110,19 @@ markdown sidecar lost         identity reconstructed by content-hash matching;
 ### Store-vs-external divergence is reconciliation, not overwrite
 
 The store is authoritative for identity, structure, history, and provenance;
-a bound file is authoritative for bytes the user edits outside Substrate
+a bound file is authoritative for bytes the user edits with external tools
 ([Bindings](bindings.md)). When they diverge, neither side silently wins.
 
-The [Drivers](drivers.md) reconcile path decides the shape: if only the
+The [Adapters](adapters.md) reconcile path decides the shape: if only the
 external side changed, matched changes apply directly as `revise` by
-`driver:fs`; if both sides changed, the divergence becomes a
+`adapter:filesystem`; if both sides changed, the divergence becomes a
 `"reconciliation"` proposal and resolves through the same accept path as any
 merge. Either way the external state and the internal state both enter
 history before anything is combined.
 
 ### Losing the sidecar loses identity honestly
 
-If a driver's round-trip memory is destroyed, chunk identity for that file
+If an adapter's round-trip memory is destroyed, chunk identity for that file
 must be reconstructed from evidence: blocks are re-matched by content hash
 against known revisions. Exact matches rebind to their existing chunks.
 Unmatched blocks become new chunks, and the reconciliation records a note
@@ -130,7 +130,7 @@ saying so.
 
 Identity loss is possible in this case, and it is **reported, not hidden**. A
 block that was edited externally while the sidecar was gone cannot prove its
-lineage; Substrate says that plainly rather than guessing an ancestry it
+lineage; Headspace says that plainly rather than guessing an ancestry it
 cannot support.
 
 ### Redaction never merges
