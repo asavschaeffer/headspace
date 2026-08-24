@@ -1,8 +1,8 @@
 {
   "name": "headspace",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
-  "description": "A local spatial environment for safely ingesting, navigating, and transforming heterogeneous material.",
+  "description": "A local preview for navigating and safely editing Markdown and plain-text workspaces through a versioned graph.",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {

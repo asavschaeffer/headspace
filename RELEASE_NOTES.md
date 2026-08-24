@@ -1,96 +1,35 @@
-# Headspace 0.1.0
+# Headspace 0.0.1
 
-Headspace 0.1.0 is the first complete release of a local spatial environment that brings heterogeneous material into a navigable, addressable, versioned workspace graph and lets people, models, and tools safely reshape it through reviewable proposals.
+Headspace 0.0.1 is an intentionally narrow preview of the local text kernel. It proves that one local workspace can be opened, navigated, edited through a versioned graph, and recovered after restart without silently replacing the user's source files.
 
-The promise of this release is one coherent loop:
+## Release contract
 
-> Bring material in → orient spatially → focus at any scale → invoke a collaborator → review its proposal → integrate without losing history or provenance.
+- Select one local workspace when the host starts.
+- Discover and navigate directories containing Markdown and UTF-8 plain-text documents.
+- Open a document and edit its representation through the versioned workspace graph.
+- Persist graph state under the workspace's `.headspace/` directory and recover it after a host restart.
+- Project an edited Markdown representation back to its source only through an explicit user action and only when the safety checks pass.
+- Keep the original filesystem source authoritative. An in-graph edit is not an implicit source-file write.
 
-## The Headspace loop
+Before Markdown projection, Headspace checks that the source still matches the version it observed. If the source changed, disappeared, or cannot be safely addressed inside the workspace, projection is refused instead of overwriting it. Plain-text source projection is not part of the 0.0.1 contract.
 
-### Bring material in
+## Preview boundaries
 
-Headspace can open a local workspace and bring its sources into a versioned workspace graph through replaceable ingestion adapters. The first adapters cover directories, Markdown and plain text, plus a converter-backed document format that proves richer formats can plug into the same boundary.
+The repository contains work beyond this contract. In 0.0.1, advanced ingestion and conversion, AI or model collaboration, complete spatial relationship and layout semantics, and a universal ingest-to-integration product loop are experimental. Their presence in code or the interface is not a compatibility or support promise.
 
-Conversion is interpretation, not replacement. Headspace retains the identity of the original source and records which adapter and version produced each derived representation.
+This preview is local, single-workspace, single-user, and loopback-only. Its persisted schema is pre-release data; back up source material and do not assume future versions will migrate `.headspace/` state.
 
-For 0.1.0, the existing filesystem remains authoritative. Headspace reflects and binds to its sources, and writes back only through an explicit projection whose safety conditions are visible to the user.
+## Run it
 
-### Orient spatially
+Headspace 0.0.1 requires Node.js 22.12 or newer.
 
-The Nebula gives the workspace a navigable shape. Containers, documents, and their relationships are visible without flattening them into one list or confusing where something appears with what it is.
+```powershell
+npm ci
+npm run build
+$env:HEADSPACE_WORKSPACE = 'C:\path\to\a\small-workspace'
+npm start
+```
 
-### Focus at any scale
+On macOS or Linux, use `export HEADSPACE_WORKSPACE=/path/to/workspace`. Open the loopback URL printed by the host. See [README.md](README.md) for operating details and [RELEASE_PLAN.md](RELEASE_PLAN.md) for the release gate.
 
-A user can move from workspace to container to document to addressable part. Decomposition is performed on demand through versioned methods, so a paragraph, sentence, or other derived part can become useful without prematurely fragmenting every source.
-
-### Invoke a collaborator
-
-Headspace exposes a replaceable intelligence seam. The release includes a working model adapter as well as a deterministic stub, demonstrating that a human, hosted model, local model, or future tool can participate without becoming part of the kernel.
-
-The collaborator receives bounded, structured context whose items retain their identities and the reasons they were selected.
-
-### Review the proposal
-
-Generated work never applies itself. It arrives as an inert proposal that shows its author, inputs, basis revisions, intended targets, and proposed changes. The user can inspect, accept, reject, or leave it open.
-
-If the underlying material has changed since the proposal was produced, Headspace identifies the proposal as stale or superseded instead of silently overwriting newer work.
-
-### Integrate safely
-
-Accepted work becomes an explicit, validated commit. Continuing identities, immutable revisions, content-addressed payloads, placements, links, and derivations preserve both the current workspace and how it came to be.
-
-Copying, referencing, transcluding, extracting, and revising remain distinct actions. History and provenance survive transformation rather than being flattened into the latest text.
-
-## Everything is a seam
-
-Headspace does not need to become every parser, model, index, or storage system. It provides small boundaries through which those capabilities can participate:
-
-- Source and ingestion adapters bring material into the workspace graph.
-- Conversion adapters derive usable representations from external formats.
-- Versioned decomposition methods expose smaller addressable parts on demand.
-- Index and selection strategies find relevant context.
-- Intelligence adapters connect people, models, and tools.
-- Persistence and projection adapters connect the durable workspace graph with external representations.
-
-Each seam preserves provenance, exposes failure rather than hiding it, and allows an implementation to be replaced without changing the meaning of existing material.
-
-## Included in 0.1.0
-
-- One complete ingest → navigate → focus → transform → review → integrate workflow
-- A local directory workspace source
-- Native Markdown and plain-text ingestion
-- One replaceable converter-backed document adapter
-- Spatial navigation across nested containers, documents, and parts
-- A working intelligence adapter and an offline deterministic stub
-- Structured, bounded context selection
-- Reviewable proposals with accept, reject, stale, and superseded outcomes
-- Restart-recoverable local history, provenance, and state
-- Clear capability and failure reporting at adapter boundaries
-
-## Deliberately not promised yet
-
-Version 0.1.0 establishes the product loop and its extension boundaries. It does not attempt to provide:
-
-- First-party parsers for every file format
-- Autonomous, unreviewed changes
-- Continuous bidirectional filesystem synchronization
-- An in-app folder picker or multi-root workspaces
-- Drag-and-drop file moves or automatic filesystem reorganization
-- Multi-user realtime collaboration
-- Final spatial-layout or coordinate semantics
-- Large-scale semantic clustering
-- External-web knowledge resolution
-- A finished plugin marketplace
-
-Those capabilities can grow through the same seams after the central experience is real and reliable.
-
-## Running the release
-
-Headspace 0.1.0 requires Node.js 22.12 or newer. Build with `npm run build`, select one local workspace with `HEADSPACE_WORKSPACE`, then start the combined client and durable host with `npm start`. The host is deliberately loopback-only in this release.
-
-The offline deterministic collaborator is always available. Hosted OpenAI collaboration and PDF-to-Markdown conversion are optional, explicitly configured external adapters; their context or source bytes leave the machine only when their capability is selected. Headspace stores durable state under the selected workspace's `.headspace/` directory. See [README.md](README.md) for configuration, egress boundaries, and recovery details.
-
-## The standard for 0.1.0
-
-This release is ready when a new user can bring a small mixed-material workspace into Headspace, understand its shape, focus on something meaningful, ask a collaborator to transform or extend it, review exactly what is proposed, accept it, restart the application, and find the integrated result with its history and provenance intact.
+The broader 0.1.0 direction remains available as explicitly non-current drafts in [`docs/releases/`](docs/releases/).

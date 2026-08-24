@@ -13,8 +13,8 @@ import { join } from 'node:path';
 import { OFFLINE_COLLABORATOR, stubCompleter } from '../src/collaboration/stub';
 import { deserializeState } from '../src/kernel/serialize';
 import { generateProposal, select } from '../src/kernel/select';
-import { currentRevision, renderChunk } from '../src/kernel/state';
-import { acceptProposal, type TxCtx } from '../src/kernel/tx';
+import { childOccurrences, currentRevision, renderChunk, revisionText } from '../src/kernel/state';
+import { acceptProposal, revise, type TxCtx } from '../src/kernel/tx';
 import type { Commit } from '../src/kernel/types';
 import { createReleaseServer, startReleaseServer, type ReleaseServer } from '../src/host/serve';
 
@@ -120,7 +120,7 @@ try {
       collaborators: [],
     }),
     /loopback-only/,
-    'the unauthenticated 0.1.0 host must never bind to the LAN',
+    'the unauthenticated 0.0.1 host must never bind to the LAN',
   );
 
   runtime = await startReleaseServer({
@@ -236,6 +236,9 @@ try {
   const state = deserializeState(payload.state);
   const binding = payload.bindings.find((item) => item.relPath === 'notes/focus.md');
   assert.ok(binding, 'Markdown source is bound to a focusable document');
+  const plainBinding = payload.bindings.find((item) => item.relPath === 'references/plain.txt');
+  assert.ok(plainBinding, 'plain-text source is bound through its native adapter');
+  assert.match(renderChunk(state, plainBinding.docChunkId), /second ingestible representation/);
 
   const selected = select(state, binding.docChunkId);
   assert.equal(selected[0]?.role, 'focus');
@@ -251,6 +254,18 @@ try {
     actorId: 'human:release-author',
     onCommit: (commit) => commits.push(commit),
   };
+  const editableOccurrence = childOccurrences(state, binding.docChunkId).find(
+    (occurrence) => revisionText(state, currentRevision(state, occurrence.chunkId).id).includes('durable local thought'),
+  );
+  assert.ok(editableOccurrence, 'the ingested Markdown paragraph is an addressable editable part');
+  const editedChunkId = editableOccurrence.chunkId;
+  const priorEditRevision = currentRevision(state, editedChunkId);
+  const headBeforeEdit = state.head;
+  const editedText = 'A durable local thought, edited through the browser commit boundary.';
+  const edit = await revise(authorCtx, { chunkId: editedChunkId, text: editedText });
+  assert.equal(edit.commit.operation.kind, 'revise');
+  assert.deepEqual(edit.commit.parentIds, headBeforeEdit ? [headBeforeEdit] : []);
+
   const generated = await generateProposal(authorCtx, {
     focusChunkId: binding.docChunkId,
     instruction: 'prove the packaged collaboration loop',
@@ -277,6 +292,32 @@ try {
     body: JSON.stringify({ commits }),
   });
   assert.equal(commitResponse.status, 200, await commitResponse.text());
+
+  // Exercise the same explicit projection endpoint as Star. A clean source is
+  // replaced, while a later external edit is preserved and reported as a
+  // conflict rather than overwritten.
+  const projection = await fetch(`${firstBase}/api/project`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ relPath: binding.relPath }),
+  });
+  assert.equal(projection.status, 200, await projection.text());
+  const projectedText = readFileSync(join(workspace, binding.relPath), 'utf8');
+  assert.ok(projectedText.includes(editedText));
+  assert.match(projectedText, /prove the packaged collaboration loop/);
+
+  const externalEdit = '# Release focus\n\nExternal edit that Headspace must not overwrite.\n';
+  writeFileSync(join(workspace, binding.relPath), externalEdit);
+  const projectionConflict = await fetch(`${firstBase}/api/project`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ relPath: binding.relPath }),
+  });
+  assert.equal(projectionConflict.status, 409);
+  const conflictBody = await projectionConflict.json() as { code?: string; error?: string };
+  assert.equal(conflictBody.code, 'projection-conflict');
+  assert.match(conflictBody.error ?? '', /source changed since its last import or projection/);
+  assert.equal(readFileSync(join(workspace, binding.relPath), 'utf8'), externalEdit);
 
   await runtime.close();
   await assert.rejects(runtime.listen(), /closed and cannot listen again/);
@@ -308,6 +349,18 @@ try {
   );
   assert.equal(currentRevision(restarted, createdChunkId).createdBy, OFFLINE_COLLABORATOR.actorId);
   assert.match(renderChunk(restarted, binding.docChunkId), /prove the packaged collaboration loop/);
+  assert.match(renderChunk(restarted, plainBinding.docChunkId), /second ingestible representation/);
+
+  const durableEdit = currentRevision(restarted, editedChunkId);
+  assert.equal(durableEdit.id, edit.revisionId, 'the edited revision remains current after a fresh host restart');
+  assert.equal(revisionText(restarted, durableEdit.id), editedText);
+  assert.ok(restarted.revisions.has(priorEditRevision.id), 'the pre-edit revision remains in version history');
+  assert.ok(durableEdit.parentRevisionIds.includes(priorEditRevision.id), 'the edit descends from the exact prior revision');
+  assert.equal(durableEdit.createdBy, 'human:release-author');
+  const durableEditOperation = restarted.operations.get(durableEdit.operationId)!;
+  assert.equal(durableEditOperation.kind, 'revise');
+  assert.equal(durableEditOperation.actorId, 'human:release-author');
+  assert.deepEqual(durableEditOperation.outputRevisionIds, [durableEdit.id]);
 
   const derivation = [...restarted.derivations.values()].find(
     (candidate) => candidate.childChunkId === createdChunkId,
@@ -317,7 +370,7 @@ try {
   assert.equal(derivation.sourceRevisionId, proposalBeforeAcceptance.basisRevisionIds[0]);
   assert.equal(derivation.operationId, durableProposal.resolution?.operationId);
 
-  console.log('release runtime OK — one local host serves the shell and preserves the complete collaboration loop');
+  console.log('release runtime OK — mixed text edit, durable restart, provenance, and safe projection');
 } finally {
   await runtime?.close();
   rmSync(sandbox, { recursive: true, force: true });

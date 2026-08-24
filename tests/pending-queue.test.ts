@@ -112,4 +112,4 @@ assert.equal(truth.unknown, false, 'a failed read does not make previously known
 assert.equal(truth.failedReplacement('POST'), true);
 assert.equal(truth.unknown, true, 'a failed mutating replacement quarantines its unknown host outcome');
 
-console.log('client durability gates OK — reload preserves queued commits and in-flight proposal state');
+console.log('client concurrency gates OK — unload warning, single-flight drain, and state replacement ordering');

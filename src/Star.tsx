@@ -32,6 +32,50 @@ import type { ChunkId, Proposal, ProposedChange, SpanAddress } from './kernel/ty
 
 type Span = SpanAddress & { chunkId: ChunkId };
 
+export class HostActionError extends Error {
+  override name = 'HostActionError';
+
+  constructor(
+    readonly code: string | null,
+    readonly hostMessage: string,
+    readonly status: number,
+  ) {
+    super(code ? `${code} — ${hostMessage}` : hostMessage);
+  }
+}
+
+export function actionErrorMessage(label: string, error: unknown): string {
+  return `${label}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+export async function projectSource(
+  relPath: string,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): Promise<void> {
+  const response = await fetchImpl('/api/project', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ relPath }),
+  });
+  if (response.ok) return;
+
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    // A structured host diagnostic is preferred, with an HTTP fallback for
+    // intermediaries or malformed responses.
+  }
+  const record = body && typeof body === 'object' && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : null;
+  const code = typeof record?.code === 'string' ? record.code : null;
+  const hostMessage = typeof record?.error === 'string'
+    ? record.error
+    : `projection request failed: HTTP ${response.status}`;
+  throw new HostActionError(code, hostMessage, response.status);
+}
+
 const CONTEXT_REASON: Record<ContextRole, string> = {
   focus: 'the document you are working in',
   child: 'a directly contained part',
@@ -117,7 +161,7 @@ export function Star({
     try {
       await fn();
     } catch (e) {
-      flash(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+      flash(actionErrorMessage(label, e));
     }
   };
 
@@ -174,12 +218,7 @@ export function Star({
   const projectToFile = () =>
     guard('project', async () => {
       if (!binding) return;
-      const r = await fetch('/api/project', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ relPath: binding.relPath }),
-      });
-      if (!r.ok) throw new Error(`host refused: ${r.status}`);
+      await projectSource(binding.relPath);
       flash(`projected to ${binding.relPath}`);
     });
 
