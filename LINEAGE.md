@@ -117,6 +117,11 @@ GitHub records pushes server-side; `gh api repos/asavs/headspace` will show
 when this archive was actually pushed, and that is the honest answer. The claim
 here is priority of thought, evidenced, not priority of publication.
 
+## The essay
+
+A narrative version of all this, written for a reader rather than for the
+archive, is at [docs/the-headspace-lineage.md](docs/the-headspace-lineage.md).
+
 ## Elsewhere
 
 - **[`asavs/globule`](https://github.com/asavs/globule)** — the globule era's
