@@ -183,10 +183,10 @@ export async function openWorkspace(rootDir: string, opts: { force?: boolean } =
       const snap = JSON.parse(readFileSync(snapPath, 'utf8')) as SnapshotFile;
       state = deserializeState(snap.state);
       log = readLog(logPath, snap.coveredCommits);
-      for (const c of log.tail) applyCommit(state, c);
+      for (const c of log.tail) applyCommit(state, c, { allowLegacyProposalLinkageOmissions: true });
     } else {
       log = readLog(logPath, 0);
-      state = materialize(log.tail);
+      state = materialize(log.tail, { allowLegacyProposalLinkageOmissions: true });
     }
     // Drop the crash artifact so future appends stay line-aligned.
     if (log.torn) truncateSync(logPath, log.cleanBytes);

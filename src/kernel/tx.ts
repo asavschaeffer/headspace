@@ -19,6 +19,7 @@ import {
   currentRevision,
   foldCommit,
   occurrencesOfChunk,
+  proposalStaleReason,
   revisionText,
   validateCommit,
   type SubstrateState,
@@ -163,7 +164,13 @@ export async function createChunk(
 
 export async function revise(
   ctx: TxCtx,
-  opts: { chunkId: ChunkId; text: string; mediaType?: string; mergeParentRevisionIds?: RevisionId[] },
+  opts: {
+    chunkId: ChunkId;
+    text: string;
+    mediaType?: string;
+    mergeParentRevisionIds?: RevisionId[];
+    operationParams?: Record<string, unknown>;
+  },
 ): Promise<{ revisionId: RevisionId; commit: Commit }> {
   const opId = newOperationId();
   const when = t(ctx);
@@ -183,7 +190,7 @@ export async function revise(
   };
   const commit = finish(
     ctx,
-    { id: opId, kind: 'revise', at: when, inputs: parents, outputs: [revision.id] },
+    { id: opId, kind: 'revise', at: when, inputs: parents, outputs: [revision.id], params: opts.operationParams },
     { blobs: [blob], revisions: [revision], setCurrent: [{ chunkId: opts.chunkId, revisionId: revision.id }] },
     [opts.chunkId],
   );
@@ -201,6 +208,7 @@ export async function createComposite(
     containerId?: ChunkId;
     at?: PlaceAt;
     opKind?: 'create' | 'import';
+    operationParams?: Record<string, unknown>;
   },
 ): Promise<{ chunkId: ChunkId; revisionId: RevisionId; blockChunkIds: ChunkId[]; commit: Commit }> {
   const opId = newOperationId();
@@ -267,7 +275,13 @@ export async function createComposite(
   }
   const commit = finish(
     ctx,
-    { id: opId, kind: opts.opKind ?? 'import', at: when, outputs: facts.revisions!.map((r) => r.id), params: { blocks: opts.blocks.length } },
+    {
+      id: opId,
+      kind: opts.opKind ?? 'import',
+      at: when,
+      outputs: facts.revisions!.map((r) => r.id),
+      params: { ...opts.operationParams, blocks: opts.blocks.length },
+    },
     facts,
     opts.containerId ? [opts.containerId] : [],
   );
@@ -646,15 +660,25 @@ export function propose(
     note?: string;
     createdBy?: ActorId; // e.g. the model actor, while the operation actor is the dispatcher
     inputRevisionIds?: RevisionId[]; // everything the proposer saw (may exceed the basis)
+    freshnessRevisionIds?: RevisionId[]; // inputs that must still be each chunk's current head
+    freshnessRevisionStates?: Proposal['freshnessRevisionStates'];
+    freshnessStructure?: Proposal['freshnessStructure'];
+    producer?: Proposal['producer'];
+    operationParams?: Record<string, unknown>;
   },
 ): { proposalId: ProposalId; commit: Commit } {
   const opId = newOperationId();
   const when = t(ctx);
   const proposal: Proposal = {
     id: newProposalId(),
+    operationId: opId,
     kind: opts.kind,
     status: 'open',
     basisRevisionIds: opts.basisRevisionIds,
+    freshnessRevisionIds: opts.freshnessRevisionIds,
+    freshnessRevisionStates: opts.freshnessRevisionStates,
+    freshnessStructure: opts.freshnessStructure,
+    producer: opts.producer,
     targetChunkIds: opts.targetChunkIds,
     payload: opts.payload,
     note: opts.note,
@@ -668,7 +692,7 @@ export function propose(
       kind: 'propose',
       at: when,
       inputs: opts.inputRevisionIds ?? opts.basisRevisionIds,
-      params: { kind: opts.kind },
+      params: { ...opts.operationParams, kind: opts.kind, producer: opts.producer },
     },
     { proposals: [proposal] },
     opts.targetChunkIds,
@@ -678,51 +702,7 @@ export function propose(
 
 // Why is this proposal no longer applicable, or null if it is fresh.
 export function staleReason(state: SubstrateState, p: Proposal): string | null {
-  for (const ch of p.payload) {
-    if (ch.op === 'revise') {
-      const chunk = state.chunks.get(ch.chunkId);
-      if (!chunk) return `target chunk ${ch.chunkId} no longer exists`;
-      if (ch.mergeParentRevisionIds) {
-        // A merge is fresh only while the head is still one of its parents;
-        // past that, accepting would silently discard a newer revision.
-        if (!ch.mergeParentRevisionIds.includes(chunk.currentRevisionId)) {
-          return `chunk ${ch.chunkId} advanced past the merge parents`;
-        }
-        continue;
-      }
-      if (!p.basisRevisionIds.includes(chunk.currentRevisionId)) {
-        return `chunk ${ch.chunkId} has moved on since the proposal's basis`;
-      }
-    } else if (ch.op === 'repin') {
-      const occ = state.occurrences.get(ch.occurrenceId);
-      if (!occ) return `occurrence ${ch.occurrenceId} no longer exists`;
-      if (occ.pin === 'current') return `occurrence ${ch.occurrenceId} follows current; nothing to update`;
-      if (!p.basisRevisionIds.includes(occ.pin)) {
-        return `occurrence ${ch.occurrenceId} was repinned since the proposal's basis`;
-      }
-    } else if (ch.op === 'sever') {
-      if (!state.occurrences.has(ch.occurrenceId)) return `occurrence ${ch.occurrenceId} already severed`;
-    } else if (ch.op === 'place') {
-      if (typeof ch.chunkId === 'string' && !state.chunks.has(ch.chunkId)) return `chunk ${ch.chunkId} no longer exists`;
-      if (!state.chunks.has(ch.containerId)) return `container ${ch.containerId} no longer exists`;
-    }
-  }
-  // Additive proposals (generation-shaped: only create/place/relate) anchor
-  // their freshness to the target chunks: if every target has moved past the
-  // basis, the proposal was computed against context that no longer exists.
-  if (
-    p.payload.length > 0 &&
-    p.targetChunkIds.length > 0 &&
-    p.basisRevisionIds.length > 0 &&
-    p.payload.every((ch) => ch.op === 'create' || ch.op === 'place' || ch.op === 'relate')
-  ) {
-    const anchored = p.targetChunkIds.some((t) => {
-      const chunk = state.chunks.get(t);
-      return chunk !== undefined && p.basisRevisionIds.includes(chunk.currentRevisionId);
-    });
-    if (!anchored) return `no target chunk is still at the proposal's basis`;
-  }
-  return null;
+  return proposalStaleReason(state, p);
 }
 
 export async function acceptProposal(
@@ -736,10 +716,17 @@ export async function acceptProposal(
   const stale = staleReason(ctx.state, p);
   const when = t(ctx);
   if (stale) {
+    const opId = newOperationId();
     const commit = finish(
       ctx,
-      { id: newOperationId(), kind: 'reject', at: when, params: { result: 'superseded', reason: stale } },
-      { proposalUpdates: [{ id: p.id, status: 'superseded', resolution: { by: ctx.actorId, at: when } }] },
+      { id: opId, kind: 'reject', at: when, params: { result: 'superseded', reason: stale } },
+      {
+        proposalUpdates: [{
+          id: p.id,
+          status: 'superseded',
+          resolution: { by: ctx.actorId, at: when, operationId: opId, reason: stale },
+        }],
+      },
       p.targetChunkIds,
     );
     return { applied: false, reason: stale, commit, createdChunkIds: [] };
@@ -886,10 +873,17 @@ export function supersedeProposal(ctx: TxCtx, opts: { proposalId: ProposalId; re
   if (!p) throw new Error(`supersede: unknown proposal ${opts.proposalId}`);
   if (p.status !== 'open') throw new Error(`supersede: proposal ${opts.proposalId} is ${p.status}`);
   const when = t(ctx);
+  const opId = newOperationId();
   return finish(
     ctx,
-    { id: newOperationId(), kind: 'reject', at: when, params: { result: 'superseded', reason: opts.reason } },
-    { proposalUpdates: [{ id: p.id, status: 'superseded', resolution: { by: ctx.actorId, at: when } }] },
+    { id: opId, kind: 'reject', at: when, params: { result: 'superseded', reason: opts.reason } },
+    {
+      proposalUpdates: [{
+        id: p.id,
+        status: 'superseded',
+        resolution: { by: ctx.actorId, at: when, operationId: opId, reason: opts.reason },
+      }],
+    },
     p.targetChunkIds,
   );
 }
@@ -899,10 +893,17 @@ export function rejectProposal(ctx: TxCtx, opts: { proposalId: ProposalId }): Co
   if (!p) throw new Error(`reject: unknown proposal ${opts.proposalId}`);
   if (p.status !== 'open') throw new Error(`reject: proposal ${opts.proposalId} is ${p.status}`);
   const when = t(ctx);
+  const opId = newOperationId();
   return finish(
     ctx,
-    { id: newOperationId(), kind: 'reject', at: when },
-    { proposalUpdates: [{ id: p.id, status: 'rejected', resolution: { by: ctx.actorId, at: when } }] },
+    { id: opId, kind: 'reject', at: when },
+    {
+      proposalUpdates: [{
+        id: p.id,
+        status: 'rejected',
+        resolution: { by: ctx.actorId, at: when, operationId: opId },
+      }],
+    },
     p.targetChunkIds,
   );
 }

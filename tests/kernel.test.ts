@@ -54,14 +54,17 @@ assert.equal(ctx.state.revisions.get(a.revisionId)!.createdAt, '2026-01-01T00:00
 assert.equal(a.commit.at, '2026-01-01T00:00:00.000Z');
 const b = await createChunk(ctx, { text: 'beta' });
 
-const mkCommit = (facts: Facts): Commit => ({
-  id: newCommitId(),
-  parentIds: ctx.state.head ? [ctx.state.head] : [],
-  at: now(),
-  actorId: ctx.actorId,
-  operation: { id: newOperationId(), kind: 'revise', actorId: ctx.actorId, at: now(), inputRevisionIds: [], outputRevisionIds: [] },
-  facts,
-});
+const mkCommit = (facts: Facts): Commit => {
+  const at = now();
+  return {
+    id: newCommitId(),
+    parentIds: ctx.state.head ? [ctx.state.head] : [],
+    at,
+    actorId: ctx.actorId,
+    operation: { id: newOperationId(), kind: 'revise', actorId: ctx.actorId, at, inputRevisionIds: [], outputRevisionIds: [] },
+    facts,
+  };
+};
 // Re-appending an existing revision id is refused even byte-identical: history is append-once.
 guard(() => applyCommit(ctx.state, mkCommit({ revisions: [{ ...ctx.state.revisions.get(a.revisionId)! }] })), /immutable/);
 // "A chunk's current revision must belong to that chunk."
@@ -215,6 +218,7 @@ const it = (role: ContextItem['role'], chunkId: string, len: number): ContextIte
   revisionId: `r-${chunkId}`,
   text: 'x'.repeat(len),
   role,
+  dependencies: [],
 });
 const ranked: ContextItem[] = [
   it('focus', 'f', 10),
@@ -297,10 +301,17 @@ assert.equal(blocks[2].text, '```\ncode 🌊 fence\n\nstill code\n```', 'fences 
 {
   const live = a.chunkId;
   const liveRev = currentRevision(ctx.state, live).id;
-  const link = (over: Partial<import('../src/kernel/types').Link>) =>
-    mkCommit({
-      links: [{ id: 'lnk_test', fromChunkId: live, role: 'references', operationId: 'op_test', ...over }],
-    });
+  const link = (over: Partial<import('../src/kernel/types').Link>) => {
+    const commit = mkCommit({});
+    commit.facts.links = [{
+      id: 'lnk_test',
+      fromChunkId: live,
+      role: 'references',
+      operationId: commit.operation.id,
+      ...over,
+    }];
+    return commit;
+  };
   guard(() => applyCommit(ctx.state, link({ fromChunkId: 'ch_missing' })), /starts at unknown chunk/);
   guard(() => applyCommit(ctx.state, link({ toChunkId: 'ch_missing' })), /points at unknown chunk/);
   guard(() => applyCommit(ctx.state, link({ toRevisionId: 'rev_missing' })), /points at unknown revision/);
@@ -310,12 +321,18 @@ assert.equal(blocks[2].text, '```\ncode 🌊 fence\n\nstill code\n```', 'fences 
   );
   guard(() => applyCommit(ctx.state, mkCommit({ removeLinks: ['lnk_missing'] })), /unknown link/);
 
-  const derivation = (over: Partial<import('../src/kernel/types').Derivation>) =>
-    mkCommit({
-      derivations: [
-        { id: 'drv_test', childChunkId: live, sourceRevisionId: liveRev, via: 'copy', operationId: 'op_test', ...over },
-      ],
-    });
+  const derivation = (over: Partial<import('../src/kernel/types').Derivation>) => {
+    const commit = mkCommit({});
+    commit.facts.derivations = [{
+      id: 'drv_test',
+      childChunkId: live,
+      sourceRevisionId: liveRev,
+      via: 'copy',
+      operationId: commit.operation.id,
+      ...over,
+    }];
+    return commit;
+  };
   guard(() => applyCommit(ctx.state, derivation({ childChunkId: 'ch_missing' })), /unknown child chunk/);
   guard(() => applyCommit(ctx.state, derivation({ sourceRevisionId: 'rev_missing' })), /unknown source revision/);
   guard(

@@ -15,6 +15,7 @@ import { keyBetween } from '../src/kernel/fractional';
 import type { Commit } from '../src/kernel/types';
 import { MEDIA_COMPOSITE } from '../src/kernel/types';
 import assert from 'node:assert';
+import { OFFLINE_COLLABORATOR, stubCompleter } from '../src/collaboration/stub';
 
 const log: Commit[] = [];
 const ctx: TxCtx = { state: emptyState(), actorId: 'human:asa', onCommit: (c) => log.push(c) };
@@ -48,7 +49,12 @@ assert.equal(renderChunk(ctx.state, b2.chunkId), text, 'extract preserves render
 assert.equal(ex.partChunkIds.length, 3);
 
 // generation → proposal → accept
-const gen = await generateProposal(ctx, { focusChunkId: doc.chunkId, instruction: 'continue' });
+const gen = await generateProposal(ctx, {
+  focusChunkId: doc.chunkId,
+  instruction: 'continue',
+  complete: stubCompleter,
+  modelActorId: OFFLINE_COLLABORATOR.actorId,
+});
 assert.equal(openProposals(ctx.state).length, 1);
 const acc = await acceptProposal(ctx, { proposalId: gen.proposalId });
 assert.ok(acc.applied);
@@ -70,7 +76,12 @@ assert.equal(renderChunk(ctx.state, doc2.chunkId), 'the lake is frozen');
 
 // stale generation proposal → superseded: the target advanced past the basis,
 // so the context the generator saw no longer exists (wiki/operations.md)
-const gen2 = await generateProposal(ctx, { focusChunkId: b1.chunkId, instruction: 'noop' });
+const gen2 = await generateProposal(ctx, {
+  focusChunkId: b1.chunkId,
+  instruction: 'noop',
+  complete: stubCompleter,
+  modelActorId: OFFLINE_COLLABORATOR.actorId,
+});
 await revise(ctx, { chunkId: b1.chunkId, text: 'the lake is gone' });
 const acc2 = await acceptProposal(ctx, { proposalId: gen2.proposalId });
 assert.ok(!acc2.applied, 'generation proposals go stale when their target advances');
@@ -80,19 +91,20 @@ assert.equal(ctx.state.proposals.get(gen2.proposalId)!.status, 'superseded');
 {
   const victim = ctx.state.revisions.get(ctx.state.chunks.get(b1.chunkId)!.currentRevisionId)!;
   const originalText = ctx.state.blobs.get(victim.blobHash)!.text;
+  const forgedAt = new Date().toISOString();
   let rejected = false;
   try {
     const { applyCommit } = await import('../src/kernel/state');
     applyCommit(ctx.state, {
       id: 'cmt_forged',
       parentIds: ctx.state.head ? [ctx.state.head] : [],
-      at: new Date().toISOString(),
+      at: forgedAt,
       actorId: 'human:mallory',
       operation: {
         id: 'op_forged',
         kind: 'create',
         actorId: 'human:mallory',
-        at: new Date().toISOString(),
+        at: forgedAt,
         inputRevisionIds: [],
         outputRevisionIds: [],
       },
@@ -110,18 +122,19 @@ assert.equal(ctx.state.proposals.get(gen2.proposalId)!.status, 'superseded');
   const { applyCommit } = await import('../src/kernel/state');
   const chunksBefore = ctx.state.chunks.size;
   const headBefore = ctx.state.head;
+  const partialAt = new Date().toISOString();
   let rejected = false;
   try {
     applyCommit(ctx.state, {
       id: 'cmt_partial',
       parentIds: headBefore ? [headBefore] : [],
-      at: new Date().toISOString(),
+      at: partialAt,
       actorId: 'human:asa',
       operation: {
         id: 'op_partial',
         kind: 'tombstone',
         actorId: 'human:asa',
-        at: new Date().toISOString(),
+        at: partialAt,
         inputRevisionIds: [],
         outputRevisionIds: [],
       },

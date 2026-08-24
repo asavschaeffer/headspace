@@ -89,4 +89,3 @@ Each source layer should remain visible and permission-distinct.
 - Lenses cluster and interpret candidate fields.
 - Views render candidate fields as navigable nebulas.
 - Users may promote candidates into explicit references.
-

@@ -1,4 +1,4 @@
-// CLI: reflect a folder's markdown into its Substrate workspace.
+// CLI: observe a folder and ingest supported sources through named adapters.
 //   npm run ingest -- [folder] [contentDir ...]
 // Defaults to the repo itself with wiki/ and headspace-brief.md as content.
 import { resolve } from 'node:path';
@@ -19,7 +19,8 @@ const ws = await openWorkspace(root, { force });
 const report = await syncWorkspace(ws, opts);
 ws.close();
 console.log(
-  `Synced ${root}: ${report.imported.length} imported, ${report.fastForwarded.length} fast-forwarded, ` +
+  `Ingested ${root}: ${report.imported.length} imported, ${report.fastForwarded.length} updated, ` +
     `${report.proposals.length} reconciliation proposals, ${report.sourceUpdates.length} source updates, ` +
-    `${report.unchanged} unchanged.`,
+    `${report.unchanged} unchanged, ${report.ingestion.counts.unsupported} unsupported, ` +
+    `${report.ingestion.counts.failed} failed.`,
 );

@@ -2,6 +2,7 @@
 // browser: fetch state, apply a commit locally, post it, verify server truth.
 // Not part of the auto-run suite (no .test suffix): it needs the live server.
 import assert from 'node:assert';
+import { OFFLINE_COLLABORATOR, stubCompleter } from '../src/collaboration/stub';
 import { deserializeState } from '../src/kernel/serialize';
 import { renderChunk } from '../src/kernel/state';
 import { generateProposal } from '../src/kernel/select';
@@ -22,7 +23,12 @@ const doc = bindings.find((b) => b.relPath === 'wiki/kernel.md')!;
 const before = renderChunk(state, doc.docChunkId);
 
 // A generation proposal, accepted — two commits, exercising create+place replay.
-const gen = await generateProposal(ctx, { focusChunkId: doc.docChunkId, instruction: 'live-loop check' });
+const gen = await generateProposal(ctx, {
+  focusChunkId: doc.docChunkId,
+  instruction: 'live-loop check',
+  complete: stubCompleter,
+  modelActorId: OFFLINE_COLLABORATOR.actorId,
+});
 const acc = await acceptProposal(ctx, { proposalId: gen.proposalId });
 assert.ok(acc.applied);
 // And a direct block revise.

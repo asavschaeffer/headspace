@@ -4,14 +4,30 @@
 // commit that fails to replay is refused; the client refetches truth.
 
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
+import { OFFLINE_COLLABORATOR } from '../collaboration/stub';
 import { blobHashOf } from '../kernel/hash';
 import { serializeState } from '../kernel/serialize';
 import { foldCommit, validateCommit } from '../kernel/state';
 import type { Commit } from '../kernel/types';
-import { writeProjection } from './markdown';
+import {
+  CollaboratorError,
+  defaultCollaboratorAdapters,
+  dispatchToCollaborator,
+  type CollaboratorAdapter,
+} from './collaborators';
+import {
+  ingestionAdapterCapabilities,
+  readIngestionCatalog,
+  type IngestionCatalog,
+  type IngestionItemResult,
+  type RepresentationRecord,
+  type SourceObservation,
+  type SourceRecord,
+} from './ingestion';
+import { ProjectionConflictError, writeProjection } from './markdown';
 import { openWorkspace, type WorkspaceStore } from './store-fs';
 import { syncWorkspace, type SyncReport } from './sync';
 
@@ -19,15 +35,21 @@ export interface SubstrateServerOptions {
   root?: string;
   contentDirs?: string[];
   contentFiles?: string[];
+  collaborators?: CollaboratorAdapter[];
 }
 
 export interface BindingInfo {
   docChunkId: string;
   relPath: string;
+  sourceId?: string;
+  observationId?: string;
+  mediaType?: string;
+  adapterId?: string;
+  adapterVersion?: string;
 }
 
 function readBindings(root: string): BindingInfo[] {
-  const out: BindingInfo[] = [];
+  const out = new Map<string, BindingInfo>();
   const walk = (dir: string) => {
     let entries;
     try {
@@ -41,7 +63,7 @@ function readBindings(root: string): BindingInfo[] {
       else if (e.name.endsWith('.json')) {
         try {
           const sc = JSON.parse(readFileSync(full, 'utf8'));
-          if (sc.docChunkId && sc.relPath) out.push({ docChunkId: sc.docChunkId, relPath: sc.relPath });
+          if (sc.docChunkId && sc.relPath) out.set(sc.docChunkId, { docChunkId: sc.docChunkId, relPath: sc.relPath });
         } catch {
           /* unreadable sidecar is reported via reconcile, not here */
         }
@@ -49,7 +71,94 @@ function readBindings(root: string): BindingInfo[] {
     }
   };
   walk(join(root, '.substrate', 'sidecars'));
-  return out;
+  const catalog = readIngestionCatalog(root);
+  if (catalog) {
+    for (const source of catalog.sources) {
+      if (!source.currentRepresentationId) continue;
+      const representation = catalog.representations.find((item) => item.id === source.currentRepresentationId);
+      if (!representation) continue;
+      out.set(representation.rootChunkId, {
+        docChunkId: representation.rootChunkId,
+        relPath: source.currentRelPath,
+        sourceId: source.id,
+        observationId: representation.observationId,
+        mediaType: representation.mediaType,
+        adapterId: representation.adapter.id,
+        adapterVersion: representation.adapter.version,
+      });
+    }
+  }
+  return [...out.values()].sort((a, b) => a.relPath.localeCompare(b.relPath));
+}
+
+export interface SourceItemView {
+  source: SourceRecord;
+  observation: SourceObservation;
+  representation: RepresentationRecord | null;
+  lastResult: IngestionItemResult | null;
+  parentSourceId: string | null;
+  name: string;
+  isWorkspaceRoot: boolean;
+  presence: 'present' | 'missing' | 'unknown';
+}
+
+function sourceViews(catalog: IngestionCatalog | null): SourceItemView[] {
+  if (!catalog) return [];
+  const current = catalog.sources.flatMap((source) => {
+    const observation = catalog.observations.find((item) => item.id === source.currentObservationId);
+    if (!observation) return [];
+    return [{ source, observation }];
+  });
+  const normalized = (path: string): string => path.replaceAll('\\', '/').replace(/^\/+|\/+$/g, '') === '.'
+    ? ''
+    : path.replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
+  const directories = current.filter((item) => item.observation.kind === 'directory');
+  return current.map(({ source, observation }) => {
+    const representation = source.currentRepresentationId
+      ? (catalog.representations.find((item) => item.id === source.currentRepresentationId) ?? null)
+      : null;
+    const lastResult = catalog.lastRun?.items.find((item) => item.observation.sourceId === source.id) ?? null;
+    const path = normalized(observation.relPath);
+    const parent = directories
+      .filter((candidate) => {
+        const directoryPath = normalized(candidate.observation.relPath);
+        return directoryPath && directoryPath !== path && path.startsWith(`${directoryPath}/`);
+      })
+      .sort(
+        (a, b) => normalized(b.observation.relPath).length - normalized(a.observation.relPath).length,
+      )[0];
+    return {
+      source,
+      observation,
+      representation,
+      lastResult,
+      parentSourceId: parent?.source.id ?? null,
+      name: path ? path.slice(path.lastIndexOf('/') + 1) : '.',
+      isWorkspaceRoot: observation.kind === 'directory' && path === '',
+      presence: catalog.lastRun === null ? 'unknown' : lastResult ? 'present' : 'missing',
+    };
+  });
+}
+
+export function workspacePayload(
+  root: string,
+  ws: WorkspaceStore,
+  collaborators: CollaboratorAdapter[] = defaultCollaboratorAdapters(),
+) {
+  const catalog = readIngestionCatalog(root);
+  return {
+    state: serializeState(ws.state),
+    bindings: readBindings(root),
+    workspace: {
+      id: catalog?.workspaceId ?? null,
+      displayName: basename(root) || root,
+      rootDisplayPath: root,
+    },
+    adapters: ingestionAdapterCapabilities(),
+    collaborators: [OFFLINE_COLLABORATOR, ...collaborators.map((adapter) => adapter.capability)],
+    sources: sourceViews(catalog),
+    lastIngestion: catalog?.lastRun ?? null,
+  };
 }
 
 const json = (res: ServerResponse, status: number, body: unknown) => {
@@ -58,24 +167,61 @@ const json = (res: ServerResponse, status: number, body: unknown) => {
   res.end(JSON.stringify(body));
 };
 
-const readBody = (req: IncomingMessage): Promise<string> =>
+class BodyTooLargeError extends Error {}
+
+const readBody = (req: IncomingMessage, maxBytes = Number.POSITIVE_INFINITY): Promise<string> =>
   new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (c) => (data += c));
-    req.on('end', () => resolve(data));
+    let bytes = 0;
+    let tooLarge = false;
+    req.on('data', (c: Buffer | string) => {
+      if (tooLarge) return;
+      bytes += typeof c === 'string' ? Buffer.byteLength(c) : c.byteLength;
+      if (bytes > maxBytes) {
+        tooLarge = true;
+        reject(new BodyTooLargeError(`request body exceeds ${maxBytes} bytes`));
+        return;
+      }
+      data += c;
+    });
+    req.on('end', () => {
+      if (!tooLarge) resolve(data);
+    });
     req.on('error', reject);
   });
 
-export function substrateServer(opts: SubstrateServerOptions = {}): Plugin {
+export interface SubstrateServerRuntime {
+  plugin: Plugin;
+  /** Open, validate, and initialize the single owned workspace before serving. */
+  ready(): Promise<void>;
+  /** Close the owned workspace store. */
+  close(): void;
+}
+
+export function createSubstrateServer(opts: SubstrateServerOptions = {}): SubstrateServerRuntime {
   let ws: WorkspaceStore | null = null;
   const root = opts.root ?? process.cwd();
+  const collaborators = opts.collaborators ?? defaultCollaboratorAdapters();
 
   // Stale locks (dead pids) are taken over inside openWorkspace; a live holder
   // is a real second writer and must not be steamrolled.
   const ensure = async (): Promise<WorkspaceStore> => {
     if (!ws) {
-      ws = await openWorkspace(root);
-      if (ws.state.commitCount === 0) await syncWorkspace(ws, opts);
+      const opened = await openWorkspace(root);
+      try {
+        if (opened.state.commitCount === 0) await syncWorkspace(opened, opts);
+      } catch (error) {
+        try {
+          opened.close();
+        } catch (closeError) {
+          throw new AggregateError(
+            [error, closeError],
+            'workspace initialization failed and its store could not close cleanly',
+          );
+        }
+        throw error;
+      }
+      ws = opened;
     }
     return ws;
   };
@@ -89,18 +235,60 @@ export function substrateServer(opts: SubstrateServerOptions = {}): Plugin {
     return next;
   };
 
-  return {
+  const ready = async (): Promise<void> => {
+    await exclusive(async () => {
+      await ensure();
+    });
+  };
+
+  const close = (): void => {
+    if (!ws) return;
+    ws.close();
+    ws = null;
+  };
+
+  const plugin: Plugin = {
     name: 'substrate-server',
     configureServer(server) {
-      server.httpServer?.on('close', () => ws?.close());
+      server.httpServer?.on('close', close);
       server.middlewares.use((req, res, next) => {
         const url = (req.url ?? '').split('?')[0];
         if (!url.startsWith('/api/')) return next();
+        // Provider latency is deliberately outside the workspace mutation
+        // queue. Completion sees the exact bounded context sent by the client
+        // and creates no truth; commits remain durable while a model thinks.
+        if (url === '/api/complete' && req.method === 'POST') {
+          void (async () => {
+            try {
+              let body: unknown;
+              try {
+                body = JSON.parse(await readBody(req, 64 * 1024));
+              } catch (error) {
+                if (error instanceof BodyTooLargeError) {
+                  return json(res, 413, { code: 'completion-context-too-large', error: error.message });
+                }
+                return json(res, 400, { code: 'invalid-completion-request', error: 'Completion request is not valid JSON.' });
+              }
+              const result = await dispatchToCollaborator(collaborators, body);
+              return json(res, 200, result);
+            } catch (error) {
+              if (error instanceof CollaboratorError) {
+                return json(res, error.httpStatus, {
+                  code: error.diagnostic.code,
+                  error: error.diagnostic.message,
+                  retryable: error.diagnostic.retryable,
+                });
+              }
+              return json(res, 500, { code: 'collaborator-failure', error: 'Collaborator failed unexpectedly.' });
+            }
+          })();
+          return;
+        }
         void exclusive(async () => {
           try {
             const w = await ensure();
             if (url === '/api/state' && req.method === 'GET') {
-              return json(res, 200, { state: serializeState(w.state), bindings: readBindings(root) });
+              return json(res, 200, workspacePayload(root, w, collaborators));
             }
             if (url === '/api/commits' && req.method === 'POST') {
               const { commits } = JSON.parse(await readBody(req)) as { commits: Commit[] };
@@ -131,13 +319,20 @@ export function substrateServer(opts: SubstrateServerOptions = {}): Plugin {
               }
               return json(res, 200, { ok: true, head: w.state.head });
             }
-            if (url === '/api/sync' && req.method === 'POST') {
+            if ((url === '/api/sync' || url === '/api/ingest') && req.method === 'POST') {
               const report: SyncReport = await syncWorkspace(w, opts);
-              return json(res, 200, { report, state: serializeState(w.state), bindings: readBindings(root) });
+              return json(res, 200, { report, ...workspacePayload(root, w, collaborators) });
             }
             if (url === '/api/project' && req.method === 'POST') {
               const { relPath } = JSON.parse(await readBody(req)) as { relPath: string };
-              await writeProjection(w.ctxFor('driver:fs'), { workspaceRoot: root, relPath });
+              try {
+                await writeProjection(w.ctxFor('driver:fs'), { workspaceRoot: root, relPath });
+              } catch (e) {
+                if (e instanceof ProjectionConflictError) {
+                  return json(res, 409, { code: 'projection-conflict', error: e.message });
+                }
+                throw e;
+              }
               return json(res, 200, { ok: true });
             }
             return json(res, 404, { error: `no such endpoint: ${url}` });
@@ -148,4 +343,9 @@ export function substrateServer(opts: SubstrateServerOptions = {}): Plugin {
       });
     },
   };
+  return { close, plugin, ready };
+}
+
+export function substrateServer(opts: SubstrateServerOptions = {}): Plugin {
+  return createSubstrateServer(opts).plugin;
 }

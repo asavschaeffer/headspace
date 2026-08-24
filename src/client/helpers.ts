@@ -132,6 +132,15 @@ export function proposalsForDoc(state: SubstrateState, docId: ChunkId): Proposal
   return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+// Resolved proposals are product history, not transient UI notifications.
+// Keep them inspectable beside open work after accept/reject/restart.
+export function proposalHistoryForDoc(state: SubstrateState, docId: ChunkId): Proposal[] {
+  const scope = new Set<ChunkId>([docId, ...leafBlocks(state, docId).map((block) => block.chunkId)]);
+  return [...state.proposals.values()]
+    .filter((proposal) => proposal.targetChunkIds.some((target) => scope.has(target)))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
 export function currentText(state: SubstrateState, chunkId: ChunkId): string {
   const rev = currentRevision(state, chunkId);
   return rev.redacted ? '[redacted]' : (state.blobs.get(rev.blobHash)?.text ?? '');

@@ -1,8 +1,8 @@
 // Markdown filesystem driver. The sidecar is a projection manifest: it records
 // both identity and the authority an external edit may exercise.
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 import { METHOD_BLOCKS, decomposeText } from '../kernel/decompose';
 import { blobHashOf, sha256Hex } from '../kernel/hash';
 import {
@@ -18,15 +18,19 @@ import { MEDIA_COMPOSITE, MEDIA_MARKDOWN } from '../kernel/types';
 import type {
   BlobHash,
   ChunkId,
+  Commit,
+  CommitId,
   Occurrence,
   OccurrenceId,
   OccurrenceMode,
+  OperationId,
   Proposal,
   ProposalId,
   ProposedChange,
   RevisionId,
 } from '../kernel/types';
-import { similarity } from './similarity';
+import { atomicWriteText, type AtomicPublish } from './atomic-file';
+import { assessSimilarity } from './similarity';
 
 const SIM_THRESHOLD = 0.5;
 const SIDECAR_SCHEMA_VERSION = 2;
@@ -68,6 +72,10 @@ export interface ReconcileResult {
   proposalId?: ProposalId;
 }
 
+export class ProjectionConflictError extends Error {
+  override name = 'ProjectionConflictError';
+}
+
 interface ProjectionUnit {
   occurrence: Occurrence;
   occurrencePath: OccurrenceId[];
@@ -90,6 +98,35 @@ function assertSafeRel(workspaceRoot: string, relPath: string): void {
   if (abs === base || !abs.startsWith(prefix)) throw new Error(`relPath escapes workspace root: ${relPath}`);
 }
 
+function sourcePathForProjection(workspaceRoot: string, relPath: string): string {
+  assertSafeRel(workspaceRoot, relPath);
+  const abs = resolve(workspaceRoot, relPath);
+  let sourceStat;
+  let rootReal: string;
+  let sourceReal: string;
+  try {
+    sourceStat = lstatSync(abs);
+    rootReal = realpathSync(workspaceRoot);
+    sourceReal = realpathSync(abs);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new ProjectionConflictError(`refusing to project ${relPath}: source file is missing`);
+    }
+    throw e;
+  }
+  if (sourceStat.isSymbolicLink()) {
+    throw new ProjectionConflictError(`refusing to project ${relPath}: source path is a symbolic link`);
+  }
+  if (!sourceStat.isFile()) {
+    throw new ProjectionConflictError(`refusing to project ${relPath}: source path is not a regular file`);
+  }
+  const prefix = rootReal.endsWith(sep) ? rootReal : rootReal + sep;
+  if (!sourceReal.startsWith(prefix)) {
+    throw new ProjectionConflictError(`refusing to project ${relPath}: source resolves outside the workspace root`);
+  }
+  return abs;
+}
+
 export function sidecarPath(workspaceRoot: string, relPath: string): string {
   assertSafeRel(workspaceRoot, relPath);
   return join(workspaceRoot, '.substrate', 'sidecars', `${relPath}.json`);
@@ -99,10 +136,9 @@ function readSidecar(workspaceRoot: string, relPath: string): MarkdownSidecar | 
   return JSON.parse(readFileSync(sidecarPath(workspaceRoot, relPath), 'utf8')) as MarkdownSidecar | LegacyMarkdownSidecar;
 }
 
-function writeSidecar(workspaceRoot: string, relPath: string, sc: MarkdownSidecar): void {
+function writeSidecar(workspaceRoot: string, relPath: string, sc: MarkdownSidecar, publish?: AtomicPublish): void {
   const path = sidecarPath(workspaceRoot, relPath);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(sc, null, 2)}\n`);
+  atomicWriteText(path, `${JSON.stringify(sc, null, 2)}\n`, publish);
 }
 
 const blockTextsOf = (text: string): string[] => decomposeText(text, METHOD_BLOCKS).map((s) => text.slice(s.start, s.end));
@@ -214,8 +250,20 @@ function upgradeSidecar(state: SubstrateState, raw: MarkdownSidecar | LegacyMark
 
 export async function importMarkdownFile(
   ctx: TxCtx,
-  opts: { workspaceRoot: string; relPath: string; text: string },
-): Promise<{ docChunkId: ChunkId; blockChunkIds: ChunkId[] }> {
+  opts: {
+    workspaceRoot: string;
+    relPath: string;
+    text: string;
+    operationParams?: Record<string, unknown>;
+    sidecarPublish?: AtomicPublish;
+  },
+): Promise<{
+  docChunkId: ChunkId;
+  blockChunkIds: ChunkId[];
+  commit: Commit;
+  commitId: CommitId;
+  operationId: OperationId;
+}> {
   const { workspaceRoot, relPath } = opts;
   assertSafeRel(workspaceRoot, relPath);
   const text = normalizeEol(opts.text);
@@ -224,17 +272,58 @@ export async function importMarkdownFile(
     join: '\n\n',
     blocks: blockTexts.map((t) => ({ text: t, mediaType: MEDIA_MARKDOWN })),
     opKind: 'import',
+    operationParams: opts.operationParams,
   });
   const projection = await buildProjection(ctx.state, doc.chunkId);
+  writeSidecar(
+    workspaceRoot,
+    relPath,
+    {
+      schemaVersion: SIDECAR_SCHEMA_VERSION,
+      docChunkId: doc.chunkId,
+      relPath,
+      blocks: projection.blocks,
+      lastImportedFileHash: await sha256Hex(text),
+      lastProjectedFileHash: await sha256Hex(projection.text),
+    },
+    opts.sidecarPublish,
+  );
+  return {
+    docChunkId: doc.chunkId,
+    blockChunkIds: doc.blockChunkIds,
+    commit: doc.commit,
+    commitId: doc.commit.id,
+    operationId: doc.commit.operation.id,
+  };
+}
+
+// Complete the projection half of an import whose kernel operation became
+// durable before its sidecar/catalog publication. The caller supplies the
+// hash of the exact normalized source text recorded in its write-ahead intent;
+// no source bytes need to be duplicated in the catalog.
+export async function recoverMarkdownImport(
+  state: SubstrateState,
+  opts: { workspaceRoot: string; relPath: string; docChunkId: ChunkId; lastImportedFileHash: string },
+): Promise<void> {
+  const { workspaceRoot, relPath, docChunkId, lastImportedFileHash } = opts;
+  assertSafeRel(workspaceRoot, relPath);
+  const path = sidecarPath(workspaceRoot, relPath);
+  if (existsSync(path)) {
+    const existing = readSidecar(workspaceRoot, relPath);
+    if (existing.docChunkId !== docChunkId) {
+      throw new Error(`Markdown recovery found another projection manifest for ${relPath}`);
+    }
+    return;
+  }
+  const projection = await buildProjection(state, docChunkId);
   writeSidecar(workspaceRoot, relPath, {
     schemaVersion: SIDECAR_SCHEMA_VERSION,
-    docChunkId: doc.chunkId,
+    docChunkId,
     relPath,
     blocks: projection.blocks,
-    lastImportedFileHash: await sha256Hex(text),
+    lastImportedFileHash,
     lastProjectedFileHash: await sha256Hex(projection.text),
   });
-  return { docChunkId: doc.chunkId, blockChunkIds: doc.blockChunkIds };
 }
 
 export function projectMarkdown(state: SubstrateState, docChunkId: ChunkId): string {
@@ -248,10 +337,21 @@ export async function writeProjection(
   const { workspaceRoot, relPath } = opts;
   const raw = readSidecar(workspaceRoot, relPath);
   const projection = await buildProjection(ctx.state, raw.docChunkId);
-  const abs = join(workspaceRoot, relPath);
-  mkdirSync(dirname(abs), { recursive: true });
-  writeFileSync(abs, projection.text);
-  const hash = await sha256Hex(projection.text);
+  const abs = sourcePathForProjection(workspaceRoot, relPath);
+  const sourceText = normalizeEol(readFileSync(abs, 'utf8'));
+  const [sourceHash, hash] = await Promise.all([sha256Hex(sourceText), sha256Hex(projection.text)]);
+  const sourceIsKnown = sourceHash === raw.lastImportedFileHash || sourceHash === raw.lastProjectedFileHash;
+  const sourceIsIntendedProjection = sourceHash === hash;
+  if (!sourceIsKnown && !sourceIsIntendedProjection) {
+    throw new ProjectionConflictError(
+      `refusing to project ${relPath}: source changed since its last import or projection; sync first`,
+    );
+  }
+
+  // If the destination already contains this projection, a previous attempt
+  // may have replaced the source and failed before replacing the sidecar.
+  // Advancing only the manifest makes that partial attempt safely retryable.
+  if (!sourceIsIntendedProjection) atomicWriteText(abs, projection.text);
   writeSidecar(workspaceRoot, relPath, {
     schemaVersion: SIDECAR_SCHEMA_VERSION,
     docChunkId: raw.docChunkId,
@@ -265,7 +365,7 @@ export async function writeProjection(
 
 export async function reconcileMarkdownFile(
   ctx: TxCtx,
-  opts: { workspaceRoot: string; relPath: string; text: string },
+  opts: { workspaceRoot: string; relPath: string; text: string; proposalMarker?: string },
 ): Promise<ReconcileResult> {
   const { workspaceRoot, relPath } = opts;
   const text = normalizeEol(opts.text);
@@ -290,7 +390,23 @@ export async function reconcileMarkdownFile(
     return { action: 'fast-forward' };
   }
 
-  const marker = fileMarker(fileHash);
+  const proposalBasisHash = await sha256Hex(
+    JSON.stringify({
+      docRevisionId: currentRevision(state, sc.docChunkId).id,
+      blocks: currentProjection.blocks.map((block) => ({
+        occurrenceId: block.occurrenceId,
+        occurrencePath: block.occurrencePath,
+        blockOrdinal: block.blockOrdinal,
+        chunkId: block.chunkId,
+        projectedTextHash: block.projectedTextHash,
+        sourceRevisionId: block.sourceRevisionId,
+        pin: block.pin,
+        mode: block.mode,
+        policy: block.policy,
+      })),
+    }),
+  );
+  const marker = `${opts.proposalMarker ?? fileMarker(fileHash)}[basis:${proposalBasisHash}]`;
   const standing = openReconciliation(ctx, sc.docChunkId);
   if (standing && standing.note?.startsWith(marker)) return { action: 'proposal', proposalId: standing.id };
   if (standing) {
@@ -301,12 +417,16 @@ export async function reconcileMarkdownFile(
   const fileHashes = await Promise.all(fileTexts.map((t) => blobHashOf(MEDIA_MARKDOWN, t)));
   const scMatched: boolean[] = sc.blocks.map(() => false);
   const matchOf: number[] = fileTexts.map(() => -1);
+  const matchScoreOf: number[] = fileTexts.map(() => 0);
+  const approximateMatchOf: boolean[] = fileTexts.map(() => false);
+  const ambiguousMatchOf: boolean[] = fileTexts.map(() => false);
 
   // Pass 1: exact projected-text hash, each manifest entry claimed once.
   for (let i = 0; i < fileTexts.length; i++) {
     const j = sc.blocks.findIndex((b, k) => !scMatched[k] && b.projectedTextHash === fileHashes[i]);
     if (j >= 0) {
       matchOf[i] = j;
+      matchScoreOf[i] = 1;
       scMatched[j] = true;
     }
   }
@@ -316,14 +436,26 @@ export async function reconcileMarkdownFile(
     let cursor = 0;
     for (let i = 0; i < fileTexts.length; i++) {
       if (matchOf[i] >= 0) continue;
+      let picked: { c: number; k: number; assessment: ReturnType<typeof assessSimilarity> } | undefined;
+      let candidateCount = 0;
       for (let c = cursor; c < freeSc.length; c++) {
         const k = freeSc[c];
-        if (similarity(fileTexts[i], sc.blocks[k].projectedText) >= SIM_THRESHOLD) {
-          matchOf[i] = k;
-          scMatched[k] = true;
-          cursor = c + 1;
-          break;
+        const assessment = assessSimilarity(fileTexts[i], sc.blocks[k].projectedText);
+        if (assessment.score >= SIM_THRESHOLD) {
+          candidateCount++;
+          picked ??= { c, k, assessment };
+          // One alternative is enough to prove the identity inference is
+          // ambiguous; do not pay every remaining comparison merely to count.
+          if (candidateCount > 1) break;
         }
+      }
+      if (picked) {
+        matchOf[i] = picked.k;
+        matchScoreOf[i] = picked.assessment.score;
+        approximateMatchOf[i] = picked.assessment.approximate;
+        ambiguousMatchOf[i] = candidateCount > 1;
+        scMatched[picked.k] = true;
+        cursor = picked.c + 1;
       }
     }
   }
@@ -338,8 +470,11 @@ export async function reconcileMarkdownFile(
   for (const b of sc.blocks) manifestCount.set(b.occurrenceId, (manifestCount.get(b.occurrenceId) ?? 0) + 1);
   const protectedEdit = fileTexts.some((_, i) => isChanged(i) && sc.blocks[matchOf[i]].policy !== 'revise-leaf');
   const multiBlockOccurrence = [...manifestCount.values()].some((n) => n > 1);
+  const reviewMatches = fileTexts
+    .map((_, i) => ({ i, score: matchScoreOf[i], sampled: approximateMatchOf[i], ambiguous: ambiguousMatchOf[i] }))
+    .filter((m) => m.sampled || m.ambiguous);
 
-  if (clean && !protectedEdit && !multiBlockOccurrence) {
+  if (clean && !protectedEdit && !multiBlockOccurrence && reviewMatches.length === 0) {
     // Only locally-owned leaves are allowed through the direct fast path.
     for (let i = 0; i < fileTexts.length; i++) {
       if (!isChanged(i)) continue;
@@ -486,16 +621,27 @@ export async function reconcileMarkdownFile(
     return !old || b.occurrenceId !== old.occurrenceId || b.projectedTextHash !== old.projectedTextHash;
   }).length;
   const nRevise = payload.filter((c) => c.op === 'revise').length;
+  const sampledCount = reviewMatches.filter((m) => m.sampled).length;
+  const ambiguousCount = reviewMatches.filter((m) => m.ambiguous).length;
+  const matchReviewSummary = reviewMatches.length
+    ? `${marker} ${relPath} has ${[
+        sampledCount ? `${sampledCount} sampled-similarity match(es)` : '',
+        ambiguousCount ? `${ambiguousCount} ambiguous match(es)` : '',
+      ]
+        .filter(Boolean)
+        .join(' and ')} (minimum confidence ${Math.min(...reviewMatches.map((m) => m.score)).toFixed(2)}); review identity before applying`
+    : null;
   const { proposalId } = propose(ctx, {
     kind: 'reconciliation',
     basisRevisionIds: [...basis],
     targetChunkIds: [sc.docChunkId],
     payload,
     note:
-      protectedN > 0
+      matchReviewSummary ??
+      (protectedN > 0
         ? `${marker} ${relPath} has ${protectedN} edit(s) that require detaching transclusion or flattening composite structure`
         : `${marker} ${relPath} diverged on both sides: file has ${nRevise} edited, ${tempN} new, ${vanished.length} vanished block(s); ` +
-          `store has ${internalChanged} changed projection block(s) since last sync`,
+          `store has ${internalChanged} changed projection block(s) since last sync`),
   });
   return { action: 'proposal', proposalId };
 }

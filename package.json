@@ -1,12 +1,22 @@
 {
-  "name": "substrate",
+  "name": "headspace",
+  "version": "0.1.0",
   "private": true,
+  "description": "A local spatial environment for safely ingesting, navigating, and transforming heterogeneous material.",
+  "license": "UNLICENSED",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "start": "tsx src/host/serve.ts",
     "ingest": "tsx scripts/ingest.ts",
-    "test": "tsx tests/run.ts"
+    "audit": "npm audit --audit-level=moderate",
+    "test": "tsx tests/run.ts",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run audit && npm run test && npm run typecheck && npm run build"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -16,9 +26,9 @@
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.1.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11"
+    "vite": "^8.2.2"
   }
 }

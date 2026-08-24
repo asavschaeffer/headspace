@@ -1,7 +1,7 @@
 import assert from 'node:assert';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { childOccurrences, currentRevision, emptyState, renderChunk, revisionText } from '../src/kernel/state';
 import { acceptProposal, promoteExtract, revise, transclude, type TxCtx } from '../src/kernel/tx';
 import {
@@ -46,6 +46,19 @@ try {
   const hctx: TxCtx = { state, actorId: 'human:asa' };
   const rel = 'notes/demo.md';
   const readSc = (): MarkdownSidecar => JSON.parse(readFileSync(sidecarPath(root, rel), 'utf8'));
+  const putSource = (relPath: string, text: string): string => {
+    const abs = join(root, relPath);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, text);
+    return abs;
+  };
+  const assertNoAtomicTemps = (path: string): void => {
+    assert.deepEqual(
+      readdirSync(dirname(path)).filter((name) => name.startsWith('.substrate-write-')),
+      [],
+      `atomic replacement left a temporary file beside ${path}`,
+    );
+  };
 
   const A = '# Title';
   const B = 'para one\nline two';
@@ -55,7 +68,21 @@ try {
 
   // canonical round-trip: import then project is byte-identical
   const md1 = mk([A, B, C, D]);
-  const { docChunkId, blockChunkIds } = await importMarkdownFile(dctx, { workspaceRoot: root, relPath: rel, text: md1 });
+  const imported = await importMarkdownFile(dctx, {
+    workspaceRoot: root,
+    relPath: rel,
+    text: md1,
+    operationParams: { sourceId: 'source_demo', observationId: 'observation_demo', blocks: 999 },
+  });
+  const { docChunkId, blockChunkIds } = imported;
+  assert.equal(imported.commitId, imported.commit.id, 'driver returns the exact persisted import commit');
+  assert.equal(imported.operationId, imported.commit.operation.id, 'driver returns the exact persisted import operation');
+  assert.equal(imported.commit.id, state.head);
+  assert.deepEqual(state.operations.get(imported.operationId)?.params, {
+    sourceId: 'source_demo',
+    observationId: 'observation_demo',
+    blocks: 4,
+  });
   assert.equal(blockChunkIds.length, 4);
   assert.equal(projectMarkdown(state, docChunkId), md1, 'canonical round-trip is byte-identical');
   const sc1 = readSc();
@@ -130,11 +157,60 @@ try {
   const bRevNow = state.chunks.get(blockChunkIds[1])!.currentRevisionId;
   assert.equal(state.revisions.get(bRevNow)!.createdBy, 'driver:fs', 'external text attributed to the driver');
 
-  // projection writes the file and reconverges the sidecar
+  // Projection atomically replaces a source that still matches the manifest
+  // and reconverges the sidecar. The source fixture starts at the last file
+  // snapshot imported before the two-sided reconciliation proposal.
+  const relAbs = putSource(rel, md3);
   await writeProjection(dctx, { workspaceRoot: root, relPath: rel });
-  const onDisk = readFileSync(join(root, rel), 'utf8');
+  const onDisk = readFileSync(relAbs, 'utf8');
   assert.equal(onDisk, projectMarkdown(state, docChunkId));
   assert.equal((await reconcileMarkdownFile(dctx, { workspaceRoot: root, relPath: rel, text: onDisk })).action, 'noop');
+  assertNoAtomicTemps(relAbs);
+  assertNoAtomicTemps(sidecarPath(root, rel));
+
+  // A source changed since the sidecar snapshot is never overwritten, and a
+  // failed precondition does not advance the sidecar.
+  const externalChange = `${onDisk.trimEnd()}\n\nexternal edit not yet synchronized\n`;
+  putSource(rel, externalChange);
+  const projectionSidecarBeforeRefusal = readFileSync(sidecarPath(root, rel), 'utf8');
+  await assert.rejects(
+    writeProjection(dctx, { workspaceRoot: root, relPath: rel }),
+    /source changed since its last import or projection/,
+  );
+  assert.equal(readFileSync(relAbs, 'utf8'), externalChange, 'projection refusal preserves the external edit');
+  assert.equal(
+    readFileSync(sidecarPath(root, rel), 'utf8'),
+    projectionSidecarBeforeRefusal,
+    'projection refusal leaves the sidecar untouched',
+  );
+
+  // A sidecar alone is not authority to recreate a vanished source.
+  const missingRel = 'notes/missing.md';
+  await importMarkdownFile(dctx, { workspaceRoot: root, relPath: missingRel, text: '# Missing\n' });
+  const missingSidecarBefore = readFileSync(sidecarPath(root, missingRel), 'utf8');
+  await assert.rejects(
+    writeProjection(dctx, { workspaceRoot: root, relPath: missingRel }),
+    /source file is missing/,
+  );
+  assert.equal(existsSync(join(root, missingRel)), false, 'projection does not recreate a missing source');
+  assert.equal(readFileSync(sidecarPath(root, missingRel), 'utf8'), missingSidecarBefore);
+
+  // Recovery from a source-replaced/sidecar-stale partial attempt is safe: if
+  // disk already equals the intended projection, retry advances the manifest.
+  const recoveryRel = 'notes/recovery.md';
+  const recoveryText = '# Recovery\n';
+  const recovery = await importMarkdownFile(dctx, { workspaceRoot: root, relPath: recoveryRel, text: recoveryText });
+  putSource(recoveryRel, recoveryText);
+  await revise(hctx, { chunkId: recovery.blockChunkIds[0], text: '# Recovered' });
+  const intendedRecovery = projectMarkdown(state, recovery.docChunkId);
+  putSource(recoveryRel, intendedRecovery); // prior attempt replaced only the source
+  const staleRecoverySidecar = readFileSync(sidecarPath(root, recoveryRel), 'utf8');
+  await writeProjection(dctx, { workspaceRoot: root, relPath: recoveryRel });
+  const recoveredSidecar = readFileSync(sidecarPath(root, recoveryRel), 'utf8');
+  assert.notEqual(recoveredSidecar, staleRecoverySidecar, 'retry advances the stale sidecar');
+  assert.equal(readFileSync(join(root, recoveryRel), 'utf8'), intendedRecovery);
+  assertNoAtomicTemps(join(root, recoveryRel));
+  assertNoAtomicTemps(sidecarPath(root, recoveryRel));
 
   // Extracted structure projects through the occurrence-aware renderer. An
   // external edit cannot revise the composite's JSON blob directly: it becomes
@@ -151,6 +227,7 @@ try {
     span: { revisionId: flatRev.id, method: 'raw@1', start: phraseStart, end: phraseStart + phrase.length },
   });
   assert.equal(projectMarkdown(state, extractedDoc.docChunkId), extractText, 'composite projection preserves rendered Markdown');
+  putSource(extractRel, extractText);
   await writeProjection(dctx, { workspaceRoot: root, relPath: extractRel });
   assert.equal(readFileSync(join(root, extractRel), 'utf8'), extractText, 'projection never writes composite join JSON');
   const extractSc = JSON.parse(readFileSync(sidecarPath(root, extractRel), 'utf8')) as MarkdownSidecar;
@@ -188,6 +265,7 @@ try {
   const sourceChunkId = sourceDoc.blockChunkIds[1];
   const sourceRevisionId = currentRevision(state, sourceChunkId).id;
   const transclusion = transclude(hctx, { containerId: targetDoc.docChunkId, sourceChunkId });
+  putSource(targetRel, targetText);
   const targetProjection = await writeProjection(dctx, { workspaceRoot: root, relPath: targetRel });
   const targetSc = JSON.parse(readFileSync(sidecarPath(root, targetRel), 'utf8')) as MarkdownSidecar;
   const transcludedEntry = targetSc.blocks.find((b) => b.occurrenceId === transclusion.occurrenceId)!;

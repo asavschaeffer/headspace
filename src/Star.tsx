@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SubstrateHook } from './App';
-import { currentText, focusTarget, labelOf, leafBlocks, proposalsForDoc, revisionCount, type LeafBlock } from './client/helpers';
+import {
+  currentText,
+  focusTarget,
+  labelOf,
+  leafBlocks,
+  proposalHistoryForDoc,
+  revisionCount,
+  type LeafBlock,
+} from './client/helpers';
+import { dispatchToLocalCollaborator, OFFLINE_COLLABORATOR } from './collaboration/stub';
+import type { CollaboratorCapability } from './collaboration/types';
 import { buildIndexes, duplicatesOf, echoesOf, searchChunks } from './index/indexes';
-import { generateProposal } from './kernel/select';
+import { generateProposal, reduce, select, type CompletionOutput, type ContextRole } from './kernel/select';
 import { isComposite, occurrencesOfChunk, revisionText, type SubstrateState } from './kernel/state';
 import {
   acceptProposal,
@@ -13,6 +23,7 @@ import {
   rejectProposal,
   revise,
   severOccurrence,
+  staleReason,
   transclude,
   type TxCtx,
 } from './kernel/tx';
@@ -21,24 +32,36 @@ import type { ChunkId, Proposal, ProposedChange, SpanAddress } from './kernel/ty
 
 type Span = SpanAddress & { chunkId: ChunkId };
 
+const CONTEXT_REASON: Record<ContextRole, string> = {
+  focus: 'the document you are working in',
+  child: 'a directly contained part',
+  parent: 'a container that locates the focus',
+  sibling: 'material beside the focus',
+  search: 'matched the current instruction',
+};
+
 // The focused work surface: compose, promote, dispatch, integrate.
 export function Star({
   sub,
   docId,
   onFocusDoc,
   onBack,
+  backLabel,
 }: {
   sub: SubstrateHook;
   docId: ChunkId;
   onFocusDoc: (id: ChunkId) => void;
   onBack: () => void;
+  backLabel?: string;
 }) {
-  const { state, bindings } = sub.ws!;
+  const { state, bindings, adapters } = sub.ws!;
   const ctx = sub.ctx!;
   const [instruction, setInstruction] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [span, setSpan] = useState<Span | null>(null);
   const [fatesFor, setFatesFor] = useState<ChunkId | null>(null);
+  const [collaboratorId, setCollaboratorId] = useState(OFFLINE_COLLABORATOR.id);
+  const [dispatching, setDispatching] = useState(false);
   const noticeTimer = useRef<number | null>(null);
 
   // Selection and fates belong to the doc they were made in.
@@ -49,9 +72,35 @@ export function Star({
   }, [docId]);
 
   const blocks = useMemo(() => leafBlocks(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
-  const proposals = useMemo(() => proposalsForDoc(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const indexes = useMemo(() => buildIndexes(state), [sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const proposalHistory = useMemo(() => proposalHistoryForDoc(state, docId), [docId, sub.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const contextSearchHits = useMemo(
+    () => (instruction.trim() ? searchChunks(state, indexes, instruction).slice(0, 5) : []),
+    [instruction, indexes, state],
+  );
+  const contextPreview = useMemo(
+    () => reduce(select(state, docId, contextSearchHits)),
+    [state, docId, contextSearchHits, sub.version], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const collaborators = useMemo(() => {
+    const advertised = sub.ws?.collaborators ?? [];
+    const byId = new Map<string, CollaboratorCapability>([[OFFLINE_COLLABORATOR.id, OFFLINE_COLLABORATOR]]);
+    for (const capability of advertised) byId.set(capability.id, capability);
+    return [...byId.values()];
+  }, [sub.ws?.collaborators]);
+  const collaborator = collaborators.find((candidate) => candidate.id === collaboratorId) ?? OFFLINE_COLLABORATOR;
   const binding = bindings.find((b) => b.docChunkId === docId);
+  const canProject = Boolean(
+    binding &&
+      adapters
+        .find(
+          (capability) =>
+            capability.id === binding.adapterId && capability.version === binding.adapterVersion,
+        )
+        ?.outputs.some(
+          (output) => output.mediaType === binding.mediaType && output.writeback === 'round-trip',
+        ),
+  );
 
   const flash = (msg: string) => {
     setNotice(msg);
@@ -72,12 +121,49 @@ export function Star({
     }
   };
 
-  const dispatch = () =>
-    guard('dispatch', async () => {
-      const hits = instruction.trim() ? searchChunks(state, indexes, instruction).slice(0, 5) : [];
-      await generateProposal(ctx, { focusChunkId: docId, instruction: instruction.trim() || 'continue this', searchHits: hits });
+  const dispatch = () => {
+    if (dispatching) return Promise.resolve();
+    setDispatching(true);
+    return sub.runDispatch((dispatchCtx) => guard('dispatch', async () => {
+      if (collaborator.availability.status !== 'ready') {
+        throw new Error(collaborator.availability.diagnostic.message);
+      }
+      const complete = async (context: typeof contextPreview, nextInstruction: string): Promise<CompletionOutput> => {
+        const request = {
+          collaboratorId: collaborator.id,
+          instruction: nextInstruction,
+          context,
+        };
+        const result = collaborator.execution === 'local'
+          ? await dispatchToLocalCollaborator(request)
+          : await sub.complete(request);
+        if (
+          result.collaboratorId !== collaborator.id ||
+          result.collaboratorVersion !== collaborator.version ||
+          result.actorId !== collaborator.actorId
+        ) {
+          throw new Error('collaborator identity changed during dispatch; no proposal was created');
+        }
+        return {
+          text: result.text,
+          producer: {
+            id: result.collaboratorId,
+            version: result.collaboratorVersion,
+            implementation: result.model,
+            receiptId: result.providerResponseId,
+          },
+        };
+      };
+      await generateProposal(dispatchCtx, {
+        focusChunkId: docId,
+        instruction: instruction.trim() || 'continue this',
+        searchHits: contextSearchHits,
+        complete,
+        modelActorId: collaborator.actorId,
+      });
       setInstruction('');
-    });
+    })).finally(() => setDispatching(false));
+  };
 
   const onAccept = (p: Proposal) =>
     guard('accept', async () => {
@@ -100,12 +186,12 @@ export function Star({
   return (
     <div className="doc">
       <header>
-        <button onClick={onBack}>← nebula</button>
+        <button onClick={onBack}>← {backLabel ?? 'nebula'}</button>
         <h2>{labelOf(state, bindings, docId)}</h2>
         <span className="meta">
           v{revisionCount(state, docId)} · {blocks.length} blocks
         </span>
-        {binding && <button onClick={projectToFile}>project → file</button>}
+        {canProject && <button onClick={projectToFile}>project → file</button>}
       </header>
 
       {notice && <div className="notice">{notice}</div>}
@@ -151,22 +237,94 @@ export function Star({
         </div>
       )}
 
+      <section className="collaborator">
+        <div className="collaborator-heading">
+          <label>
+            collaborator{' '}
+            <select
+              aria-label="Active collaborator"
+              value={collaborator.id}
+              disabled={dispatching}
+              onChange={(event) => setCollaboratorId(event.target.value)}
+            >
+              {collaborators.map((candidate) => (
+                <option
+                  key={candidate.id}
+                  value={candidate.id}
+                  disabled={candidate.availability.status !== 'ready'}
+                >
+                  {candidate.label}{candidate.model ? ` · ${candidate.model}` : ''}
+                  {candidate.availability.status !== 'ready' ? ' · unavailable' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="meta">
+            {collaborator.actorId} · {collaborator.execution} · proposal-only
+          </span>
+        </div>
+        <div className="collaborator-roster">
+          {collaborators.map((candidate) => (
+            <div key={candidate.id} className="meta">
+              {candidate.label} · {candidate.execution}
+              {candidate.execution === 'remote'
+                ? ' · displayed context leaves this machine on dispatch'
+                : ' · stays on this machine'}
+              {candidate.availability.status === 'unavailable'
+                ? ` · ${candidate.availability.diagnostic.message}`
+                : ' · ready'}
+            </div>
+          ))}
+        </div>
+        <details className="context" open>
+          <summary>
+            bounded context · {contextPreview.items.length} item(s) · {contextPreview.chars}/6000 characters
+            {contextPreview.dropped > 0 ? ` · ${contextPreview.dropped} dropped` : ''}
+          </summary>
+          <div className="context-items">
+            {contextPreview.items.map((item) => (
+              <div className="context-item" key={`${item.role}:${item.chunkId}`}>
+                <div className="meta">
+                  <span className="context-role">{item.role}</span> · {CONTEXT_REASON[item.role]} · {item.chunkId} · {item.revisionId}
+                  {item.occurrenceId ? ` · occurrence ${item.occurrenceId}` : ''}
+                </div>
+                <details className="context-dependencies">
+                  <summary>{item.dependencies.length} exact input revision(s)</summary>
+                  {item.dependencies.map((dependency) => (
+                    <div className="meta" key={`${dependency.chunkId}:${dependency.revisionId}`}>
+                      {dependency.chunkId} · {dependency.revisionId} · {dependency.followsCurrent ? 'follows current' : 'pinned'}
+                      {dependency.redacted ? ' · redacted' : ''}
+                    </div>
+                  ))}
+                </details>
+                {item.text && <pre>{item.text}</pre>}
+              </div>
+            ))}
+          </div>
+        </details>
+      </section>
+
       <div className="dispatch">
         <input
           placeholder="instruct an agent…"
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && dispatch()}
+          onKeyDown={(e) => e.key === 'Enter' && !dispatching && void dispatch()}
+          disabled={dispatching}
         />
-        <button onClick={dispatch}>dispatch</button>
+        <button onClick={() => void dispatch()} disabled={dispatching}>
+          {dispatching ? 'thinking…' : 'dispatch'}
+        </button>
       </div>
 
       <AttachBox state={state} ctx={ctx} indexes={indexes} docId={docId} bindings={bindings} onError={flash} />
 
-      {proposals.length > 0 && (
+      {proposalHistory.length > 0 && (
         <div className="proposals">
-          <div className="meta">{proposals.length} open proposal(s)</div>
-          {proposals.map((p) => (
+          <div className="meta">
+            {proposalHistory.filter((proposal) => proposal.status === 'open').length} open · {proposalHistory.length} total proposal(s)
+          </div>
+          {proposalHistory.map((p) => (
             <ProposalCard key={p.id} p={p} state={state} onAccept={() => onAccept(p)} onReject={() => guard('reject', () => rejectProposal(ctx, { proposalId: p.id }))} />
           ))}
         </div>
@@ -257,7 +415,7 @@ function BlockView({
       />
       <div className="block-side">
         <span className="meta">
-          v{revisionCount(state, block.chunkId)} · {block.revision.createdBy}
+          {block.chunkId.slice(0, 12)} · v{revisionCount(state, block.chunkId)} · {block.revision.createdBy}
           {block.transcluded && (block.occurrence.watch ? ' · watched' : ' · pinned')}
         </span>
         <button title="deep fates" onClick={onToggleFates} className={fatesOpen ? 'active' : ''}>
@@ -315,21 +473,57 @@ function LeafDocView({
   );
 }
 
-function summarizeChange(state: SubstrateState, ch: ProposedChange): { title: string; before?: string; after?: string } {
+function proposalBasisText(
+  state: SubstrateState,
+  p: Proposal,
+  chunkId: ChunkId | undefined,
+  explicitRevisionIds?: string[],
+): string | undefined {
+  const ids = explicitRevisionIds ?? p.basisRevisionIds.filter(
+    (revisionId) => state.revisions.get(revisionId)?.chunkId === chunkId,
+  );
+  if (ids.length === 0) return undefined;
+  return ids
+    .map((revisionId) => `${revisionId}\n${revisionText(state, revisionId)}`)
+    .join('\n\n');
+}
+
+function summarizeChange(
+  state: SubstrateState,
+  p: Proposal,
+  ch: ProposedChange,
+): { title: string; before?: string; beforeLabel?: string; after?: string; afterLabel?: string } {
   switch (ch.op) {
     case 'create':
-      return { title: 'add new block', after: ch.text };
+      return { title: 'add new block', after: ch.text, afterLabel: 'proposed text' };
     case 'revise':
-      return { title: 'revise block', before: currentText(state, ch.chunkId), after: ch.text };
+      return {
+        title: 'revise block',
+        before: proposalBasisText(state, p, ch.chunkId, ch.mergeParentRevisionIds),
+        beforeLabel: 'recorded basis text',
+        after: ch.text,
+        afterLabel: 'proposed text',
+      };
     case 'repin': {
       const occ = state.occurrences.get(ch.occurrenceId);
-      const before = occ && occ.pin !== 'current' ? revisionText(state, occ.pin) : undefined;
-      return { title: 'update watched quote', before, after: revisionText(state, ch.revisionId) };
+      const targetRevision = state.revisions.get(ch.revisionId);
+      const targetChunkId = targetRevision?.chunkId ?? occ?.chunkId;
+      return {
+        title: 'update watched quote',
+        before: proposalBasisText(state, p, targetChunkId),
+        beforeLabel: 'recorded basis text',
+        after: revisionText(state, ch.revisionId),
+        afterLabel: 'proposed pinned text',
+      };
     }
     case 'sever': {
       const occ = state.occurrences.get(ch.occurrenceId);
-      const text = occ ? currentText(state, occ.chunkId) : '(already gone)';
-      return { title: 'remove block appearance', before: text };
+      const targetChunkId = occ?.chunkId ?? (p.targetChunkIds.length === 1 ? p.targetChunkIds[0] : undefined);
+      return {
+        title: 'remove block appearance',
+        before: proposalBasisText(state, p, targetChunkId),
+        beforeLabel: 'recorded basis text',
+      };
     }
     case 'place':
       return { title: 'place block' };
@@ -349,27 +543,59 @@ function ProposalCard({
   onAccept: () => void;
   onReject: () => void;
 }) {
+  const operation = p.operationId ? state.operations.get(p.operationId) : undefined;
+  const stale = p.status === 'open' ? staleReason(state, p) : null;
+  const freshness = p.status === 'open' ? (stale ? `stale · ${stale}` : 'fresh') : p.status;
   return (
-    <div className="proposal">
-      <span className="meta">
-        {p.kind} · {p.createdBy}
-        {p.note ? ` · ${p.note}` : ''}
-      </span>
+    <div className={`proposal proposal-${p.status} ${stale ? 'proposal-stale' : ''}`}>
+      <div className="proposal-heading">
+        <span>{p.kind} · {p.createdBy}</span>
+        <span className="proposal-status">{freshness}</span>
+      </div>
+      {p.note && <div className="proposal-note">{p.note}</div>}
+      <details className="proposal-inspector" open={p.status === 'open'}>
+        <summary>identity, inputs, basis, and targets</summary>
+        <dl>
+          <dt>proposal</dt><dd>{p.id}</dd>
+          <dt>author</dt><dd>{p.createdBy}</dd>
+          <dt>created</dt><dd>{p.createdAt}</dd>
+          <dt>dispatcher</dt><dd>{operation?.actorId ?? 'legacy proposal'}</dd>
+          <dt>operation</dt><dd>{p.operationId ?? 'not recorded'}</dd>
+          <dt>inputs</dt><dd>{operation?.inputRevisionIds.join(', ') || 'none'}</dd>
+          <dt>basis</dt><dd>{p.basisRevisionIds.join(', ') || 'none'}</dd>
+          <dt>freshness</dt><dd>{p.freshnessRevisionIds?.join(', ') || 'basis/payload rules'}</dd>
+          <dt>structure</dt><dd>{p.freshnessStructure ? `${p.freshnessStructure.containers.length} container(s), ${p.freshnessStructure.placements.length} placement set(s)` : 'legacy proposal'}</dd>
+          <dt>targets</dt><dd>{p.targetChunkIds.join(', ') || 'none'}</dd>
+          <dt>producer</dt><dd>{p.producer ? `${p.producer.id}@${p.producer.version}` : 'not recorded'}</dd>
+          {p.producer?.implementation && <><dt>implementation</dt><dd>{p.producer.implementation}</dd></>}
+          {p.producer?.receiptId && <><dt>provider receipt</dt><dd>{p.producer.receiptId}</dd></>}
+          {p.resolution && (
+            <>
+              <dt>resolved</dt><dd>{p.resolution.by} · {p.resolution.at}</dd>
+              <dt>resolution op</dt><dd>{p.resolution.operationId ?? 'status-only resolution'}</dd>
+              {p.resolution.reason && <><dt>reason</dt><dd>{p.resolution.reason}</dd></>}
+            </>
+          )}
+        </dl>
+      </details>
       {p.payload.map((ch, i) => {
-        const s = summarizeChange(state, ch);
-        if (!s.before && !s.after) return null;
+        const s = summarizeChange(state, p, ch);
         return (
           <div key={i} className="change">
-            <div className="meta">{s.title}</div>
-            {s.before !== undefined && <pre className="before">{s.before}</pre>}
-            {s.after !== undefined && <pre className="after">{s.after}</pre>}
+            <div className="meta">{i + 1}. {s.title}</div>
+            {s.before !== undefined && <><div className="meta change-label">{s.beforeLabel ?? 'before'}</div><pre className="before">{s.before}</pre></>}
+            {s.after !== undefined && <><div className="meta change-label">{s.afterLabel ?? 'after'}</div><pre className="after">{s.after}</pre></>}
+            <div className="meta change-label">exact proposed operation</div>
+            <pre className="structure">{JSON.stringify(ch, null, 2)}</pre>
           </div>
         );
       })}
-      <div className="actions">
-        <button onClick={onAccept}>accept</button>
-        <button onClick={onReject}>reject</button>
-      </div>
+      {p.status === 'open' && (
+        <div className="actions">
+          <button onClick={onAccept} disabled={Boolean(stale)}>accept</button>
+          <button onClick={onReject}>reject</button>
+        </div>
+      )}
     </div>
   );
 }

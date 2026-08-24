@@ -15,6 +15,12 @@ const MAX_EXACT_CHARS = 4096;
 // Head and tail window kept from each side when the cap is exceeded.
 const SAMPLE_CHARS = 1024;
 
+export interface SimilarityAssessment {
+  score: number;
+  method: 'empty' | 'length-bound' | 'exact-levenshtein' | 'sampled-levenshtein';
+  approximate: boolean;
+}
+
 export function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
   if (a.length === 0) return b.length;
@@ -39,18 +45,30 @@ export function levenshtein(a: string, b: string): number {
 const sample = (s: string): string =>
   s.length <= SAMPLE_CHARS * 2 ? s : s.slice(0, SAMPLE_CHARS) + s.slice(-SAMPLE_CHARS);
 
-export function similarity(a: string, b: string): number {
+export function assessSimilarity(a: string, b: string): SimilarityAssessment {
   const max = Math.max(a.length, b.length);
-  if (max === 0) return 1;
+  if (max === 0) return { score: 1, method: 'empty', approximate: false };
   // Levenshtein distance is at least the length difference, so a pair whose
   // lengths differ by more than half the longer one cannot score 0.5. Zero is
   // a floor here, not a measurement — the only consumer is that threshold.
-  if (Math.abs(a.length - b.length) > max / 2) return 0;
-  if (max <= MAX_EXACT_CHARS) return 1 - levenshtein(a, b) / max;
+  if (Math.abs(a.length - b.length) > max / 2) {
+    return { score: 0, method: 'length-bound', approximate: false };
+  }
+  if (max <= MAX_EXACT_CHARS) {
+    return { score: 1 - levenshtein(a, b) / max, method: 'exact-levenshtein', approximate: false };
+  }
   // Above the cap the score is an approximation over head and tail. Blocks this
   // large are rare, and the alternative — refusing to match — would mint a new
   // chunk and propose a sever every time a big block is edited outside.
   const sa = sample(a);
   const sb = sample(b);
-  return 1 - levenshtein(sa, sb) / Math.max(sa.length, sb.length);
+  return {
+    score: 1 - levenshtein(sa, sb) / Math.max(sa.length, sb.length),
+    method: 'sampled-levenshtein',
+    approximate: true,
+  };
+}
+
+export function similarity(a: string, b: string): number {
+  return assessSimilarity(a, b).score;
 }

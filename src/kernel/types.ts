@@ -159,17 +159,63 @@ export type ProposalKind =
 
 export type ProposalStatus = 'open' | 'accepted' | 'rejected' | 'superseded';
 
+export interface OccurrencePrecondition {
+  id: OccurrenceId;
+  containerId: ChunkId;
+  chunkId: ChunkId;
+  position: string;
+  mode: OccurrenceMode;
+  pin: 'current' | RevisionId;
+  watch: boolean;
+}
+
+export interface ContextStructurePrecondition {
+  // Exact child sets/order for every rendered or selection-bearing container.
+  containers: Array<{ containerId: ChunkId; occurrences: OccurrencePrecondition[] }>;
+  // Exact placements of selected items, including the focus itself.
+  placements: Array<{ chunkId: ChunkId; occurrences: OccurrencePrecondition[] }>;
+}
+
+export interface ContextRevisionPrecondition {
+  chunkId: ChunkId;
+  revisionId: RevisionId;
+  // Pinned revisions remain valid if their chunk head advances; current-following
+  // revisions do not. Both still carry their visibility state below.
+  followsCurrent: boolean;
+  redacted: boolean;
+  chunkTombstoned: boolean;
+}
+
+export interface ProducerRef {
+  id: string;
+  version: string;
+  implementation?: string;
+  receiptId?: string;
+}
+
 export interface Proposal {
   id: ProposalId;
+  // The exact propose operation carries the complete input revision set. This
+  // stays optional only so pre-release snapshots written before 0.1.0 can be
+  // inspected; every newly created proposal records it.
+  operationId?: OperationId;
   kind: ProposalKind;
   status: ProposalStatus;
   basisRevisionIds: RevisionId[]; // what the proposal was computed against
+  // Revisions whose heads must remain current for this proposal to be honest.
+  // Generation records every context revision here: a proposal may still be
+  // structurally applicable after a context edit, but it is no longer fresh.
+  // Optional only for pre-release snapshots created before this field existed.
+  freshnessRevisionIds?: RevisionId[];
+  freshnessRevisionStates?: ContextRevisionPrecondition[];
+  freshnessStructure?: ContextStructurePrecondition;
+  producer?: ProducerRef;
   targetChunkIds: ChunkId[];
   payload: ProposedChange[];
   note?: string; // short human-readable account of what is proposed and why
   createdBy: ActorId;
   createdAt: string;
-  resolution?: { by: ActorId; at: string; operationId?: OperationId };
+  resolution?: { by: ActorId; at: string; operationId?: OperationId; reason?: string };
 }
 
 // The atomic unit of change: one operation, its resulting facts, one log append.
