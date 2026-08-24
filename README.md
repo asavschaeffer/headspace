@@ -1,179 +1,77 @@
-# The Chunk — `syscall(0)`
+# Headspace
 
-> The kernel object. Everything — hopper, headspace, the loom-weave — is userland built
-> from these. Nail this one object's identity, provenance, and mutability rules and the
-> rest is composition. Nothing else needs inventing.
+Headspace 0.0.1 is an intentionally narrow preview of a local text kernel. It opens one local workspace, represents Markdown and UTF-8 plain text in a versioned workspace graph, and keeps graph edits durable across host restarts.
 
-The whole design lives in one idea: **a chunk has four zones, each with a different
-mutability rule.** Confuse two of them and the system rots (attribution lies, forks
-corrupt their origins, drag-to-reorder scrambles history). Keep them separate and every
-hard operation — edit, rearrange, fork, re-ingest — falls out for free.
+The preview contract is deliberately small: navigate, open, edit through the graph, persist, restart, and explicitly project Markdown when it is safe. The original filesystem source remains authoritative.
 
-| Zone | Mutability | Answers |
-|---|---|---|
-| **Identity** | immutable for life | "who am I" — survives edit & rearrange |
-| **Content** | versioned (content-addressed) | "what do I say right now" |
-| **View** | freely mutable | "where did *you* put me" |
-| **Provenance** | append-only | "where did I come from, who touched me" |
+## Quick start
 
----
+Headspace requires Node.js 22.12 or newer and npm. Windows 11 is the primary supported platform; CI also verifies current Ubuntu runners.
 
-## The object
-
-```ts
-type ChunkId = string;   // ULID — minted once, stable for the chunk's entire life
-type Hash    = string;   // content address; changes when content changes
-
-interface Chunk {
-  // ── IDENTITY (immutable) ───────────────────────────────────────────────
-  id: ChunkId;
-  causal_seq: string;      // logical clock at birth — the "what actually happened" order
-
-  // ── CONTENT (versioned) ────────────────────────────────────────────────
-  kind:
-    | 'message' | 'heading_section' | 'paragraph'
-    | 'list' | 'list_item' | 'code_block' | 'quote';   // = markdown AST node role
-  text: string | null;     // leaves carry text; containers carry structure (null here)
-  content_hash: Hash;      // leaf: hash(text). container: Merkle over ordered child hashes
-
-  // ── VIEW / curated arrangement (mutable) ───────────────────────────────
-  parent_id: ChunkId | null;   // null = root (a message or an ingested document)
-  order_key: string;           // fractional index among siblings; drag-to-reorder writes here
-
-  // ── PROVENANCE (append-only) ───────────────────────────────────────────
-  origin: {
-    actor: 'human' | { model: string };
-    at: string;             // timestamp
-    source_id: string;      // the message / conversation / document it was born in
-  };
-  derived_from?: { id: ChunkId; op: 'fork' | 'split' | 'merge' };
-  edits: Array<{ at: string; actor: 'human' | { model: string }; from: Hash; to: Hash }>;
-}
+```powershell
+npm ci
+npm run build
+$env:HEADSPACE_WORKSPACE = 'C:\path\to\a\small-workspace'
+npm start
 ```
 
-*(Rust struct is a mechanical translation: immutable fields, `edits: Vec<Edit>` grow-only,
-the four zones map cleanly onto ownership. TS is canonical because the UI lives there.)*
+On macOS or Linux, set the workspace with:
 
----
-
-## The three non-obvious calls, and why
-
-**1. `id` ≠ `content_hash`.** Identity is a ULID minted once; content is hashed
-separately. Editing the text changes `content_hash`, **not** `id`. This is the inode/bytes
-split: the chunk is the same *thing* before and after you rewrite it, so comments,
-provenance, and inbound links stay attached across an edit. If identity *were* the hash,
-every keystroke would orphan everything pointing at the chunk.
-
-**2. Fork is copy-on-write, never a shared reference.** `fork(selection)` deep-copies the
-selected sub-forest; each copy gets a **new `id`** and a `derived_from: { id, op: 'fork' }`
-edge back to its origin. The fork is independent from birth — editing it can never mutate
-the source — but the lineage is a hard link you can always walk backward. A shared-id fork
-would be a footgun: curate the branch, corrupt the trunk.
-
-**3. `order_key` is fractional, and it lives apart from `causal_seq`.** This is the *two
-orderings* made concrete. `causal_seq` is immutable birth order — the truth, what you audit
-and attribute by. `order_key` is a fractional index (LexoRank-style) you can rewrite to
-drop a chunk between any two siblings without renumbering the rest — the curated view,
-what you *read* and what continuation feeds the model. They diverge the instant you
-rearrange, and that's *correct*: the system holds both, always.
-
----
-
-## How it survives the four operations
-
-Every op is a function that touches exactly one or two zones and preserves the rest:
-
-| Operation | Mutates | Preserves | Mechanism |
-|---|---|---|---|
-| **edit** | Content, Provenance | Identity, View | new `content_hash`; append `{from,to}` to `edits` |
-| **rearrange** | View only | everything else | rewrite `parent_id` / `order_key`; `causal_seq` untouched |
-| **fork** | — (creates new) | origin untouched | COW copy; new `id` + `derived_from` edge |
-| **re-ingest** | — (indexes) | everything | idempotent on `(id, content_hash)`; Merkle skips unchanged subtrees |
-
-The Merkle hashing on containers is what makes re-ingest cheap: tomorrow's index only
-re-embeds the subtrees whose root hash moved. Rearranging a list doesn't change any leaf's
-text, so nothing re-embeds — only the view updates. Editing one item bubbles a new hash up
-its ancestors and *only that spine* re-indexes. This is hopper's "bounded reduce," now
-serving change-detection.
-
-And the attribution question you cared about — *"did I think this, or did the model?"* — is
-answered by construction: `origin.actor` says who bore the chunk, and the `edits` log says
-who changed it and how. The archive can never quietly launder a model's words into yours.
-
----
-
-## The syscall table
-
-The four mutations above, plus the primitive we found underneath fork / edit-continue /
-hopper-reduce:
-
-```
-select(predicate)      -> Chunk[]        // by content, by kind, by subtree, by search hit
-reduce(Chunk[], budget) -> Context       // linearize by order_key, respect nesting, cap tokens
-generate(Context)      -> Chunk[]        // attach to a new tree (fork) or this one (continue)
-
-edit(id, text)         -> Chunk
-rearrange(id, parent, order_key) -> Chunk
-fork(Chunk[])          -> Tree
-reingest(Tree)         -> Index
+```sh
+export HEADSPACE_WORKSPACE=/path/to/a/small-workspace
+npm start
 ```
 
-That's the interface. **hopper** = `select` the file tree, `reduce`, propose. **headspace**
-= `reingest` your corpus, `select` by search, roll up to parents. **the loom-weave** =
-`select` a section, `reduce`, `generate` into a new tree (fork) or this one (edit-continue).
-Three products, zero new primitives.
+Open the loopback URL printed by the host. If `HEADSPACE_WORKSPACE` is absent, the host uses its current directory. Start with a copy or a disposable workspace while evaluating this pre-release build.
 
-Build this object and its seven calls, make one of them real end-to-end, and the OS exists —
-small, boring, and load-bearing. Everything grand is downstream of that.
+For UI development, run `npm run dev`. The development fixture is convenient for interface work, but `npm run build` followed by `npm start` is the release-shaped path.
 
----
+## What 0.0.1 promises
 
-## `syscall(1)` — the first heartbeat (shipped)
+- One local workspace selected when the host starts.
+- Navigation through its directories and opening Markdown or UTF-8 plain-text documents.
+- Edits recorded as versioned workspace-graph state.
+- Durable state under `<workspace>/.headspace/` that is recovered after restart.
+- Explicit, conflict-checked projection from an edited Markdown representation to its bound Markdown source.
+- No automatic overwrite of the original source.
 
-`generate` is wired. It is not in the kernel — it's a **driver** (`src/model-driver.mjs`),
-because `generate` translates *thought* the way an ingestion driver translates a file. It is
-a pure seam: `complete(messages) -> string`. Any OpenAI-compatible endpoint fills it —
-we run **NVIDIA NIM** (`meta/llama-3.1-70b-instruct`) and **OpenRouter** free tiers today;
-swapping to Claude later is a one-line change and the kernel never notices.
+Editing the graph does not edit the source file. Markdown changes reach the filesystem only when the user explicitly requests projection. Before writing, Headspace verifies that the source still matches the observed version and refuses the operation if it changed, disappeared, or falls outside the selected workspace. Plain-text projection is not supported by the 0.0.1 contract.
 
-The verb decomposes exactly as promised:
+The original file is the authoritative external source. `.headspace/` contains the preview's log, snapshots, source catalog, and Markdown identity sidecars; it is application state, not a replacement for source backups. The persisted format is pre-release and carries no forward-migration guarantee.
 
-```
-gather(store, targetId)      // SELECT  — target + its lineage + its siblings (the whole category)
-assemble(store, chunks)      // REDUCE  — a bounded, *readable* context manifest + token estimate
-generate(store, {targetId})  // GENERATE— context -> model -> reply parsed back into chunks,
-                             //           threaded into the tree with model provenance +
-                             //           `context:` = the manifest it was made from (it remembers)
-```
+## Experimental surfaces
 
-Run it live: `node heartbeat.mjs` (needs `NVIDIA_NIM_API_KEY` in env). It ingests the triage
-message, selects `mog`, and generates a real reply — model-authored chunks knit into the tree.
+The codebase also contains advanced ingestion and conversion, collaborator and proposal flows, and richer spatial concepts. For 0.0.1 these are experimental—not supported release promises. In particular, the preview does not promise:
 
-Files: `src/model-driver.mjs` (the driver + seam), `heartbeat.mjs` (live proof),
-`generated-seeds.json` (captured real replies), `substrate-home.html` (the home — the demo
-grown into a place, with the full select→reduce→generate choreography).
+- PDF or universal-format ingestion and conversion
+- AI or hosted-model collaboration
+- a complete spatial relationship or layout model
+- a universal ingest → orient → focus → collaborate → review → integrate loop
+- multiple workspaces, multi-user collaboration, or network hosting
 
----
+Experimental capabilities may require additional configuration or external services. Their presence does not expand the 0.0.1 contract.
 
-## `syscall(2)` — the store, made durable (shipped)
+## Host configuration
 
-*Memory that forgets isn't memory.* `src/store-disk.mjs` persists the whole store to disk and
-brings it back — **content-addressed**: a chunk's text lives in a blob keyed by its hash, so
-identical content is stored exactly once (real dedup). On load, the Merkle root is recomputed
-from scratch, so a matching root hash is *proof* of integrity, not trust.
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `HEADSPACE_WORKSPACE` | Local workspace root | Current directory |
+| `HEADSPACE_HOST` | Loopback bind address (`127/8`, `localhost`, or `::1`) | `127.0.0.1` |
+| `HEADSPACE_PORT` | HTTP port | `4173` |
+| `HEADSPACE_DIST` | Built client directory | `./dist` |
 
-```
-saveStore(store, file)   // -> { chunks, blobs, bytes }   the floor drivers pour into
-loadStore(file)          // -> Store, clock resumed, Merkle verified
+The HTTP host has no authentication, so 0.0.1 is deliberately loopback-only and rejects foreign `Host` and `Origin` authorities. Do not expose it to a network.
+
+## Verify the preview
+
+```powershell
+npm run verify
 ```
 
-Proven (`node persist-demo.mjs`): a tree round-trips with an identical Merkle root; 4 identical
-lines collapse to 2 blobs; and the **real Projects workshop** — 2064 chunks from the fs-driver —
-persists to **1.16 MB** and reloads intact (8 GB of projects held as a 1.16 MB *map*, because we
-store shape, not bulk). The seam to a Rust/SQLite backend is a straight swap of these two
-functions — the kernel never learns which is behind it (Joseph's chapter, when this becomes a
-Tauri desktop home).
+That runs the dependency audit, automated tests, strict TypeScript checking, and production build. Tests may cover experimental internals; passing them does not add those surfaces to the release contract.
 
-Now durable, the bottom half of the wishlist is buildable: content sub-drivers (pdf/docx/code +
-secret-safety) can deposit permanently, and a semantic index finally has something that persists
-to work on.
+The current contract and workback live in [RELEASE_NOTES.md](RELEASE_NOTES.md) and [RELEASE_PLAN.md](RELEASE_PLAN.md). The broader 0.1.0 material is preserved only as future drafts under [`docs/releases/`](docs/releases/).
+
+## License
+
+No license is granted for this 0.0.1 source preview (`UNLICENSED`). Choose and add an appropriate license before redistributing the project as open source.
