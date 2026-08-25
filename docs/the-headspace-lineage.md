@@ -56,7 +56,7 @@ part is not that I quit twelve times. It is what I rebuilt without meaning to.
 | Feb 2026 | `cortex` | A filesystem daemon for AI agents. Content addressed, inode identity, review gated. | Rust, SQLite | 10 |
 | Mar 2026 | `filemap` | See what you have before you organize it. No embeddings, no clustering, no 3D. | Python, SQLite | 2 |
 | Jul 2026 | `substrate` | The kernel. Five nouns, three verbs, and the API line. | JS, no dependencies | 22 |
-| Jul–Aug 2026 | `main` | **Headspace 0.1.0.** A Markdown and plain-text editor over a chunk kernel. | TypeScript | 18 |
+| Jul–Aug 2026 | `main` | **Headspace 0.1.0.** A Markdown and plain-text editor over a chunk kernel. | TypeScript | 19 |
 
 Between the 2024 notes and DirSnap there are four months. Between DirSnap and
 loom, five weeks, ending on 23 May 2025 with fourteen hours in a single sitting

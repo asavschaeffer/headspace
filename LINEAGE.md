@@ -17,29 +17,29 @@ five languages, under eleven names. The sentence did not move. This file is the
 map. Nothing was reconstructed that could be recovered intact.
 
 ```
-git log --first-parent lineage      the story, sixteen commits
-git log lineage                     the complete braided archive, 510 commits
-git log --graph --oneline lineage   the braid
-git checkout blobs-to-docs          stand at the beginning
+git log --first-parent e01afe935575658770a865ed0d2149b84fe551d1      the story, sixteen commits
+git log e01afe935575658770a865ed0d2149b84fe551d1                     the complete braided archive, 510 commits
+git log --graph --oneline e01afe935575658770a865ed0d2149b84fe551d1  the braid
+git switch --detach 72ad97022a0f93e3761a72523240e212e893560b       stand at the beginning
 ```
 
 ## The eras
 
 | era | when | what it was | stack | commits |
 |---|---|---|---|---|
-| [`blobs-to-docs`](../../tree/blobs-to-docs) | Jun–Nov 2024 | The pitch, the blobs it describes, and two manual reorganizations. No code. | Obsidian | 20 |
-| [`dirsnap`](../../tree/dirsnap) | Mar–Apr 2025 | Directory to text map, and the map back. Shipped as an installer with a right-click entry. | Python, Tkinter | 26 |
-| [`loom`](../../tree/loom) | May 2025 | Experiential convergence with data. A keylogger for yourself. | C#, Unity | 8 |
-| [`jarvis`](../../tree/jarvis) | Jun–Jul 2025 | The first real pipeline. Embeddings, clustering, a map you can look at. | Go, Python, HDBSCAN | 6 |
-| [`globule`](../../tree/globule) | Jul–Aug 2025 | Capture first, organize later. Plus a [42-doc design wiki](../../tree/globule-wiki). | Python | 213 |
-| [`brain`](../../tree/brain) | Sep 2025 | Living memory galaxy. A weekend, and the design document it was built against. | Python | 3 |
-| [`thoughtspace`](../../tree/thoughtspace) | Sep 2025 | Cosmic document explorer. Text becomes a star. | JS, MiniLM in-browser | 6 |
-| [`cosmic-diary`](../../tree/cosmic-diary) | Oct–Nov 2025 | Headspace, the Cosmic Knowledge System. Shipped on Render. | Python, ChromaDB, Three.js | 129 |
-| [`ai-os`](../../tree/ai-os) | Nov–Dec 2025 | Proposals, rollback, safety guardrails. The review gate is born. | Python | 12 |
-| [`cortex`](../../tree/cortex) | Feb 2026 | A filesystem daemon for AI agents. Content-addressed, inode identity, review-gated. | Rust, SQLite | 10 |
-| [`filemap`](../../tree/filemap) | Mar 2026 | See what you have before you organize it. The index is the contract. | Python, SQLite | 2 |
-| [`substrate`](../../tree/substrate) | Jul 2026 | The kernel, isolated. Five nouns, three verbs. | JS, no dependencies | 22 |
-| [`main`](../../tree/main) | Jul–Aug 2026 | **Headspace 0.1.0.** The first deliberately releasable text-kernel slice. | TypeScript | 18 |
+| [`blobs-to-docs`](../../tree/72ad97022a0f93e3761a72523240e212e893560b) | Jun–Nov 2024 | The pitch, the blobs it describes, and two manual reorganizations. No code. | Obsidian | 20 |
+| [`dirsnap`](../../tree/cbbc50fadb81a33d10b4c4c598e2124351b82dfa) | Mar–Apr 2025 | Directory to text map, and the map back. Shipped as an installer with a right-click entry. | Python, Tkinter | 26 |
+| [`loom`](../../tree/37442da39fb9d4019a5f9ae9b5e3e55bc6e18ca3) | May 2025 | Experiential convergence with data. A keylogger for yourself. | C#, Unity | 8 |
+| [`jarvis`](../../tree/0918ab5663fbb964fe93f8da2455199c3f0325e9) | Jun–Jul 2025 | The first real pipeline. Embeddings, clustering, a map you can look at. | Go, Python, HDBSCAN | 6 |
+| [`globule`](../../tree/dab32892682abadd1edeaeeda6bbbe828addc9e9) | Jul–Aug 2025 | Capture first, organize later. Plus a [42-doc design wiki](../../tree/8e67d995c41073345b5bda4c2897bf2a136fdd22). | Python | 213 |
+| [`brain`](../../tree/c64f7285eff01898e4c61b4a057c1f30d0546fb7) | Sep 2025 | Living memory galaxy. A weekend, and the design document it was built against. | Python | 3 |
+| [`thoughtspace`](../../tree/5f9e75f5c9861c825aeb61cf77e535602134853d) | Sep 2025 | Cosmic document explorer. Text becomes a star. | JS, MiniLM in-browser | 6 |
+| [`cosmic-diary`](../../tree/d19ff2347a562ac644a986c7973cbfc68ef05917) | Oct–Nov 2025 | Headspace, the Cosmic Knowledge System. Shipped on Render. | Python, ChromaDB, Three.js | 129 |
+| [`ai-os`](../../tree/bd119b2688c41df94f15b1d9bfc360e82e077873) | Nov–Dec 2025 | Proposals, rollback, safety guardrails. The review gate is born. | Python | 12 |
+| [`cortex`](../../tree/c11544ead2100b650b47a9419a664c5ec834234c) | Feb 2026 | A filesystem daemon for AI agents. Content-addressed, inode identity, review-gated. | Rust, SQLite | 10 |
+| [`filemap`](../../tree/d4931fdbd7a1756c2af0afbab5d9c99ba18bd036) | Mar 2026 | See what you have before you organize it. The index is the contract. | Python, SQLite | 2 |
+| [`substrate`](../../tree/2e08337b7e1428f95fe0f59f5e26edb42a8dc65c) | Jul 2026 | The kernel, isolated. Five nouns, three verbs. | JS, no dependencies | 22 |
+| [`main`](../../tree/main) | Jul–Aug 2026 | **Headspace 0.1.0.** The first deliberately releasable text-kernel slice. | TypeScript | 19 |
 
 No two era trunks share a commit ancestor. Each was started from an empty
 directory, not forked from the one before it. Preserved attic work contributes
