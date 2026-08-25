@@ -12,13 +12,13 @@ pitch was written down in August 2024:
 > identified by the A.I.. Then those contents are linked together with other
 > pre-existing blobs in the system to form larger documents.
 
-Everything under that sentence was thrown away and rebuilt eleven times, in
+Everything under that sentence was thrown away and rebuilt twelve times, in
 five languages, under eleven names. The sentence did not move. This file is the
 map. Nothing was reconstructed that could be recovered intact.
 
 ```
-git log --first-parent lineage      the story, fourteen commits
-git log lineage                     the complete braided archive, 509 commits
+git log --first-parent lineage      the story, sixteen commits
+git log lineage                     the complete braided archive, 510 commits
 git log --graph --oneline lineage   the braid
 git checkout blobs-to-docs          stand at the beginning
 ```
@@ -31,7 +31,7 @@ git checkout blobs-to-docs          stand at the beginning
 | [`dirsnap`](../../tree/dirsnap) | Mar–Apr 2025 | Directory to text map, and the map back. Shipped as an installer with a right-click entry. | Python, Tkinter | 26 |
 | [`loom`](../../tree/loom) | May 2025 | Experiential convergence with data. A keylogger for yourself. | C#, Unity | 8 |
 | [`jarvis`](../../tree/jarvis) | Jun–Jul 2025 | The first real pipeline. Embeddings, clustering, a map you can look at. | Go, Python, HDBSCAN | 6 |
-| [`globule`](../../tree/globule) | Jul–Aug 2025 | Capture first, organize later. Plus a [42-doc design wiki](../../tree/globule-wiki). | Python | 171 |
+| [`globule`](../../tree/globule) | Jul–Aug 2025 | Capture first, organize later. Plus a [42-doc design wiki](../../tree/globule-wiki). | Python | 213 |
 | [`brain`](../../tree/brain) | Sep 2025 | Living memory galaxy. A weekend, and the design document it was built against. | Python | 3 |
 | [`thoughtspace`](../../tree/thoughtspace) | Sep 2025 | Cosmic document explorer. Text becomes a star. | JS, MiniLM in-browser | 6 |
 | [`cosmic-diary`](../../tree/cosmic-diary) | Oct–Nov 2025 | Headspace, the Cosmic Knowledge System. Shipped on Render. | Python, ChromaDB, Three.js | 129 |
@@ -39,11 +39,11 @@ git checkout blobs-to-docs          stand at the beginning
 | [`cortex`](../../tree/cortex) | Feb 2026 | A filesystem daemon for AI agents. Content-addressed, inode identity, review-gated. | Rust, SQLite | 10 |
 | [`filemap`](../../tree/filemap) | Mar 2026 | See what you have before you organize it. The index is the contract. | Python, SQLite | 2 |
 | [`substrate`](../../tree/substrate) | Jul 2026 | The kernel, isolated. Five nouns, three verbs. | JS, no dependencies | 22 |
-| [`main`](../../tree/main) | Jul–Aug 2026 | **Headspace 0.1.0.** The first deliberately releasable text-kernel slice. | TypeScript | 17 |
+| [`main`](../../tree/main) | Jul–Aug 2026 | **Headspace 0.1.0.** The first deliberately releasable text-kernel slice. | TypeScript | 18 |
 
 No two era trunks share a commit ancestor. Each was started from an empty
 directory, not forked from the one before it. Preserved attic work contributes
-further independent roots, so the repository holds twenty-two roots in total.
+further independent roots, so the canonical archive holds twenty roots in total.
 What carried between eras was the idea, restated from memory each time.
 
 ## What the idea kept insisting on
@@ -67,7 +67,7 @@ being copied forward:
   for free, versus what costs money and leaves the machine.
 - **Smaller each time.** 2025 adds 3D, multiplayer and a shared cosmos. 2026
   strips them back out — filemap keeps only an honest index, substrate keeps
-  only a kernel, and 0.1.0 ships a text kernel with a markdown editor.
+  only a kernel, and 0.1.0 ships a text workspace editor over that kernel.
 
 ## How the dates work
 

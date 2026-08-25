@@ -49,4 +49,4 @@ Local automated gate, 2026-08-24: **passed**. `npm run verify` reports zero know
 
 The release-runtime proof opens a real disposable host workspace, ingests Markdown and plain text, commits a versioned text edit through the host boundary, projects Markdown explicitly, refuses an externally changed source without altering its bytes, restarts a fresh host, and verifies the edit, prior revision, ancestry, authorship, operation provenance, plain-text representation, and binding state.
 
-Release operations still pending: publish the exact candidate commit so Windows and Ubuntu CI can verify it, and create `0.1.0` only after those checks pass. The intended Git remote is configured as `origin`.
+Release operations still pending: publish the exact candidate commit and the named archive refs used by [LINEAGE.md](LINEAGE.md), let Windows and Ubuntu CI verify the candidate, and create `0.1.0` only after those checks pass. The intended Git remote is configured as `origin`.

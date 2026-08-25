@@ -73,7 +73,10 @@ function isWithin(root: string, candidate: string): boolean {
 function canonicalDirectory(requested: string, label: string): string {
   let canonical: string;
   try {
-    canonical = realpathSync(requested);
+    // Match the native canonicalization used by `fs/promises.realpath` below.
+    // On Windows, the non-native sync variant can preserve an 8.3 short path
+    // while the async variant expands it, making a confined file look external.
+    canonical = realpathSync.native(requested);
   } catch (error) {
     throw new Error(`${label} does not exist or cannot be resolved: ${requested}`, { cause: error });
   }
@@ -87,7 +90,7 @@ function requireConfinedIndex(distRoot: string): void {
   const requested = resolve(distRoot, 'index.html');
   let canonical: string;
   try {
-    canonical = realpathSync(requested);
+    canonical = realpathSync.native(requested);
   } catch (error) {
     throw new Error(`built application entry does not exist: ${requested} (run the build first)`, {
       cause: error,

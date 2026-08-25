@@ -7,6 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { realpath } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -131,6 +132,11 @@ try {
     port: 0,
     collaborators: [],
   });
+  assert.equal(
+    runtime.distRoot,
+    await realpath(dist),
+    'startup and request-time canonicalization must agree for the static root',
+  );
   const firstBase = runtime.address!.url;
 
   const lockedRuntime = createReleaseServer({
@@ -173,12 +179,13 @@ try {
   assert.equal(sameOriginState.status, 200);
 
   const shell = await fetch(`${firstBase}/`);
-  assert.equal(shell.status, 200);
+  const shellBody = await shell.text();
+  assert.equal(shell.status, 200, `release shell returned ${shell.status}: ${shellBody}`);
   assert.match(shell.headers.get('content-type') ?? '', /^text\/html/);
   assert.equal(shell.headers.get('x-frame-options'), 'DENY');
   assert.equal(shell.headers.get('content-security-policy'), "frame-ancestors 'none'");
   assert.equal(shell.headers.get('referrer-policy'), 'no-referrer');
-  assert.match(await shell.text(), /Headspace release shell/);
+  assert.match(shellBody, /Headspace release shell/);
 
   const asset = await fetch(`${firstBase}/assets/app.js`);
   assert.equal(asset.status, 200);
