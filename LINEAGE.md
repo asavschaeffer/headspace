@@ -39,7 +39,7 @@ git checkout blobs-to-docs          stand at the beginning
 | [`cortex`](../../tree/cortex) | Feb 2026 | A filesystem daemon for AI agents. Content-addressed, inode identity, review-gated. | Rust, SQLite | 10 |
 | [`filemap`](../../tree/filemap) | Mar 2026 | See what you have before you organize it. The index is the contract. | Python, SQLite | 2 |
 | [`substrate`](../../tree/substrate) | Jul 2026 | The kernel, isolated. Five nouns, three verbs. | JS, no dependencies | 22 |
-| [`main`](../../tree/main) | Jul–Aug 2026 | **Headspace 0.0.1.** The first deliberately releasable text-kernel slice. | TypeScript | 16 |
+| [`main`](../../tree/main) | Jul–Aug 2026 | **Headspace 0.1.0.** The first deliberately releasable text-kernel slice. | TypeScript | 17 |
 
 No two era trunks share a commit ancestor. Each was started from an empty
 directory, not forked from the one before it. Preserved attic work contributes
@@ -67,7 +67,7 @@ being copied forward:
   for free, versus what costs money and leaves the machine.
 - **Smaller each time.** 2025 adds 3D, multiplayer and a shared cosmos. 2026
   strips them back out — filemap keeps only an honest index, substrate keeps
-  only a kernel, and 0.0.1 ships a text kernel with a markdown editor.
+  only a kernel, and 0.1.0 ships a text kernel with a markdown editor.
 
 ## How the dates work
 

@@ -56,7 +56,7 @@ part is not that I quit twelve times. It is what I rebuilt without meaning to.
 | Feb 2026 | `cortex` | A filesystem daemon for AI agents. Content addressed, inode identity, review gated. | Rust, SQLite | 10 |
 | Mar 2026 | `filemap` | See what you have before you organize it. No embeddings, no clustering, no 3D. | Python, SQLite | 2 |
 | Jul 2026 | `substrate` | The kernel. Five nouns, three verbs, and the API line. | JS, no dependencies | 22 |
-| Jul–Aug 2026 | `main` | **Headspace 0.0.1.** A markdown editor over a chunk kernel. | TypeScript | 16 |
+| Jul–Aug 2026 | `main` | **Headspace 0.1.0.** A markdown editor over a chunk kernel. | TypeScript | 17 |
 
 Between the 2024 notes and DirSnap there are four months. Between DirSnap and
 loom, five weeks, ending on 23 May 2025 with fourteen hours in a single sitting
@@ -110,11 +110,11 @@ In 2025 I added: 3D constellations, a multiplayer shared cosmos, a visual diary,
 procedural shapes, a hosted deployment, a dozen parallel worktrees.
 
 In 2026 I took it back out: filemap keeps only an honest index, substrate keeps
-only a kernel, 0.0.1 ships a text editor.
+only a kernel, 0.1.0 ships a text editor.
 
 ## Where it ended up
 
-Headspace 0.0.1 is a markdown editor. That is the whole release, and after
+Headspace 0.1.0 is a markdown editor. That is the whole release, and after
 everything above it is a strange thing to type, but it is the first version I
 have been willing to number.
 

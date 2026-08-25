@@ -120,7 +120,7 @@ try {
       collaborators: [],
     }),
     /loopback-only/,
-    'the unauthenticated 0.0.1 host must never bind to the LAN',
+    'the unauthenticated 0.1.0 host must never bind to the LAN',
   );
 
   runtime = await startReleaseServer({

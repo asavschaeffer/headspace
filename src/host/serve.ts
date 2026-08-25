@@ -21,7 +21,7 @@ type Middleware = (req: IncomingMessage, res: ServerResponse, next: Next) => voi
 export interface ReleaseServerOptions extends HeadspaceHostOptions {
   /** Directory produced by `vite build`. Defaults to HEADSPACE_DIST or ./dist. */
   distDir?: string;
-  /** Bind address. Headspace 0.0.1 accepts loopback addresses only. */
+  /** Bind address. Headspace 0.1.0 accepts loopback addresses only. */
   host?: string;
   /** Port 0 asks the OS for an ephemeral port. Defaults to HEADSPACE_PORT or 4173. */
   port?: number;
@@ -279,7 +279,7 @@ export function createReleaseServer(options: ReleaseServerOptions = {}): Release
   const host = unbracketedHost(requestedHost);
   if (!isLoopbackHost(host)) {
     throw new Error(
-      `Headspace 0.0.1 is loopback-only; refusing to bind ${requestedHost}. ` +
+      `Headspace 0.1.0 is loopback-only; refusing to bind ${requestedHost}. ` +
       'Use 127.0.0.1, localhost, or ::1.',
     );
   }
@@ -384,7 +384,7 @@ export function createReleaseServer(options: ReleaseServerOptions = {}): Release
             throw new Error('release server did not expose a TCP address');
           }
           if (!isLoopbackHost(bound.address)) {
-            throw new Error(`Headspace 0.0.1 resolved ${host} to non-loopback address ${bound.address}`);
+            throw new Error(`Headspace 0.1.0 resolved ${host} to non-loopback address ${bound.address}`);
           }
           if (terminal) throw new Error('release server closed while starting');
           runningAddress = {

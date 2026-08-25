@@ -1,6 +1,6 @@
 {
   "name": "headspace",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "A local preview for navigating and safely editing Markdown and plain-text workspaces through a versioned graph.",
   "license": "UNLICENSED",
